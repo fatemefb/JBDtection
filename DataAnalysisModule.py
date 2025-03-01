@@ -480,6 +480,9 @@ class TagJBExtractor:
         
         logger.info(f"Opening PDF: {pdf_path}")
         pdf_document = fitz.open(pdf_path)
+        pdf_filename = os.path.basename(pdf_path)
+        print(f"\nProcessing PDF: {pdf_filename}")
+        print("-" * 50)
         
         # Create temporary directory for image processing
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -508,7 +511,10 @@ class TagJBExtractor:
                     # Store results
                     results[page_num + 1] = (tags, jb_identifiers)
                     
-                    logger.info(f"Page {page_num + 1}: Found {len(tags)} tags and {len(jb_identifiers)} JB identifiers")
+                    # Print results immediately for this page
+                    print(f"Page {page_num + 1}:")
+                    print(f"  Tags found ({len(tags)}): {', '.join(sorted(tags))}")
+                    print(f"  JB identifiers found ({len(jb_identifiers)}): {', '.join(sorted(jb_identifiers))}")
                     
                     # Clean up temporary image file
                     try:
@@ -674,6 +680,15 @@ class TagJBExtractor:
         # Create tag to JB mapping
         tag_to_jb = self.create_tag_jb_mapping(pdf_results)
         
+        # Print total statistics
+        total_tags = sum(len(tags) for tags, _ in pdf_results.values())
+        total_jbs = sum(len(jbs) for _, jbs in pdf_results.values())
+        print("\nTotal Statistics:")
+        print("-" * 50)
+        print(f"Total Tags found: {total_tags}")
+        print(f"Total JB identifiers found: {total_jbs}")
+        print(f"Total Pages processed: {len(pdf_results)}")
+        
         # Process Excel in parallel
         updated_df, unmatched_excel_tags, unmatched_pdf_tags = self.process_excel(excel_path, tag_to_jb)
         
@@ -682,3 +697,119 @@ class TagJBExtractor:
         logger.info(f"Updated Excel saved to: {output_excel_path}")
         
         return unmatched_excel_tags, unmatched_pdf_tags
+    
+    def draw_and_save_annotated_pdfs(self, pdf_paths: List[str], output_dir: str) -> List[str]:
+        """
+        Draw bounding boxes around detected tags and JB identifiers in PDFs and save annotated versions.
+        
+        Args:
+            pdf_paths: List of input PDF file paths
+            output_dir: Directory to save annotated PDFs
+            
+        Returns:
+            List of paths to annotated PDF files
+        """
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        
+        def process_single_pdf(args):
+            pdf_path, temp_dir = args
+            try:
+                # Open PDF
+                pdf_document = fitz.open(pdf_path)
+                pdf_filename = os.path.basename(pdf_path)
+                output_path = os.path.join(output_dir, f"annotated_{pdf_filename}")
+                
+                # Process each page
+                for page_num in range(len(pdf_document)):
+                    page = pdf_document[page_num]
+                    
+                    # Convert page to image for OCR
+                    pix = page.get_pixmap(matrix=fitz.Matrix(300/72, 300/72))
+                    temp_image_path = os.path.join(temp_dir, f"temp_page_{page_num}.png")
+                    pix.save(temp_image_path)
+                    
+                    # Load image for OCR
+                    image = cv2.imread(temp_image_path)
+                    processed_image = self.preprocess_image(image)
+                    
+                    # Get OCR data with bounding boxes
+                    ocr_data = pytesseract.image_to_data(
+                        processed_image,
+                        config='--oem 3 --psm 11',
+                        output_type=pytesseract.Output.DICT
+                    )
+                    
+                    # Scale factor for converting OCR coordinates back to PDF coordinates
+                    scale_x = page.rect.width / processed_image.shape[1]
+                    scale_y = page.rect.height / processed_image.shape[0]
+                    
+                    # Process OCR results
+                    for i in range(len(ocr_data['text'])):
+                        text = ocr_data['text'][i].strip().upper()
+                        if text:
+                            x = ocr_data['left'][i]
+                            y = ocr_data['top'][i]
+                            w = ocr_data['width'][i]
+                            h = ocr_data['height'][i]
+                            
+                            # Convert coordinates to PDF space
+                            pdf_x = x * scale_x
+                            pdf_y = y * scale_y
+                            pdf_w = w * scale_x
+                            pdf_h = h * scale_y
+                            
+                            # Check if text matches tag pattern
+                            is_tag = bool(re.search(self.tag_pattern, text))
+                            # Check if text matches JB pattern
+                            is_jb = bool(self.jb_pattern.match(text))
+                            
+                            if is_tag or is_jb:
+                                # Create rectangle
+                                rect = fitz.Rect(pdf_x, pdf_y, pdf_x + pdf_w, pdf_y + pdf_h)
+                                
+                                # Draw annotation
+                                annot = page.add_rect_annot(rect)
+                                if is_tag:
+                                    # Blue color for tags
+                                    annot.set_colors(stroke=(0, 0, 1))
+                                    annot.set_info(title="Tag", content=text)
+                                else:
+                                    # Red color for JB identifiers
+                                    annot.set_colors(stroke=(1, 0, 0))
+                                    annot.set_info(title="JB", content=text)
+                                
+                                annot.set_border(width=0.5)
+                                annot.update()
+                    
+                    # Clean up temporary image
+                    try:
+                        os.remove(temp_image_path)
+                    except:
+                        pass
+                
+                # Save annotated PDF
+                pdf_document.save(output_path)
+                pdf_document.close()
+                
+                logger.info(f"Saved annotated PDF: {output_path}")
+                return output_path
+                
+            except Exception as e:
+                logger.error(f"Error processing PDF {pdf_path}: {e}")
+                return None
+        
+        # Create temporary directory for image processing
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Prepare arguments for parallel processing
+            process_args = [(pdf_path, temp_dir) for pdf_path in pdf_paths]
+            
+            # Process PDFs in parallel
+            num_processes = min(cpu_count(), len(pdf_paths))
+            with Pool(processes=num_processes) as pool:
+                annotated_paths = pool.map(process_single_pdf, process_args)
+            
+            # Filter out None values (failed processing)
+            annotated_paths = [path for path in annotated_paths if path is not None]
+        
+        return annotated_paths

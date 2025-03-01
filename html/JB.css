@@ -1,0 +1,234 @@
+:root {
+    --primary-color: #154a75;
+    --secondary-color: #486581;
+    --background-color: #0d1931;
+    --text-color: #333;
+    --border-color: #eceedd;
+    --success-color: #62ccac;
+    --error-color: #812d27;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Roboto', sans-serif;
+    line-height: 1.6;
+    color: var(--text-color);
+    background-color: var(--background-color);
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+header {
+    text-align: center;
+    margin-bottom: 3rem;
+    padding: 2rem;
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    color: white;
+    border-radius: 10px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+header h1 {
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+}
+
+section {
+    background: white;
+    padding: 2rem;
+    border-radius: 10px;
+    margin-bottom: 2rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+h2 {
+    color: var(--primary-color);
+    margin-bottom: 1.5rem;
+}
+
+.upload-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 2rem;
+}
+
+.upload-box {
+    padding: 2rem;
+    border: 2px dashed var(--border-color);
+    border-radius: 8px;
+    text-align: center;
+    transition: all 0.3s ease;
+}
+
+.upload-box:hover {
+    border-color: var(--primary-color);
+}
+
+.upload-box input[type="file"] {
+    display: none;
+}
+
+.upload-box label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: pointer;
+    padding: 1rem;
+}
+
+.icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+}
+
+.file-list {
+    margin-top: 1rem;
+    padding: 1rem;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    min-height: 60px;
+}
+
+.settings-container {
+    display: grid;
+    gap: 1rem;
+}
+
+.setting-item {
+    display: grid;
+    gap: 0.5rem;
+}
+
+input[type="text"] {
+    padding: 0.8rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 1rem;
+}
+
+.process-section {
+    text-align: center;
+}
+
+.process-btn {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    padding: 1rem 2rem;
+    font-size: 1.1rem;
+    border-radius: 25px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.3s ease;
+}
+
+.process-btn:hover {
+    background-color: var(--secondary-color);
+    transform: translateY(-2px);
+}
+
+.results-container {
+    display: grid;
+    gap: 2rem;
+}
+
+.progress-box {
+    text-align: center;
+}
+
+.progress-bar {
+    height: 20px;
+    background-color: #e0e0e0;
+    border-radius: 10px;
+    overflow: hidden;
+    margin: 1rem 0;
+}
+
+.progress {
+    height: 100%;
+    background-color: var(--primary-color);
+    transition: width 0.3s ease;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+.stat-item {
+    padding: 1rem;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    text-align: center;
+}
+
+.stat-label {
+    display: block;
+    color: #666;
+    margin-bottom: 0.5rem;
+}
+
+.stat-value {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: var(--primary-color);
+}
+
+.log-box {
+    margin-top: 2rem;
+}
+
+.log-content {
+    height: 200px;
+    overflow-y: auto;
+    padding: 1rem;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    font-family: monospace;
+    white-space: pre-wrap;
+}
+
+footer {
+    text-align: center;
+    margin-top: 3rem;
+    padding: 1rem;
+    color: #666;
+}
+
+@media (max-width: 768px) {
+    .container {
+        padding: 1rem;
+    }
+    
+    header {
+        padding: 1.5rem;
+    }
+    
+    header h1 {
+        font-size: 2rem;
+    }
+    
+    section {
+        padding: 1.5rem;
+    }
+    
+    .upload-container {
+        grid-template-columns: 1fr;
+    }
+    
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+}
