@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JB Detection System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='JB.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1><i class="fas fa-search-location"></i> JB Detection System</h1>
+            <p>Advanced PDF and Excel Tag Detection and Matching System</p>
+        </header>
+        
+        <main>
+            <form id="processForm">
+                <section class="upload-section">
+                    <h2><i class="fas fa-file-upload"></i> Upload Files</h2>
+                    <div class="upload-container">
+                        <div class="upload-box">
+                            <h3>PDF Files</h3>
+                            <input type="file" id="pdfInput" name="pdf_files" multiple accept=".pdf" required>
+                            <label for="pdfInput">
+                                <span class="icon"><i class="fas fa-file-pdf"></i></span>
+                                <span>Choose PDF files</span>
+                            </label>
+                            <div id="pdfList" class="file-list"></div>
+                        </div>
+
+                        <div class="upload-box">
+                            <h3>Excel File</h3>
+                            <input type="file" id="excelInput" name="excel_file" accept=".xlsx,.xls" required>
+                            <label for="excelInput">
+                                <span class="icon"><i class="fas fa-file-excel"></i></span>
+                                <span>Choose Excel file</span>
+                            </label>
+                            <div id="excelName" class="file-list"></div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="settings-section">
+                    <h2><i class="fas fa-cog"></i> Output Settings</h2>
+                    <div class="settings-container">
+                        <div class="setting-item">
+                            <label for="outputPath">Output Directory:</label>
+                            <div class="input-with-icon">
+                                <i class="fas fa-folder"></i>
+                                <input type="text" id="outputPath" name="output_path" placeholder="Enter output directory path..." required>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="process-section">
+                    <button type="submit" id="processButton" class="process-btn">
+                        <i class="fas fa-play"></i> Start Processing
+                    </button>
+                </section>
+            </form>
+
+            <section class="results-section">
+                <h2><i class="fas fa-chart-bar"></i> Processing Results</h2>
+                <div class="results-container">
+                    <div class="progress-box">
+                        <h3>Progress</h3>
+                        <div class="progress-bar">
+                            <div class="progress" id="progressBar" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="stats-container">
+                        <h3>Statistics</h3>
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <span class="stat-label">Unmatched Tags</span>
+                                <span class="stat-value" id="totalTags">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Pages Processed</span>
+                                <span class="stat-value" id="pagesProcessed">0</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="log-box">
+                        <h3>Process Log</h3>
+                        <pre id="logOutput" class="log-content">Ready to process files...</pre>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>&copy; 2025 JB Detection System. All rights reserved.</p>
+        </footer>
+    </div>
+
+    <script>
+        document.getElementById('processForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData();
+            
+            // Add PDF files
+            const pdfFiles = document.getElementById('pdfInput').files;
+            for (let i = 0; i < pdfFiles.length; i++) {
+                formData.append('pdf_files', pdfFiles[i]);
+            }
+            
+            // Add Excel file
+            formData.append('excel_file', document.getElementById('excelInput').files[0]);
+            
+            // Add output path
+            formData.append('output_path', document.getElementById('outputPath').value);
+            
+            // Update UI to show processing state
+            document.getElementById('processButton').disabled = true;
+            document.getElementById('processButton').innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+            document.getElementById('logOutput').textContent = 'Processing started...\n';
+            document.getElementById('progressBar').style.width = '10%';
+            
+            try {
+                const response = await fetch('/process', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                document.getElementById('progressBar').style.width = '70%';
+                
+                const result = await response.json();
+                document.getElementById('progressBar').style.width = '100%';
+                
+                if (result.status === 'success') {
+                    // Update statistics
+                    document.getElementById('totalTags').textContent = 
+                        result.unmatched_pdf_tags.length + result.unmatched_excel_tags.length;
+                    document.getElementById('pagesProcessed').textContent = 
+                        result.annotated_pdfs.length;
+                    
+                    // Update log
+                    let logContent = '✅ Processing completed successfully!\n\n';
+                    logContent += `📊 Output Excel saved to: ${result.output_excel_path}\n\n`;
+                    logContent += '📋 Unmatched Excel Tags:\n';
+                    
+                    if (result.unmatched_excel_tags.length === 0) {
+                        logContent += '   No unmatched Excel tags\n';
+                    } else {
+                        result.unmatched_excel_tags.forEach(tag => {
+                            logContent += `   • ${tag}\n`;
+                        });
+                    }
+                    
+                    logContent += '\n📋 Unmatched PDF Tags:\n';
+                    if (result.unmatched_pdf_tags.length === 0) {
+                        logContent += '   No unmatched PDF tags\n';
+                    } else {
+                        result.unmatched_pdf_tags.forEach(tag => {
+                            logContent += `   • ${tag}\n`;
+                        });
+                    }
+                    
+                    document.getElementById('logOutput').textContent = logContent;
+                } else {
+                    document.getElementById('logOutput').textContent = 
+                        `❌ Error: ${result.message}\n`;
+                }
+            } catch (error) {
+                document.getElementById('progressBar').style.width = '100%';
+                document.getElementById('logOutput').textContent = 
+                    `❌ Error: ${error.message}\n`;
+            } finally {
+                document.getElementById('processButton').disabled = false;
+                document.getElementById('processButton').innerHTML = '<i class="fas fa-play"></i> Start Processing';
+            }
+        });
+
+        // File input display handlers
+        document.getElementById('pdfInput').addEventListener('change', (e) => {
+            const fileList = document.getElementById('pdfList');
+            fileList.innerHTML = '';
+            
+            if (e.target.files.length > 0) {
+                const files = Array.from(e.target.files);
+                files.forEach(file => {
+                    const fileItem = document.createElement('div');
+                    fileItem.className = 'file-item';
+                    fileItem.innerHTML = `<i class="fas fa-file-pdf"></i> ${file.name}`;
+                    fileList.appendChild(fileItem);
+                });
+            } else {
+                fileList.textContent = 'No files selected';
+            }
+        });
+
+        document.getElementById('excelInput').addEventListener('change', (e) => {
+            const excelName = document.getElementById('excelName');
+            if (e.target.files.length > 0) {
+                const fileName = e.target.files[0].name;
+                excelName.innerHTML = `<div class="file-item"><i class="fas fa-file-excel"></i> ${fileName}</div>`;
+            } else {
+                excelName.textContent = 'No file selected';
+            }
+        });
+    </script>
+</body>
+</html>
