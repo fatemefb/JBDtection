@@ -1,7 +1,6 @@
 import cv2
 import pytesseract
 import numpy as np
-from PIL import Image
 import pandas as pd
 import re
 import os
@@ -16,20 +15,19 @@ import Levenshtein
 import time
 from typing import Any
 import os
-import sys
 import tempfile
 import os
 import math
 import json
+import traceback
+from typing import List, Dict, Tuple
+import math
+import shutil
 
-
-# تنظیم لاگینگ
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-import string
-from typing import List, Dict, Tuple
-import math
+
 
 class VectorMatcher:
     def __init__(self, similarity_threshold: float = 0.90):
@@ -1167,7 +1165,6 @@ class TagJBExtractor:
             
         except Exception as e:
             logger.error(f"Error processing Excel files: {e}")
-            import traceback
             logger.error(traceback.format_exc())
             return pd.DataFrame(), [], []
         
@@ -1741,7 +1738,6 @@ class TagJBExtractor:
             
         except Exception as e:
             logger.error(f"Error creating unmatched tags Excel file: {e}")
-            import traceback
             logger.error(traceback.format_exc())
 
     def run_with_annotated_pdf(self, pdf_paths: List[str], excel_path: str, output_excel_path: str, output_pdf_dir: str) -> Tuple[List[str], List[str]]:
@@ -1833,7 +1829,7 @@ class TagJBExtractor:
             logger.info(f"Unmatched tags Excel file saved to: {unmatched_excel_path}")
         else:
             # If no IO List, just copy the intermediate file to the output path
-            import shutil
+            
             shutil.copy2(intermediate_excel_path, output_excel_path)
             logger.info(f"Excel file saved to: {output_excel_path}")
             
@@ -1988,7 +1984,7 @@ class TagJBExtractor:
                 
             except Exception as e:
                 logger.error(f"Error in add_wire_colors_and_scr_to_dataframe: {e}")
-                import traceback
+                
                 logger.error(traceback.format_exc())
                 raise
 
@@ -2002,7 +1998,7 @@ class TagJBExtractor:
         Returns:
             عدد استخراج شده یا None اگر هیچ عددی پیدا نشد
         """
-        import re
+        
         
         if not cable_description:
             return None
@@ -2159,7 +2155,7 @@ class TagJBExtractor:
                         
                 except Exception as e:
                     logger.error(f"Error processing tag {tag} in PDF {pdf_name}, page {page_num}: {e}")
-                    import traceback
+                    
                     logger.error(traceback.format_exc())
             
             # پردازش اسپیرهای این صفحه - فقط با استفاده از اطلاعات bounding box
@@ -2223,12 +2219,12 @@ class TagJBExtractor:
                     
                 except Exception as e:
                     logger.error(f"Error processing spare {spare} in PDF {pdf_name}, page {page_num}: {e}")
-                    import traceback
+                    
                     logger.error(traceback.format_exc())
                     
         except Exception as e:
             logger.error(f"Error processing PDF {pdf_name}, page {page_num}: {e}")
-            import traceback
+            
             logger.error(traceback.format_exc())
 
     def _get_unique_wire_colors(self, tag: str, wire_colors: Dict[str, List[str]], 
@@ -2397,7 +2393,7 @@ class TagJBExtractor:
                 
         except Exception as e:
             logger.error(f"Error checking tag number consistency: {e}")
-            import traceback
+            
             logger.error(traceback.format_exc())
             return False, 0, 0
         
