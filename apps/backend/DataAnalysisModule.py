@@ -10,7 +10,6 @@ from typing import Dict, List, Set, Tuple, Optional ,Union
 import tempfile
 import logging
 from multiprocessing import Pool, cpu_count
-from functools import partial
 import Levenshtein
 import time
 from typing import Any
