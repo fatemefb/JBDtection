@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JB Detection System</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='JB.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/JB.css') }}">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 </head>
@@ -50,6 +50,55 @@
                             <div class="input-with-icon">
                                 <i class="fas fa-folder"></i>
                                 <input type="text" id="outputPath" name="output_path" placeholder="Enter output directory path..." required>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="pattern-section">
+                    <h2><i class="fas fa-magic"></i> Pattern Learning</h2>
+                    <div class="pattern-container">
+                        <p class="pattern-description">
+                            Define custom patterns to improve detection accuracy. The system will learn from your examples.
+                        </p>
+                        
+                        <div class="pattern-inputs">
+                            <div class="pattern-group">
+                                <label for="jbExamples">JB Examples:</label>
+                                <input type="text" id="jbExamples" name="jb_examples" placeholder="JB001, JB-002, JB_003...">
+                                <p class="hint">Comma-separated examples of JB identifiers in your documents</p>
+                            </div>
+                            
+                            <div class="pattern-group">
+                                <label for="mcExamples">MC Examples:</label>
+                                <input type="text" id="mcExamples" name="mc_examples" placeholder="MC001, MC-002, MC_003...">
+                                <p class="hint">Comma-separated examples of MC identifiers in your documents</p>
+                            </div>
+                            
+                            <div class="pattern-group">
+                                <label for="spareExamples">SPARE Examples:</label>
+                                <input type="text" id="spareExamples" name="spare_examples" placeholder="SPARE, SPARE1, SPARE-1...">
+                                <p class="hint">Comma-separated examples of SPARE identifiers in your documents</p>
+                            </div>
+                            
+                            <div class="pattern-group">
+                                <label for="cableExamples">Cable Examples:</label>
+                                <input type="text" id="cableExamples" name="cable_examples" placeholder="12P, 24 PAIR, 36T, 48 CORE...">
+                                <p class="hint">Comma-separated examples of cable descriptions in your documents</p>
+                            </div>
+                            
+                            <div class="pattern-divider"></div>
+                            
+                            <div class="pattern-group">
+                                <label for="wireColorRule">Wire Color Rule:</label>
+                                <input type="text" id="wireColorRule" name="wire_color_rule" placeholder="BK{number:02d}, WT{number:02d}">
+                                <p class="hint">Rule for generating wire colors. Use {number} as placeholder for tag number. Example: "BK{number:02d}, WT{number:02d}" generates BK01, WT01 for tag #1</p>
+                            </div>
+                            
+                            <div class="pattern-group">
+                                <label for="scrNumberRule">SCR Number Rule:</label>
+                                <input type="text" id="scrNumberRule" name="scr_number_rule" placeholder="{number*2-1} {number*2} SCR">
+                                <p class="hint">Rule for generating SCR numbers. Use {number} as placeholder for tag number. Example: "{number*2-1} {number*2} SCR" generates "1 2 SCR" for tag #1</p>
                             </div>
                         </div>
                     </div>
@@ -117,6 +166,42 @@
             // Add output path
             formData.append('output_path', document.getElementById('outputPath').value);
             
+            // Create one-shot input text for pattern learning
+            let oneShotInput = '';
+            
+            const jbExamples = document.getElementById('jbExamples').value.trim();
+            if (jbExamples) {
+                oneShotInput += `JB_EXAMPLES: ${jbExamples}\n`;
+            }
+            
+            const mcExamples = document.getElementById('mcExamples').value.trim();
+            if (mcExamples) {
+                oneShotInput += `MC_EXAMPLES: ${mcExamples}\n`;
+            }
+            
+            const spareExamples = document.getElementById('spareExamples').value.trim();
+            if (spareExamples) {
+                oneShotInput += `SPARE_EXAMPLES: ${spareExamples}\n`;
+            }
+            
+            const cableExamples = document.getElementById('cableExamples').value.trim();
+            if (cableExamples) {
+                oneShotInput += `CABLE_EXAMPLES: ${cableExamples}\n`;
+            }
+            
+            const wireColorRule = document.getElementById('wireColorRule').value.trim();
+            if (wireColorRule) {
+                oneShotInput += `WIRE_COLOR_RULE: ${wireColorRule}\n`;
+            }
+            
+            const scrNumberRule = document.getElementById('scrNumberRule').value.trim();
+            if (scrNumberRule) {
+                oneShotInput += `SCR_NUMBER_RULE: ${scrNumberRule}\n`;
+            }
+            
+            formData.append('one_shot_input', oneShotInput);
+            formData.append('enable_pattern_learning', 'true');
+            
             // Update UI to show processing state
             document.getElementById('processButton').disabled = true;
             document.getElementById('processButton').innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
@@ -137,28 +222,31 @@
                 if (result.status === 'success') {
                     // Update statistics
                     document.getElementById('totalTags').textContent = 
-                        result.unmatched_pdf_tags.length + result.unmatched_excel_tags.length;
+                        (result.details?.results?.unmatched_pdf_tags?.length || 0) + 
+                        (result.details?.results?.unmatched_excel_tags?.length || 0);
                     document.getElementById('pagesProcessed').textContent = 
-                        result.annotated_pdfs.length;
+                        result.details?.output_files?.annotated_pdfs?.length || 0;
                     
                     // Update log
                     let logContent = '✅ Processing completed successfully!\n\n';
-                    logContent += `📊 Output Excel saved to: ${result.output_excel_path}\n\n`;
+                    logContent += `📊 Output Excel saved to: ${result.details?.output_files?.excel_path || 'N/A'}\n\n`;
                     logContent += '📋 Unmatched Excel Tags:\n';
                     
-                    if (result.unmatched_excel_tags.length === 0) {
+                    const unmatchedExcelTags = result.details?.results?.unmatched_excel_tags || [];
+                    if (unmatchedExcelTags.length === 0) {
                         logContent += '   No unmatched Excel tags\n';
                     } else {
-                        result.unmatched_excel_tags.forEach(tag => {
+                        unmatchedExcelTags.forEach(tag => {
                             logContent += `   • ${tag}\n`;
                         });
                     }
                     
                     logContent += '\n📋 Unmatched PDF Tags:\n';
-                    if (result.unmatched_pdf_tags.length === 0) {
+                    const unmatchedPdfTags = result.details?.results?.unmatched_pdf_tags || [];
+                    if (unmatchedPdfTags.length === 0) {
                         logContent += '   No unmatched PDF tags\n';
                     } else {
-                        result.unmatched_pdf_tags.forEach(tag => {
+                        unmatchedPdfTags.forEach(tag => {
                             logContent += `   • ${tag}\n`;
                         });
                     }
@@ -166,7 +254,7 @@
                     document.getElementById('logOutput').textContent = logContent;
                 } else {
                     document.getElementById('logOutput').textContent = 
-                        `❌ Error: ${result.message}\n`;
+                        `❌ Error: ${result.message}\n\n${JSON.stringify(result.details || {}, null, 2)}`;
                 }
             } catch (error) {
                 document.getElementById('progressBar').style.width = '100%';

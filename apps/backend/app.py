@@ -14,7 +14,7 @@ app = Flask(
     __name__,
     template_folder=os.path.join(BASE_DIR, 'frontend', 'templates'),
     static_folder=os.path.join(BASE_DIR, 'frontend', 'static')
-
+)
 
 # Configure upload folder for temporary files
 UPLOAD_FOLDER = tempfile.gettempdir()
