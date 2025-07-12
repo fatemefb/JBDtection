@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session
 from DataAnalysisModule import TagJBExtractor
 import os
 import tempfile
@@ -16,6 +16,9 @@ app = Flask(
     static_folder=os.path.join(BASE_DIR, 'frontend', 'static')
 )
 
+# تنظیم کلید محرمانه برای session
+app.secret_key = 'jb_detection_system_secret_key'
+
 # Configure upload folder for temporary files
 UPLOAD_FOLDER = tempfile.gettempdir()
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
@@ -23,12 +26,55 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 # Default tesseract path
 DEFAULT_TESSERACT_PATH = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
+# کاربران مجاز (در یک پروژه واقعی این اطلاعات باید در دیتابیس ذخیره شوند)
+VALID_USERS = {
+    'admin': 'admin123',
+    'user': 'user123'
+}
+
 @app.route('/')
 def home():
-    return render_template('JB.html')
+    # اگر کاربر قبلاً وارد شده باشد، مستقیماً به داشبورد هدایت می‌شود
+    if 'username' in session:
+        return redirect(url_for('dashboard'))
+    # در غیر این صورت به صفحه ورود هدایت می‌شود
+    return render_template('login.html')
+
+@app.route('/login', methods=['POST'])
+def login():
+    username = request.form.get('username')
+    password = request.form.get('password')
+    
+    # بررسی اعتبار نام کاربری و رمز عبور
+    if username in VALID_USERS and VALID_USERS[username] == password:
+        session['username'] = username
+        return jsonify({'status': 'success'})
+    else:
+        return jsonify({'status': 'error', 'message': 'نام کاربری یا رمز عبور اشتباه است'})
+
+@app.route('/logout')
+def logout():
+    # حذف اطلاعات کاربر از session
+    session.pop('username', None)
+    return redirect(url_for('home'))
+
+@app.route('/dashboard')
+def dashboard():
+    # بررسی اینکه آیا کاربر وارد شده است یا خیر
+    if 'username' not in session:
+        return redirect(url_for('home'))
+    # نمایش صفحه داشبورد
+    return render_template('JB.html', username=session['username'])
 
 @app.route('/process', methods=['POST'])
 def process_files():
+    # بررسی اینکه آیا کاربر وارد شده است یا خیر
+    if 'username' not in session:
+        return jsonify({
+            'status': 'error',
+            'message': 'لطفاً ابتدا وارد سیستم شوید'
+        }), 401
+        
     try:
         # Get PDF and Excel files
         pdf_files = request.files.getlist('pdf_files')

@@ -13,7 +13,20 @@
         <header>
             <h1 id="title"><i class="fas fa-search-location"></i> سیستم تشخیص JB</h1>
             <p id="subtitle">سیستم پیشرفته شناسایی و تطابق تگ‌های PDF و Excel</p>
-            <div class="topbar">
+                <div class="topbar">
+                                <div class="lang-switch">
+                    <button id="faBtn" class="lang-btn active">فارسی</button>
+                    <button id="enBtn" class="lang-btn">English</button>
+                </div>
+                <div class="user-info">
+                    <span id="username-display">{{ username }}</span>
+                    <a href="/logout" class="logout-btn" title="خروج از سیستم">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </a>
+                </div>
+                <div class="theme-switch">
+                    <button id="themeBtn" class="theme-btn"><i class="fas fa-moon"></i></button>
+                </div>
                 <div class="lang-switch">
                     <button id="faBtn" class="lang-btn active">فارسی</button>
                     <button id="enBtn" class="lang-btn">English</button>
