@@ -11,258 +11,410 @@
 <body>
     <div class="container">
         <header>
-            <h1><i class="fas fa-search-location"></i> JB Detection System</h1>
-            <p>Advanced PDF and Excel Tag Detection and Matching System</p>
+            <h1 id="title"><i class="fas fa-search-location"></i> سیستم تشخیص JB</h1>
+            <p id="subtitle">سیستم پیشرفته شناسایی و تطابق تگ‌های PDF و Excel</p>
+            <div class="topbar">
+                <div class="lang-switch">
+                    <button id="faBtn" class="lang-btn active">فارسی</button>
+                    <button id="enBtn" class="lang-btn">English</button>
+                </div>
+                <div class="theme-switch">
+                    <button id="themeBtn" class="theme-btn"><i class="fas fa-moon"></i></button>
+                </div>
+            </div>
         </header>
         
         <main>
-            <form id="processForm">
+            <div class="dashboard">
+                
                 <section class="upload-section">
-                    <h2><i class="fas fa-file-upload"></i> Upload Files</h2>
-                    <div class="upload-container">
-                        <div class="upload-box">
-                            <h3>PDF Files</h3>
-                            <input type="file" id="pdfInput" name="pdf_files" multiple accept=".pdf" required>
-                            <label for="pdfInput">
-                                <span class="icon"><i class="fas fa-file-pdf"></i></span>
-                                <span>Choose PDF files</span>
-                            </label>
-                            <div id="pdfList" class="file-list"></div>
+                    <h2 id="upload-title"><i class="fas fa-file-upload"></i> بارگذاری فایل‌ها</h2>
+                    <form id="processForm">
+                        <div class="upload-container">
+                            <div class="upload-box">
+                                <h3 id="pdf-title">فایل‌های PDF دیاگرام</h3>
+                                <input type="file" id="pdfInput" name="pdf_files" multiple accept=".pdf" required>
+                                <label for="pdfInput">
+                                    <span class="icon"><i class="fas fa-file-pdf"></i></span>
+                                    <span id="select-pdf">انتخاب فایل‌های PDF</span>
+                                </label>
+                                <div id="pdfList" class="file-list"></div>
+                            </div>
+                            <div class="upload-box">
+                                <h3 id="excel-title">فایل Excel اطلاعات کنترل</h3>
+                                <input type="file" id="excelInput" name="excel_file" accept=".xlsx,.xls" required>
+                                <label for="excelInput">
+                                    <span class="icon"><i class="fas fa-file-excel"></i></span>
+                                    <span id="select-excel">انتخاب فایل Excel</span>
+                                </label>
+                                <div id="excelName" class="file-list"></div>
+                            </div>
                         </div>
-
-                        <div class="upload-box">
-                            <h3>Excel File</h3>
-                            <input type="file" id="excelInput" name="excel_file" accept=".xlsx,.xls" required>
-                            <label for="excelInput">
-                                <span class="icon"><i class="fas fa-file-excel"></i></span>
-                                <span>Choose Excel file</span>
-                            </label>
-                            <div id="excelName" class="file-list"></div>
+                        <div class="settings-section">
+                            <h2 id="settings-title"><i class="fas fa-cog"></i> تنظیمات خروجی</h2>
+                            <div class="settings-container">
+                                <div class="setting-item">
+                                    <label for="outputPath" id="output-path-label">مسیر خروجی:</label>
+                                    <div class="input-with-icon">
+                                        <i class="fas fa-folder"></i>
+                                        <input type="text" id="outputPath" name="output_path" placeholder="مسیر پوشه خروجی را وارد کنید..." required>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="pattern-section">
+                            <h2 id="pattern-title"><i class="fas fa-magic"></i> یادگیری الگوها</h2>
+                            <div class="pattern-container">
+                                <p class="pattern-description" id="pattern-desc">
+                                    الگوهای سفارشی را برای افزایش دقت شناسایی وارد کنید. سیستم از مثال‌های شما یاد می‌گیرد.
+                                </p>
+                                <div class="pattern-inputs">
+                                    <div class="pattern-group">
+                                        <label for="jbExamples" id="jb-examples-label">مثال‌های JB:</label>
+                                        <input type="text" id="jbExamples" name="jb_examples" placeholder="JB001, JB-002, JB_003...">
+                                        <p class="hint" id="jb-examples-hint">مثال‌های جداشده با کاما از شناسه‌های JB</p>
+                                    </div>
+                                    <div class="pattern-group">
+                                        <label for="mcExamples" id="mc-examples-label">مثال‌های MC:</label>
+                                        <input type="text" id="mcExamples" name="mc_examples" placeholder="MC001, MC-002, MC_003...">
+                                        <p class="hint" id="mc-examples-hint">مثال‌های جداشده با کاما از شناسه‌های MC</p>
+                                    </div>
+                                    <div class="pattern-group">
+                                        <label for="spareExamples" id="spare-examples-label">مثال‌های SPARE:</label>
+                                        <input type="text" id="spareExamples" name="spare_examples" placeholder="SPARE, SPARE1, SPARE-1...">
+                                        <p class="hint" id="spare-examples-hint">مثال‌های جداشده با کاما از شناسه‌های SPARE</p>
+                                    </div>
+                                    <div class="pattern-group">
+                                        <label for="cableExamples" id="cable-examples-label">مثال‌های کابل:</label>
+                                        <input type="text" id="cableExamples" name="cable_examples" placeholder="12P, 24 PAIR, 36T, 48 CORE...">
+                                        <p class="hint" id="cable-examples-hint">مثال‌های جداشده با کاما از توصیف کابل‌ها</p>
+                                    </div>
+                                    <div class="pattern-divider"></div>
+                                    <div class="pattern-group">
+                                        <label for="wireColorRule" id="wire-color-rule-label">قاعده رنگ سیم:</label>
+                                        <input type="text" id="wireColorRule" name="wire_color_rule" placeholder="BK{number:02d}, WT{number:02d}">
+                                        <p class="hint" id="wire-color-rule-hint">قاعده تولید رنگ سیم با استفاده از {number}</p>
+                                    </div>
+                                    <div class="pattern-group">
+                                        <label for="scrNumberRule" id="scr-number-rule-label">قاعده شماره SCR:</label>
+                                        <input type="text" id="scrNumberRule" name="scr_number_rule" placeholder="{number*2-1} {number*2} SCR">
+                                        <p class="hint" id="scr-number-rule-hint">قاعده تولید شماره SCR با استفاده از {number}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="process-section">
+                            <button type="submit" id="processButton" class="process-btn">
+                                <i class="fas fa-play"></i> <span id="process-btn-text">شروع پردازش</span>
+                            </button>
+                        </div>
+                    </form>
+                </section>
+                <section class="diagram-preview-section">
+                    <h2 id="preview-title"><i class="fas fa-image"></i> پیش‌نمایش دیاگرام‌های آپلود شده</h2>
+                    <div id="diagramPreview" class="diagram-preview-container">
+                        <p id="no-files-selected">هنوز فایلی انتخاب نشده است.</p>
+                    </div>
+                </section>
+                <section class="results-section">
+                    <h2 id="results-title"><i class="fas fa-chart-bar"></i> نتایج پردازش</h2>
+                    <div class="results-container">
+                        <div class="progress-box">
+                            <h3 id="progress-title">پیشرفت</h3>
+                            <div class="progress-bar">
+                                <div class="progress" id="progressBar" style="width: 0%;"></div>
+                            </div>
+                        </div>
+                        <div class="stats-container">
+                            <h3 id="stats-title">آمار</h3>
+                            <div class="stats-grid">
+                                <div class="stat-item">
+                                    <span class="stat-label" id="unmatched-tags-label">تگ‌های بدون تطابق</span>
+                                    <span class="stat-value" id="totalTags">0</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label" id="pages-processed-label">صفحات پردازش‌شده</span>
+                                    <span class="stat-value" id="pagesProcessed">0</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="log-box">
+                            <h3 id="log-title">گزارش پردازش</h3>
+                            <pre id="logOutput" class="log-content">آماده پردازش فایل‌ها...</pre>
                         </div>
                     </div>
                 </section>
-
-                <section class="settings-section">
-                    <h2><i class="fas fa-cog"></i> Output Settings</h2>
-                    <div class="settings-container">
-                        <div class="setting-item">
-                            <label for="outputPath">Output Directory:</label>
-                            <div class="input-with-icon">
-                                <i class="fas fa-folder"></i>
-                                <input type="text" id="outputPath" name="output_path" placeholder="Enter output directory path..." required>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
-                <section class="pattern-section">
-                    <h2><i class="fas fa-magic"></i> Pattern Learning</h2>
-                    <div class="pattern-container">
-                        <p class="pattern-description">
-                            Define custom patterns to improve detection accuracy. The system will learn from your examples.
-                        </p>
-                        
-                        <div class="pattern-inputs">
-                            <div class="pattern-group">
-                                <label for="jbExamples">JB Examples:</label>
-                                <input type="text" id="jbExamples" name="jb_examples" placeholder="JB001, JB-002, JB_003...">
-                                <p class="hint">Comma-separated examples of JB identifiers in your documents</p>
-                            </div>
-                            
-                            <div class="pattern-group">
-                                <label for="mcExamples">MC Examples:</label>
-                                <input type="text" id="mcExamples" name="mc_examples" placeholder="MC001, MC-002, MC_003...">
-                                <p class="hint">Comma-separated examples of MC identifiers in your documents</p>
-                            </div>
-                            
-                            <div class="pattern-group">
-                                <label for="spareExamples">SPARE Examples:</label>
-                                <input type="text" id="spareExamples" name="spare_examples" placeholder="SPARE, SPARE1, SPARE-1...">
-                                <p class="hint">Comma-separated examples of SPARE identifiers in your documents</p>
-                            </div>
-                            
-                            <div class="pattern-group">
-                                <label for="cableExamples">Cable Examples:</label>
-                                <input type="text" id="cableExamples" name="cable_examples" placeholder="12P, 24 PAIR, 36T, 48 CORE...">
-                                <p class="hint">Comma-separated examples of cable descriptions in your documents</p>
-                            </div>
-                            
-                            <div class="pattern-divider"></div>
-                            
-                            <div class="pattern-group">
-                                <label for="wireColorRule">Wire Color Rule:</label>
-                                <input type="text" id="wireColorRule" name="wire_color_rule" placeholder="BK{number:02d}, WT{number:02d}">
-                                <p class="hint">Rule for generating wire colors. Use {number} as placeholder for tag number. Example: "BK{number:02d}, WT{number:02d}" generates BK01, WT01 for tag #1</p>
-                            </div>
-                            
-                            <div class="pattern-group">
-                                <label for="scrNumberRule">SCR Number Rule:</label>
-                                <input type="text" id="scrNumberRule" name="scr_number_rule" placeholder="{number*2-1} {number*2} SCR">
-                                <p class="hint">Rule for generating SCR numbers. Use {number} as placeholder for tag number. Example: "{number*2-1} {number*2} SCR" generates "1 2 SCR" for tag #1</p>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
-                <section class="process-section">
-                    <button type="submit" id="processButton" class="process-btn">
-                        <i class="fas fa-play"></i> Start Processing
-                    </button>
-                </section>
-            </form>
-
-            <section class="results-section">
-                <h2><i class="fas fa-chart-bar"></i> Processing Results</h2>
-                <div class="results-container">
-                    <div class="progress-box">
-                        <h3>Progress</h3>
-                        <div class="progress-bar">
-                            <div class="progress" id="progressBar" style="width: 0%;"></div>
-                        </div>
-                    </div>
-                    
-                    <div class="stats-container">
-                        <h3>Statistics</h3>
-                        <div class="stats-grid">
-                            <div class="stat-item">
-                                <span class="stat-label">Unmatched Tags</span>
-                                <span class="stat-value" id="totalTags">0</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-label">Pages Processed</span>
-                                <span class="stat-value" id="pagesProcessed">0</span>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="log-box">
-                        <h3>Process Log</h3>
-                        <pre id="logOutput" class="log-content">Ready to process files...</pre>
-                    </div>
-                </div>
-            </section>
+            </div>
         </main>
 
         <footer>
-            <p>&copy; 2025 JB Detection System. All rights reserved.</p>
+            <p id="footer-text">&copy; 2025 JB Detection System. All rights reserved.</p>
         </footer>
     </div>
 
     <script>
+        // Translation object
+        const translations = {
+            'fa': {
+                'title': '<i class="fas fa-search-location"></i> JB Detection System',
+                'subtitle': 'سیستم پیشرفته شناسایی و تطابق تگ‌های PDF و Excel',
+                'upload-title': '<i class="fas fa-file-upload"></i> بارگذاری فایل‌ها',
+                'pdf-title': 'فایل‌های PDF دیاگرام',
+                'select-pdf': 'انتخاب فایل‌های PDF',
+                'excel-title': 'فایل Excel اطلاعات کنترل',
+                'select-excel': 'انتخاب فایل Excel',
+                'settings-title': '<i class="fas fa-cog"></i> تنظیمات خروجی',
+                'output-path-label': 'مسیر خروجی:',
+                'output-path-placeholder': 'مسیر پوشه خروجی را وارد کنید...',
+                'pattern-title': '<i class="fas fa-magic"></i> یادگیری الگوها',
+                'pattern-desc': 'الگوهای سفارشی را برای افزایش دقت شناسایی وارد کنید. سیستم از مثال‌های شما یاد می‌گیرد.',
+                'jb-examples-label': 'مثال‌های JB:',
+                'jb-examples-hint': 'مثال‌های جداشده با کاما از شناسه‌های JB',
+                'mc-examples-label': 'مثال‌های MC:',
+                'mc-examples-hint': 'مثال‌های جداشده با کاما از شناسه‌های MC',
+                'spare-examples-label': 'مثال‌های SPARE:',
+                'spare-examples-hint': 'مثال‌های جداشده با کاما از شناسه‌های SPARE',
+                'cable-examples-label': 'مثال‌های کابل:',
+                'cable-examples-hint': 'مثال‌های جداشده با کاما از توصیف کابل‌ها',
+                'wire-color-rule-label': 'قاعده رنگ سیم:',
+                'wire-color-rule-hint': 'قاعده تولید رنگ سیم با استفاده از {number}',
+                'scr-number-rule-label': 'قاعده شماره SCR:',
+                'scr-number-rule-hint': 'قاعده تولید شماره SCR با استفاده از {number}',
+                'process-btn-text': 'شروع پردازش',
+                'preview-title': '<i class="fas fa-image"></i> پیش‌نمایش دیاگرام‌های آپلود شده',
+                'no-files-selected': 'هنوز فایلی انتخاب نشده است.',
+                'results-title': '<i class="fas fa-chart-bar"></i> نتایج پردازش',
+                'progress-title': 'پیشرفت',
+                'stats-title': 'آمار',
+                'unmatched-tags-label': 'تگ‌های بدون تطابق',
+                'pages-processed-label': 'صفحات پردازش‌شده',
+                'log-title': 'گزارش پردازش',
+                'log-ready': 'آماده پردازش فایل‌ها...',
+                'processing': '<i class="fas fa-spinner fa-spin"></i> در حال پردازش...',
+                'processing-started': 'پردازش آغاز شد...\n',
+                'processing-success': '✅ پردازش با موفقیت انجام شد!\n\n',
+                'output-excel': '📊 فایل خروجی Excel: ',
+                'unmatched-excel-tags': '📋 تگ‌های بدون تطابق در Excel:\n',
+                'unmatched-pdf-tags': '\n📋 تگ‌های بدون تطابق در PDF:\n',
+                'no-unmatched-tags': '   هیچ تگ بدون تطابق\n',
+                'error': '❌ خطا: ',
+                'no-file-selected': 'فایلی انتخاب نشده',
+                'footer-text': '&copy; 2025 سیستم تشخیص JB. تمامی حقوق محفوظ است.'
+            },
+            'en': {
+                'title': '<i class="fas fa-search-location"></i> JB Detection System',
+                'subtitle': 'Advanced PDF and Excel Tag Detection and Matching System',
+                'upload-title': '<i class="fas fa-file-upload"></i> Upload Files',
+                'pdf-title': 'PDF Diagram Files',
+                'select-pdf': 'Select PDF Files',
+                'excel-title': 'Control Information Excel File',
+                'select-excel': 'Select Excel File',
+                'settings-title': '<i class="fas fa-cog"></i> Output Settings',
+                'output-path-label': 'Output Path:',
+                'output-path-placeholder': 'Enter output folder path...',
+                'pattern-title': '<i class="fas fa-magic"></i> Pattern Learning',
+                'pattern-desc': 'Enter custom patterns to improve detection accuracy. The system learns from your examples.',
+                'jb-examples-label': 'JB Examples:',
+                'jb-examples-hint': 'Comma-separated examples of JB identifiers',
+                'mc-examples-label': 'MC Examples:',
+                'mc-examples-hint': 'Comma-separated examples of MC identifiers',
+                'spare-examples-label': 'SPARE Examples:',
+                'spare-examples-hint': 'Comma-separated examples of SPARE identifiers',
+                'cable-examples-label': 'Cable Examples:',
+                'cable-examples-hint': 'Comma-separated examples of cable descriptions',
+                'wire-color-rule-label': 'Wire Color Rule:',
+                'wire-color-rule-hint': 'Rule for generating wire colors using {number}',
+                'scr-number-rule-label': 'SCR Number Rule:',
+                'scr-number-rule-hint': 'Rule for generating SCR numbers using {number}',
+                'process-btn-text': 'Start Processing',
+                'preview-title': '<i class="fas fa-image"></i> Uploaded Diagrams Preview',
+                'no-files-selected': 'No file selected yet.',
+                'results-title': '<i class="fas fa-chart-bar"></i> Processing Results',
+                'progress-title': 'Progress',
+                'stats-title': 'Statistics',
+                'unmatched-tags-label': 'Unmatched Tags',
+                'pages-processed-label': 'Pages Processed',
+                'log-title': 'Processing Log',
+                'log-ready': 'Ready to process files...',
+                'processing': '<i class="fas fa-spinner fa-spin"></i> Processing...',
+                'processing-started': 'Processing started...\n',
+                'processing-success': '✅ Processing completed successfully!\n\n',
+                'output-excel': '📊 Output Excel saved to: ',
+                'unmatched-excel-tags': '📋 Unmatched Excel Tags:\n',
+                'unmatched-pdf-tags': '\n📋 Unmatched PDF Tags:\n',
+                'no-unmatched-tags': '   No unmatched tags\n',
+                'error': '❌ Error: ',
+                'no-file-selected': 'No file selected',
+                'footer-text': '&copy; 2025 JB Detection System. All rights reserved.'
+            }
+        };
+
+        // Theme and language switch logic
+        const themeBtn = document.getElementById('themeBtn');
+        const faBtn = document.getElementById('faBtn');
+        const enBtn = document.getElementById('enBtn');
+        let currentTheme = localStorage.getItem('theme') || 'light';
+        let currentLang = localStorage.getItem('lang') || 'fa';
+
+        function setTheme(theme) {
+            document.body.classList.remove('light', 'dark');
+            document.body.classList.add(theme);
+            themeBtn.innerHTML = theme === 'dark' ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
+            localStorage.setItem('theme', theme);
+        }
+
+        function setLang(lang) {
+            faBtn.classList.toggle('active', lang === 'fa');
+            enBtn.classList.toggle('active', lang === 'en');
+            document.documentElement.dir = lang === 'fa' ? 'rtl' : 'ltr';
+            currentLang = lang;
+
+            // Update all text elements
+            document.getElementById('title').innerHTML = translations[lang]['title'];
+            document.getElementById('subtitle').innerHTML = translations[lang]['subtitle'];
+            document.getElementById('upload-title').innerHTML = translations[lang]['upload-title'];
+            document.getElementById('pdf-title').innerHTML = translations[lang]['pdf-title'];
+            document.getElementById('select-pdf').innerHTML = translations[lang]['select-pdf'];
+            document.getElementById('excel-title').innerHTML = translations[lang]['excel-title'];
+            document.getElementById('select-excel').innerHTML = translations[lang]['select-excel'];
+            document.getElementById('settings-title').innerHTML = translations[lang]['settings-title'];
+            document.getElementById('output-path-label').innerHTML = translations[lang]['output-path-label'];
+            document.getElementById('outputPath').placeholder = translations[lang]['output-path-placeholder'];
+            document.getElementById('pattern-title').innerHTML = translations[lang]['pattern-title'];
+            document.getElementById('pattern-desc').innerHTML = translations[lang]['pattern-desc'];
+            document.getElementById('jb-examples-label').innerHTML = translations[lang]['jb-examples-label'];
+            document.getElementById('jb-examples-hint').innerHTML = translations[lang]['jb-examples-hint'];
+            document.getElementById('mc-examples-label').innerHTML = translations[lang]['mc-examples-label'];
+            document.getElementById('mc-examples-hint').innerHTML = translations[lang]['mc-examples-hint'];
+            document.getElementById('spare-examples-label').innerHTML = translations[lang]['spare-examples-label'];
+            document.getElementById('spare-examples-hint').innerHTML = translations[lang]['spare-examples-hint'];
+            document.getElementById('cable-examples-label').innerHTML = translations[lang]['cable-examples-label'];
+            document.getElementById('cable-examples-hint').innerHTML = translations[lang]['cable-examples-hint'];
+            document.getElementById('wire-color-rule-label').innerHTML = translations[lang]['wire-color-rule-label'];
+            document.getElementById('wire-color-rule-hint').innerHTML = translations[lang]['wire-color-rule-hint'];
+            document.getElementById('scr-number-rule-label').innerHTML = translations[lang]['scr-number-rule-label'];
+            document.getElementById('scr-number-rule-hint').innerHTML = translations[lang]['scr-number-rule-hint'];
+            document.getElementById('process-btn-text').innerHTML = translations[lang]['process-btn-text'];
+            document.getElementById('preview-title').innerHTML = translations[lang]['preview-title'];
+            document.getElementById('no-files-selected').innerHTML = translations[lang]['no-files-selected'];
+            document.getElementById('results-title').innerHTML = translations[lang]['results-title'];
+            document.getElementById('progress-title').innerHTML = translations[lang]['progress-title'];
+            document.getElementById('stats-title').innerHTML = translations[lang]['stats-title'];
+            document.getElementById('unmatched-tags-label').innerHTML = translations[lang]['unmatched-tags-label'];
+            document.getElementById('pages-processed-label').innerHTML = translations[lang]['pages-processed-label'];
+            document.getElementById('log-title').innerHTML = translations[lang]['log-title'];
+            document.getElementById('logOutput').textContent = translations[lang]['log-ready'];
+            document.getElementById('footer-text').innerHTML = translations[lang]['footer-text'];
+            
+            localStorage.setItem('lang', lang);
+        }
+
+        themeBtn.addEventListener('click', () => {
+            currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+            setTheme(currentTheme);
+        });
+
+        faBtn.addEventListener('click', () => {
+            setLang('fa');
+        });
+
+        enBtn.addEventListener('click', () => {
+            setLang('en');
+        });
+
+        // Initialize theme and language
+        setTheme(currentTheme);
+        setLang(currentLang);
+
+        // Existing form and file handlers
         document.getElementById('processForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            
             const formData = new FormData();
-            
             // Add PDF files
             const pdfFiles = document.getElementById('pdfInput').files;
             for (let i = 0; i < pdfFiles.length; i++) {
                 formData.append('pdf_files', pdfFiles[i]);
             }
-            
             // Add Excel file
             formData.append('excel_file', document.getElementById('excelInput').files[0]);
-            
             // Add output path
             formData.append('output_path', document.getElementById('outputPath').value);
-            
             // Create one-shot input text for pattern learning
             let oneShotInput = '';
-            
             const jbExamples = document.getElementById('jbExamples').value.trim();
             if (jbExamples) {
                 oneShotInput += `JB_EXAMPLES: ${jbExamples}\n`;
             }
-            
             const mcExamples = document.getElementById('mcExamples').value.trim();
             if (mcExamples) {
                 oneShotInput += `MC_EXAMPLES: ${mcExamples}\n`;
             }
-            
             const spareExamples = document.getElementById('spareExamples').value.trim();
             if (spareExamples) {
                 oneShotInput += `SPARE_EXAMPLES: ${spareExamples}\n`;
             }
-            
             const cableExamples = document.getElementById('cableExamples').value.trim();
             if (cableExamples) {
                 oneShotInput += `CABLE_EXAMPLES: ${cableExamples}\n`;
             }
-            
             const wireColorRule = document.getElementById('wireColorRule').value.trim();
             if (wireColorRule) {
                 oneShotInput += `WIRE_COLOR_RULE: ${wireColorRule}\n`;
             }
-            
             const scrNumberRule = document.getElementById('scrNumberRule').value.trim();
             if (scrNumberRule) {
                 oneShotInput += `SCR_NUMBER_RULE: ${scrNumberRule}\n`;
             }
-            
             formData.append('one_shot_input', oneShotInput);
             formData.append('enable_pattern_learning', 'true');
-            
             // Update UI to show processing state
             document.getElementById('processButton').disabled = true;
-            document.getElementById('processButton').innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
-            document.getElementById('logOutput').textContent = 'Processing started...\n';
+            document.getElementById('processButton').innerHTML = translations[currentLang]['processing'];
+            document.getElementById('logOutput').textContent = translations[currentLang]['processing-started'];
             document.getElementById('progressBar').style.width = '10%';
-            
             try {
                 const response = await fetch('/process', {
                     method: 'POST',
                     body: formData
                 });
-                
                 document.getElementById('progressBar').style.width = '70%';
-                
                 const result = await response.json();
                 document.getElementById('progressBar').style.width = '100%';
-                
                 if (result.status === 'success') {
-                    // Update statistics
-                    document.getElementById('totalTags').textContent = 
-                        (result.details?.results?.unmatched_pdf_tags?.length || 0) + 
-                        (result.details?.results?.unmatched_excel_tags?.length || 0);
-                    document.getElementById('pagesProcessed').textContent = 
-                        result.details?.output_files?.annotated_pdfs?.length || 0;
-                    
-                    // Update log
-                    let logContent = '✅ Processing completed successfully!\n\n';
-                    logContent += `📊 Output Excel saved to: ${result.details?.output_files?.excel_path || 'N/A'}\n\n`;
-                    logContent += '📋 Unmatched Excel Tags:\n';
-                    
+                    document.getElementById('totalTags').textContent = (result.details?.results?.unmatched_pdf_tags?.length || 0) + (result.details?.results?.unmatched_excel_tags?.length || 0);
+                    document.getElementById('pagesProcessed').textContent = result.details?.output_files?.annotated_pdfs?.length || 0;
+                    let logContent = translations[currentLang]['processing-success'];
+                    logContent += translations[currentLang]['output-excel'] + `${result.details?.output_files?.excel_path || 'N/A'}\n\n`;
+                    logContent += translations[currentLang]['unmatched-excel-tags'];
                     const unmatchedExcelTags = result.details?.results?.unmatched_excel_tags || [];
                     if (unmatchedExcelTags.length === 0) {
-                        logContent += '   No unmatched Excel tags\n';
+                        logContent += translations[currentLang]['no-unmatched-tags'];
                     } else {
                         unmatchedExcelTags.forEach(tag => {
                             logContent += `   • ${tag}\n`;
                         });
                     }
-                    
-                    logContent += '\n📋 Unmatched PDF Tags:\n';
+                    logContent += translations[currentLang]['unmatched-pdf-tags'];
                     const unmatchedPdfTags = result.details?.results?.unmatched_pdf_tags || [];
                     if (unmatchedPdfTags.length === 0) {
-                        logContent += '   No unmatched PDF tags\n';
+                        logContent += translations[currentLang]['no-unmatched-tags'];
                     } else {
                         unmatchedPdfTags.forEach(tag => {
                             logContent += `   • ${tag}\n`;
                         });
                     }
-                    
                     document.getElementById('logOutput').textContent = logContent;
                 } else {
-                    document.getElementById('logOutput').textContent = 
-                        `❌ Error: ${result.message}\n\n${JSON.stringify(result.details || {}, null, 2)}`;
+                    document.getElementById('logOutput').textContent = translations[currentLang]['error'] + 
+                        `${result.message}\n\n${JSON.stringify(result.details || {}, null, 2)}`;
                 }
             } catch (error) {
                 document.getElementById('progressBar').style.width = '100%';
-                document.getElementById('logOutput').textContent = 
-                    `❌ Error: ${error.message}\n`;
+                document.getElementById('logOutput').textContent = translations[currentLang]['error'] + `${error.message}\n`;
             } finally {
                 document.getElementById('processButton').disabled = false;
-                document.getElementById('processButton').innerHTML = '<i class="fas fa-play"></i> Start Processing';
+                document.getElementById('processButton').innerHTML = '<i class="fas fa-play"></i> <span id="process-btn-text">' + 
+                    translations[currentLang]['process-btn-text'] + '</span>';
             }
         });
 
@@ -270,7 +422,8 @@
         document.getElementById('pdfInput').addEventListener('change', (e) => {
             const fileList = document.getElementById('pdfList');
             fileList.innerHTML = '';
-            
+            const diagramPreview = document.getElementById('diagramPreview');
+            diagramPreview.innerHTML = '';
             if (e.target.files.length > 0) {
                 const files = Array.from(e.target.files);
                 files.forEach(file => {
@@ -278,9 +431,15 @@
                     fileItem.className = 'file-item';
                     fileItem.innerHTML = `<i class="fas fa-file-pdf"></i> ${file.name}`;
                     fileList.appendChild(fileItem);
+                    // PDF preview (icon + name)
+                    const previewItem = document.createElement('div');
+                    previewItem.className = 'diagram-preview-item';
+                    previewItem.innerHTML = `<i class='fas fa-file-pdf fa-2x' style='color:#e74c3c'></i> <span>${file.name}</span>`;
+                    diagramPreview.appendChild(previewItem);
                 });
             } else {
-                fileList.textContent = 'No files selected';
+                fileList.textContent = translations[currentLang]['no-file-selected'];
+                diagramPreview.innerHTML = '<p>' + translations[currentLang]['no-files-selected'] + '</p>';
             }
         });
 
@@ -290,8 +449,89 @@
                 const fileName = e.target.files[0].name;
                 excelName.innerHTML = `<div class="file-item"><i class="fas fa-file-excel"></i> ${fileName}</div>`;
             } else {
-                excelName.textContent = 'No file selected';
+                excelName.textContent = translations[currentLang]['no-file-selected'];
             }
+        });
+                // Animation counter function
+        function animateCounter(elementId, targetValue) {
+            const element = document.getElementById(elementId);
+            const startValue = parseInt(element.textContent) || 0;
+            const duration = 1500; // ms
+            const stepTime = 50;
+            const steps = duration / stepTime;
+            const increment = (targetValue - startValue) / steps;
+            
+            let currentValue = startValue;
+            let currentStep = 0;
+            
+            const counterInterval = setInterval(() => {
+                currentStep++;
+                currentValue += increment;
+                
+                if (currentStep >= steps) {
+                    clearInterval(counterInterval);
+                    currentValue = targetValue;
+                }
+                
+                element.textContent = Math.round(currentValue);
+                
+                // Add a pulse animation when the value changes
+                element.style.animation = 'none';
+                setTimeout(() => {
+                    element.style.animation = 'pulse 0.5s';
+                }, 10);
+                
+            }, stepTime);
+        }
+        
+        // Add ripple effect to buttons and clickable elements
+        function createRipple(event, element) {
+            const circle = document.createElement('span');
+            const diameter = Math.max(element.clientWidth, element.clientHeight);
+            const radius = diameter / 2;
+            
+            const rect = element.getBoundingClientRect();
+            
+            circle.style.width = circle.style.height = `${diameter}px`;
+            circle.style.left = `${event.clientX - rect.left - radius}px`;
+            circle.style.top = `${event.clientY - rect.top - radius}px`;
+            circle.classList.add('ripple');
+            
+            const ripple = element.getElementsByClassName('ripple')[0];
+            if (ripple) {
+                ripple.remove();
+            }
+            
+            element.appendChild(circle);
+            
+            setTimeout(() => {
+                circle.remove();
+            }, 600);
+        }
+        
+        // Add ripple effect to buttons
+        document.querySelectorAll('button, label[for="pdfInput"], label[for="excelInput"]').forEach(button => {
+            button.addEventListener('click', function(e) {
+                createRipple(e, this);
+            });
+        });
+        
+        // Add smooth transition when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            document.body.style.transition = 'background-color 0.5s ease, color 0.5s ease';
+            setTimeout(() => {
+                document.querySelectorAll('*').forEach(el => {
+                    if (el !== document.body) {
+                        el.style.transition = 'inherit';
+                    }
+                });
+            }, 100);
+            
+            // Add animation effect
+            document.body.style.animation = 'none';
+            setTimeout(() => {
+                document.body.style.animation = '';
+            }, 10);
         });
     </script>
 </body>
