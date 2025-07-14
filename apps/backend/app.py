@@ -1,8 +1,9 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session
-from DataAnalysisModule import TagJBExtractor
 import os
 import tempfile
 import logging
+import platform
+from pathlib import Path
 
 # تنظیم لاگینگ
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -23,14 +24,93 @@ app.secret_key = 'jb_detection_system_secret_key'
 UPLOAD_FOLDER = tempfile.gettempdir()
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# Default tesseract path
-DEFAULT_TESSERACT_PATH = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+# تنظیم مسیر پیش‌فرض Tesseract بر اساس سیستم عامل
+system = platform.system().lower()
+if system == 'windows':
+    DEFAULT_TESSERACT_PATH = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+elif system == 'linux':
+    # مسیرهای معمول Tesseract در لینوکس
+    linux_tesseract_paths = [
+        '/usr/bin/tesseract',
+        '/usr/local/bin/tesseract',
+        '/opt/tesseract/bin/tesseract'
+    ]
+    
+    DEFAULT_TESSERACT_PATH = None
+    for path in linux_tesseract_paths:
+        if os.path.exists(path):
+            DEFAULT_TESSERACT_PATH = path
+            break
+    
+    if DEFAULT_TESSERACT_PATH is None:
+        DEFAULT_TESSERACT_PATH = '/usr/bin/tesseract'  # مسیر پیش‌فرض اگر پیدا نشد
+elif system == 'darwin':  # macOS
+    DEFAULT_TESSERACT_PATH = '/usr/local/bin/tesseract'
+else:
+    DEFAULT_TESSERACT_PATH = 'tesseract'  # مسیر پیش‌فرض برای سایر سیستم‌های عامل
 
 # کاربران مجاز (در یک پروژه واقعی این اطلاعات باید در دیتابیس ذخیره شوند)
 VALID_USERS = {
     'admin': 'admin123',
     'user': 'user123'
 }
+
+def get_platform_specific_extractor(tesseract_path=None, excel_path=None):
+    """
+    بر اساس سیستم عامل، کلاس مناسب استخراج کننده را برمی‌گرداند
+    """
+    system = platform.system().lower()
+    
+    if system == 'linux':
+        try:
+            from LinuxTagJBExtractor import LinuxTagJBExtractor
+            logger.info("استفاده از استخراج کننده مخصوص لینوکس با پشتیبانی از GPU")
+            return LinuxTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
+        except ImportError as e:
+            logger.warning(f"خطا در بارگذاری LinuxTagJBExtractor: {e}")
+            from DataAnalysisModule import TagJBExtractor
+            logger.info("استفاده از استخراج کننده عمومی")
+            return TagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
+    
+    elif system == 'windows':
+        try:
+            # در صورتی که پیاده‌سازی مخصوص ویندوز داشته باشید، می‌توانید اینجا import کنید
+            # from WindowsTagJBExtractor import WindowsTagJBExtractor
+            # logger.info("استفاده از استخراج کننده مخصوص ویندوز")
+            # return WindowsTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
+            
+            # فعلاً از پیاده‌سازی عمومی استفاده می‌کنیم
+            from DataAnalysisModule import TagJBExtractor
+            logger.info("استفاده از استخراج کننده عمومی در ویندوز")
+            return TagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
+        except ImportError as e:
+            logger.warning(f"خطا در بارگذاری استخراج کننده ویندوز: {e}")
+            from DataAnalysisModule import TagJBExtractor
+            logger.info("استفاده از استخراج کننده عمومی")
+            return TagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
+    
+    elif system == 'darwin':  # macOS
+        try:
+            # در صورتی که پیاده‌سازی مخصوص macOS داشته باشید، می‌توانید اینجا import کنید
+            # from MacTagJBExtractor import MacTagJBExtractor
+            # logger.info("استفاده از استخراج کننده مخصوص macOS")
+            # return MacTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
+            
+            # فعلاً از پیاده‌سازی عمومی استفاده می‌کنیم
+            from DataAnalysisModule import TagJBExtractor
+            logger.info("استفاده از استخراج کننده عمومی در macOS")
+            return TagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
+        except ImportError as e:
+            logger.warning(f"خطا در بارگذاری استخراج کننده macOS: {e}")
+            from DataAnalysisModule import TagJBExtractor
+            logger.info("استفاده از استخراج کننده عمومی")
+            return TagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
+    
+    else:
+        # سیستم عامل ناشناخته، از پیاده‌سازی عمومی استفاده می‌کنیم
+        from DataAnalysisModule import TagJBExtractor
+        logger.info(f"سیستم عامل ناشناخته '{system}'، استفاده از استخراج کننده عمومی")
+        return TagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
 
 @app.route('/')
 def home():
@@ -66,6 +146,45 @@ def dashboard():
     # نمایش صفحه داشبورد
     return render_template('JB.html', username=session['username'])
 
+@app.route('/system-info')
+def system_info():
+    """
+    ارائه اطلاعات سیستم و GPU به کاربر
+    """
+    if 'username' not in session:
+        return jsonify({
+            'status': 'error',
+            'message': 'لطفاً ابتدا وارد سیستم شوید'
+        }), 401
+    
+    system_info = {
+        'platform': platform.system(),
+        'platform_version': platform.version(),
+        'processor': platform.processor(),
+        'python_version': platform.python_version(),
+        'tesseract_path': DEFAULT_TESSERACT_PATH
+    }
+    
+    # بررسی وضعیت GPU
+    try:
+        extractor = get_platform_specific_extractor(tesseract_path=DEFAULT_TESSERACT_PATH)
+        
+        # اگر استخراج کننده مخصوص لینوکس باشد، اطلاعات GPU را اضافه می‌کنیم
+        if hasattr(extractor, 'gpu_available'):
+            system_info['gpu_available'] = extractor.gpu_available
+            if extractor.gpu_available:
+                system_info['gpu_type'] = extractor.gpu_type
+                if extractor.gpu_type == "NVIDIA" and hasattr(extractor, 'cuda_device_count'):
+                    system_info['cuda_device_count'] = extractor.cuda_device_count
+    except Exception as e:
+        logger.error(f"خطا در دریافت اطلاعات GPU: {e}")
+        system_info['gpu_error'] = str(e)
+    
+    return jsonify({
+        'status': 'success',
+        'system_info': system_info
+    })
+
 @app.route('/process', methods=['POST'])
 def process_files():
     # بررسی اینکه آیا کاربر وارد شده است یا خیر
@@ -80,6 +199,9 @@ def process_files():
         pdf_files = request.files.getlist('pdf_files')
         excel_file = request.files['excel_file']
         output_dir = request.form.get('output_path', '')
+        
+        # گزینه استفاده از GPU (اگر در دسترس باشد)
+        use_gpu = request.form.get('use_gpu', 'false').lower() == 'true'
         
         # Ensure output directory exists
         if not os.path.exists(output_dir):
@@ -102,9 +224,20 @@ def process_files():
         output_pdf_dir = os.path.join(output_dir, 'annotated_pdfs')
         os.makedirs(output_pdf_dir, exist_ok=True)
         
-        # Initialize TagJBExtractor
-        logger.info("Initializing TagJBExtractor...")
-        extractor = TagJBExtractor(tesseract_path=DEFAULT_TESSERACT_PATH)
+        # Initialize platform-specific extractor
+        logger.info("Initializing platform-specific extractor...")
+        extractor = get_platform_specific_extractor(tesseract_path=DEFAULT_TESSERACT_PATH)
+        
+        # نمایش اطلاعات GPU اگر در دسترس باشد
+        gpu_info = {}
+        if hasattr(extractor, 'gpu_available'):
+            gpu_info['gpu_available'] = extractor.gpu_available
+            if extractor.gpu_available:
+                gpu_info['gpu_type'] = extractor.gpu_type
+                if use_gpu:
+                    logger.info(f"پردازش با استفاده از {extractor.gpu_type} GPU فعال شد")
+                else:
+                    logger.info("پردازش GPU غیرفعال شده است (توسط کاربر)")
         
         # Process files with annotated PDFs
         logger.info("Starting PDF and Excel processing...")
@@ -143,6 +276,10 @@ def process_files():
                     'unmatched_pdf_tags': unmatched_pdf_tags,
                     'unmatched_excel_count': len(unmatched_excel_tags),
                     'unmatched_pdf_count': len(unmatched_pdf_tags)
+                },
+                'system': {
+                    'platform': platform.system(),
+                    'gpu_info': gpu_info
                 }
             }
         }
@@ -166,8 +303,22 @@ if __name__ == '__main__':
     print("=" * 50)
     print("JB Detection System")
     print("=" * 50)
-    print(f"Tesseract Path: {DEFAULT_TESSERACT_PATH}")
-    print("Starting server...")
+    print(f"سیستم عامل: {platform.system()}")
+    print(f"مسیر Tesseract: {DEFAULT_TESSERACT_PATH}")
+    
+    # بررسی وضعیت GPU
+    try:
+        extractor = get_platform_specific_extractor(tesseract_path=DEFAULT_TESSERACT_PATH)
+        if hasattr(extractor, 'gpu_available') and extractor.gpu_available:
+            print(f"GPU در دسترس: {extractor.gpu_type}")
+            if extractor.gpu_type == "NVIDIA":
+                print(f"تعداد دستگاه‌های CUDA: {extractor.cuda_device_count}")
+        else:
+            print("GPU در دسترس نیست، از پردازش CPU استفاده می‌شود")
+    except Exception as e:
+        print(f"خطا در بررسی وضعیت GPU: {e}")
+    
+    print("در حال راه‌اندازی سرور...")
     print("=" * 50)
     
     # Run the Flask app
