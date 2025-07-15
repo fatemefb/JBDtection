@@ -1,0 +1,7 @@
+# Windows-specific requirements
+# Base requirements
+-r requirements.txt
+
+# Windows-specific packages
+pywin32>=300
+wincertstore>=0.2

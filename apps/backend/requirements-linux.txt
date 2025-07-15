@@ -1,0 +1,16 @@
+# Linux-specific requirements
+# Base requirements
+-r requirements.txt
+
+# Replace OpenCV with headless version for Linux servers
+opencv-python-headless>=4.5.0
+
+# GPU support packages (optional)
+tensorflow>=2.10.0; platform_system=="Linux"  # For GPU acceleration
+torch>=2.0.0; platform_system=="Linux"  # PyTorch for GPU acceleration
+torchvision>=0.15.0; platform_system=="Linux"
+torchaudio>=2.0.0; platform_system=="Linux"
+
+# Linux-specific optimizations
+psutil>=5.9.0  # For system monitoring
+gunicorn>=20.0.0  # Production WSGI server
