@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y \
 # Install numpy (needed before building OpenCV)
 RUN pip3 install numpy
 
-# Clone and build OpenCV with CUDA support
+# Clone and build OpenCV with CUDA support but without cuDNN
 WORKDIR /opt
 RUN git clone https://github.com/opencv/opencv.git && \
     git clone https://github.com/opencv/opencv_contrib.git && \
@@ -29,10 +29,15 @@ RUN cmake -D CMAKE_BUILD_TYPE=RELEASE \
           -D CMAKE_INSTALL_PREFIX=/usr/local \
           -D OPENCV_EXTRA_MODULES_PATH=/opt/opencv_contrib/modules \
           -D WITH_CUDA=ON \
+          -D WITH_CUDNN=OFF \
+          -D OPENCV_DNN_CUDA=OFF \
           -D ENABLE_FAST_MATH=1 \
           -D CUDA_FAST_MATH=1 \
           -D WITH_CUBLAS=ON \
-          -D OPENCV_DNN_CUDA=ON \
+          -D WITH_GTK=ON \
+          -D BUILD_opencv_python3=ON \
+          -D PYTHON_EXECUTABLE=$(which python3) \
+          -D OPENCV_GENERATE_PKGCONFIG=ON \
           -D BUILD_EXAMPLES=OFF \
           -D BUILD_TESTS=OFF \
           .. && \
@@ -67,4 +72,3 @@ RUN pip3 install --upgrade pip && pip3 install --prefer-binary --no-cache-dir -r
 COPY . .
 
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
-

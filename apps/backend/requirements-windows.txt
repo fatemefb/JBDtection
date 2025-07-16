@@ -5,3 +5,4 @@
 # Windows-specific packages
 pywin32>=300
 wincertstore>=0.2
+waitress>=2.0.0
