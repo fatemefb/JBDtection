@@ -55,6 +55,9 @@ VALID_USERS = {
     'user': 'user123'
 }
 
+# Import DataAnalysisModule here
+from DataAnalysisModule import TagJBExtractor
+
 def get_platform_specific_extractor(tesseract_path=None, excel_path=None):
     """
     بر اساس سیستم عامل، کلاس مناسب استخراج کننده را برمی‌گرداند
@@ -187,7 +190,6 @@ def system_info():
 
 @app.route('/process', methods=['POST'])
 def process_files():
-    # بررسی اینکه آیا کاربر وارد شده است یا خیر
     if 'username' not in session:
         return jsonify({
             'status': 'error',
@@ -203,11 +205,19 @@ def process_files():
         # گزینه استفاده از GPU (اگر در دسترس باشد)
         use_gpu = request.form.get('use_gpu', 'false').lower() == 'true'
         
-        # Ensure output directory exists
+        # دریافت الگوها از فرم
+        jb_examples = request.form.get('jb_examples', '').strip()
+        mc_examples = request.form.get('mc_examples', '').strip()
+        spare_examples = request.form.get('spare_examples', '').strip()
+        cable_examples = request.form.get('cable_examples', '').strip()
+        wire_color_rule = request.form.get('wire_color_rule', '').strip()
+        scr_number_rule = request.form.get('scr_number_rule', '').strip()
+        
+        # ایجاد مسیرهای خروجی
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
         
-        # Save files temporarily
+        # ذخیره فایل‌ها
         pdf_paths = []
         for pdf in pdf_files:
             temp_path = os.path.join(app.config['UPLOAD_FOLDER'], pdf.filename)
@@ -219,15 +229,27 @@ def process_files():
         excel_file.save(excel_path)
         logger.info(f"Saved Excel file: {excel_file.filename}")
         
-        # Create output paths
         output_excel_path = os.path.join(output_dir, 'output.xlsx')
         output_pdf_dir = os.path.join(output_dir, 'annotated_pdfs')
         os.makedirs(output_pdf_dir, exist_ok=True)
         
-        # Initialize platform-specific extractor
+        # حالا که excel_path را داریم، می‌توانیم extractor را ایجاد کنیم
         logger.info("Initializing platform-specific extractor...")
-        extractor = get_platform_specific_extractor(tesseract_path=DEFAULT_TESSERACT_PATH)
+        extractor = get_platform_specific_extractor(
+            tesseract_path=DEFAULT_TESSERACT_PATH,
+            excel_path=excel_path
+        )
         
+        # تنظیم الگوها در extractor
+        if hasattr(extractor, 'set_patterns'):
+            extractor.set_patterns(
+                jb_examples=jb_examples,
+                mc_examples=mc_examples,
+                spare_examples=spare_examples,
+                cable_examples=cable_examples,
+                wire_color_rule=wire_color_rule,
+                scr_number_rule=scr_number_rule
+            )
         # نمایش اطلاعات GPU اگر در دسترس باشد
         gpu_info = {}
         if hasattr(extractor, 'gpu_available'):
@@ -236,10 +258,12 @@ def process_files():
                 gpu_info['gpu_type'] = extractor.gpu_type
                 if use_gpu:
                     logger.info(f"پردازش با استفاده از {extractor.gpu_type} GPU فعال شد")
+                    if hasattr(extractor, 'enable_gpu'):
+                        extractor.enable_gpu()
                 else:
                     logger.info("پردازش GPU غیرفعال شده است (توسط کاربر)")
         
-        # Process files with annotated PDFs
+        # پردازش فایل‌ها
         logger.info("Starting PDF and Excel processing...")
         unmatched_excel_tags, unmatched_pdf_tags = extractor.run_with_annotated_pdf(
             pdf_paths=pdf_paths,
@@ -248,15 +272,15 @@ def process_files():
             output_pdf_dir=output_pdf_dir
         )
         
-        # Get list of generated annotated PDFs
+        # لیست PDF های حاشیه‌نویسی شده
         annotated_pdfs = [f for f in os.listdir(output_pdf_dir) if f.startswith('annotated_')]
         
-        # Clean up temporary files
+        # پاکسازی فایل‌های موقت
         for path in pdf_paths:
             os.remove(path)
         os.remove(excel_path)
         
-        # Prepare detailed response
+        # آماده‌سازی پاسخ
         response = {
             'status': 'success',
             'message': 'Processing completed successfully',

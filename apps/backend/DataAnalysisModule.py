@@ -15,7 +15,6 @@ import time
 from typing import Any
 import os
 import tempfile
-import os
 import math
 import json
 import traceback
@@ -23,6 +22,7 @@ from typing import List, Dict, Tuple
 import math
 import string
 import shutil
+import random
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -263,7 +263,6 @@ class TagJBExtractor:
                     
             if not tesseract_found:
                 raise RuntimeError("Tesseract not found in common locations. Please provide tesseract_path.")
-        
         try:
             pytesseract.get_tesseract_version()
         except Exception as e:
@@ -274,12 +273,28 @@ class TagJBExtractor:
         self.all_tags = set()
         self.matched_tags = set()
         self.all_jbs = set()
-        self.all_mcs =set()
+        self.all_mcs = set()
         self.all_spares = []
         self.exact_matches = 0
         self.similar_matches = 0
         self.processing_time = 0
         self.similarity_reports = [] 
+        
+        # تنظیم مقادیر پیش‌فرض الگوها (به عنوان رشته)
+        self.jb_examples = None
+        self.mc_examples = None
+        self.spare_examples = None
+        self.cable_examples = None
+        self.wire_color_rule = None
+        self.scr_number_rule = None
+        
+        # الگوهای regex کامپایل شده
+        self.jb_regex = None
+        self.mc_regex = None
+        self.spare_regex = None
+        
+        # کامپایل اولیه الگوها
+        self._compile_regex_patterns()
         
     def build_tag_vectors_from_excel(self, excel_path: str) -> None:
         """
@@ -327,7 +342,83 @@ class TagJBExtractor:
             logger.error(f"Error building tag vectors: {e}")
             raise
 
-
+    def set_patterns(self, jb_examples=None, mc_examples=None, spare_examples=None, 
+                    cable_examples=None, wire_color_rule=None, scr_number_rule=None):
+        """
+        تنظیم الگوهای سفارشی برای بهبود تشخیص
+        
+        Args:
+            jb_examples: مثال JB (رشته یا لیست)
+            mc_examples: مثال MC (رشته یا لیست)
+            spare_examples: مثال SPARE (رشته یا لیست)
+            cable_examples: مثال توصیف کابل (رشته یا لیست)
+            wire_color_rule: قاعده تولید رنگ سیم
+            scr_number_rule: قاعده تولید شماره SCR
+        """
+        
+        # تبدیل لیست‌ها به رشته (اولین عنصر) اگر لازم باشد
+        if jb_examples is not None:
+            if isinstance(jb_examples, list) and jb_examples:
+                self.jb_examples = jb_examples[0].upper()  # اولین عنصر را انتخاب کن
+            elif isinstance(jb_examples, str) and jb_examples.strip():
+                self.jb_examples = jb_examples.strip().upper()
+            logger.info(f"JB examples set: {self.jb_examples}")
+        
+        if mc_examples is not None:
+            if isinstance(mc_examples, list) and mc_examples:
+                self.mc_examples = mc_examples[0].upper()  # اولین عنصر را انتخاب کن
+            elif isinstance(mc_examples, str) and mc_examples.strip():
+                self.mc_examples = mc_examples.strip().upper()
+            logger.info(f"MC examples set: {self.mc_examples}")
+        
+        if spare_examples is not None:
+            if isinstance(spare_examples, list) and spare_examples:
+                self.spare_examples = spare_examples[0].upper()  # اولین عنصر را انتخاب کن
+            elif isinstance(spare_examples, str) and spare_examples.strip():
+                self.spare_examples = spare_examples.strip().upper()
+            logger.info(f"SPARE examples set: {self.spare_examples}")
+        
+        if cable_examples is not None:
+            if isinstance(cable_examples, list):
+                self.cable_examples = ', '.join(cable_examples)
+            elif isinstance(cable_examples, str):
+                self.cable_examples = cable_examples.strip()
+            logger.info(f"Cable examples set: {self.cable_examples}")
+        
+        if wire_color_rule is not None:
+            self.wire_color_rule = wire_color_rule
+            logger.info(f"Wire color rule set: {wire_color_rule}")
+        
+        if scr_number_rule is not None:
+            self.scr_number_rule = scr_number_rule
+            logger.info(f"SCR number rule set: {scr_number_rule}")
+        
+        # به‌روزرسانی الگوهای regex بر اساس مثال‌های جدید
+        self._compile_regex_patterns()
+        
+    def _compile_regex_patterns(self):
+        """
+        کامپایل الگوهای regex بر اساس مثال‌های تنظیم شده
+        """
+        try:
+            # الگوی JB
+            if self.jb_examples:
+                self.jb_regex = re.compile(rf'\b{re.escape(self.jb_examples)}-?\d+\b', re.IGNORECASE)
+                logger.debug(f"JB regex compiled: {self.jb_regex.pattern}")
+            
+            # الگوی MC
+            if self.mc_examples:
+                self.mc_regex = re.compile(rf'\b{re.escape(self.mc_examples)}-?\d+\b', re.IGNORECASE)
+                logger.debug(f"MC regex compiled: {self.mc_regex.pattern}")
+            
+            # الگوی SPARE
+            if self.spare_examples:
+                self.spare_regex = re.compile(rf'\b{re.escape(self.spare_examples)}\b', re.IGNORECASE)
+                logger.debug(f"SPARE regex compiled: {self.spare_regex.pattern}")
+                
+        except Exception as e:
+            logger.error(f"Error compiling regex patterns: {e}")
+        
     def extract_from_image(self, image: np.ndarray) -> Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int]]:
         """
         Extract tags, JB identifiers, MC identifiers, cable descriptions, and SPAREs from the image.
@@ -339,6 +430,19 @@ class TagJBExtractor:
         Returns:
             Tuple of (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number)
         """
+        # اطمینان از وجود الگوها
+        if not self.jb_examples:
+            logger.warning("JB examples not set, using default 'JB'")
+            self.jb_examples = "JB"
+        if not self.mc_examples:
+            logger.warning("MC examples not set, using default 'MC'")
+            self.mc_examples = "MC"
+        if not self.spare_examples:
+            logger.warning("SPARE examples not set, using default 'SPARE'")
+            self.spare_examples = "SPARE"
+            
+        logger.info(f"Using patterns - JB: '{self.jb_examples}', MC: '{self.mc_examples}', SPARE: '{self.spare_examples}'")
+        
         # اگر تصویر grayscale است، به RGB تبدیل کن
         if len(image.shape) == 2:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
@@ -347,7 +451,7 @@ class TagJBExtractor:
         custom_config = r'--oem 3 --psm 11 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZsparetcoilpr0123456789-.'
 
         # OCR output with position data
-        print("Starting OCR extraction...")
+        logger.info("Starting OCR extraction...")
         ocr_data = pytesseract.image_to_data(image, config=custom_config, output_type=pytesseract.Output.DICT)
 
         tags = set()
@@ -358,7 +462,9 @@ class TagJBExtractor:
         tag_to_number = {}  # Dictionary to store tag/spare to number mapping
         processed_identifiers = set()
 
-        spare_pattern = re.compile(r'\bSPARE\b', re.IGNORECASE)
+        # استفاده از الگوی کامپایل شده برای SPARE
+        if not self.spare_regex:
+            self._compile_regex_patterns()
         
         # بهبود regex pattern برای cable descriptions
         cable_patterns = [
@@ -380,7 +486,7 @@ class TagJBExtractor:
         sequence_number = 1
             
         # Step 1: پردازش اولیه تمام کلمات
-        print("Processing all words from OCR...")
+        logger.info("Processing all words from OCR...")
         spare_found_count = 0
         
         for i, word in enumerate(ocr_data['text']):
@@ -389,34 +495,34 @@ class TagJBExtractor:
                 continue
 
             # DEBUG: چاپ همه کلمات برای یافتن SPARE
-            if 'SPARE' in word_clean:
-                print(f"Potential SPARE word found: '{word_clean}' at index {i}")
+            if self.spare_examples in word_clean:
+                logger.debug(f"Potential {self.spare_examples} word found: '{word_clean}' at index {i}")
 
-            # تشخیص SPARE identifiers - بررسی دقیق‌تر
-            if spare_pattern.search(word_clean):
+            # تشخیص SPARE identifiers - استفاده از regex کامپایل شده
+            if self.spare_regex and self.spare_regex.search(word_clean):
                 spare_identifiers.append(word_clean)
                 processed_identifiers.add(word_clean)
                 spare_found_count += 1
-                print(f"*** SPARE FOUND ***: {word_clean} at index {i}")
+                logger.info(f"*** {self.spare_examples} FOUND ***: {word_clean} at index {i}")
                 
                 # Assign a sequence number to this SPARE
-                spare_id = f"SPARE_{spare_found_count}"
+                spare_id = f"{self.spare_examples}_{spare_found_count}"
                 tag_to_number[spare_id] = sequence_number
                 sequence_number += 1
                 continue
             
             # جستجوی manual برای کلمات مشابه SPARE
             spare_match = False
-            spare_variations = ['SPARE', 'SPRER', 'SPIRE']
+            spare_variations = [self.spare_examples, self.spare_examples.replace('A', 'E'), self.spare_examples.replace('A', 'I')]
             for variation in spare_variations:
                 if variation in word_clean:
                     spare_identifiers.append(word_clean)
                     processed_identifiers.add(word_clean)
                     spare_found_count += 1
-                    print(f"*** SPARE VARIATION FOUND ***: {word_clean} (matched: {variation}) at index {i}")
+                    logger.info(f"*** {self.spare_examples} VARIATION FOUND ***: {word_clean} (matched: {variation}) at index {i}")
                     
                     # Assign a sequence number to this SPARE variation
-                    spare_id = f"SPARE_{spare_found_count}"
+                    spare_id = f"{self.spare_examples}_{spare_found_count}"
                     tag_to_number[spare_id] = sequence_number
                     sequence_number += 1
                     spare_match = True
@@ -426,24 +532,27 @@ class TagJBExtractor:
                 continue
                     
             # تشخیص MC identifiers
-            if len(word_clean) >= 4 and 'MC' in word_clean and 'AS' not in word_clean:
+            if len(word_clean) >= len(self.mc_examples) + 1 and self.mc_examples in word_clean and 'AS' not in word_clean:
                 x, y = ocr_data['left'][i], ocr_data['top'][i]
                 mc_positions.append((x, y))
                 mc_indices.append(i)
                 mc_identifiers.add(word_clean)
                 processed_identifiers.add(word_clean)
-                print(f"MC identifier found: {word_clean}")
+                logger.info(f"{self.mc_examples} identifier found: {word_clean}")
                 continue
 
             # تشخیص JB identifiers
-            if word_clean.startswith("JB"):
+            if word_clean.startswith(self.jb_examples):
                 jb_identifiers.add(word_clean)
                 processed_identifiers.add(word_clean)
-                print(f"JB identifier found: {word_clean}")
+                logger.info(f"{self.jb_examples} identifier found: {word_clean}")
                 continue
             
             # تشخیص Tags - این بخش در حلقه اصلی قرار می‌گیرد
-            if len(word_clean) >= 4 and 'JB' not in word_clean and 'MC' not in word_clean and word_clean not in processed_identifiers:
+            if (len(word_clean) >= 4 and 
+                self.jb_examples not in word_clean and 
+                self.mc_examples not in word_clean and 
+                word_clean not in processed_identifiers):
                 if hasattr(self, 'vector_matcher'):
                     similar_tags = self.vector_matcher.find_similar_tags(word_clean)
                     if similar_tags:
@@ -461,14 +570,14 @@ class TagJBExtractor:
                                 'matched_tag': best_match,
                                 'similarity_score': best_score,
                             })
-                            print(f"Found tag: {best_match} (similarity: {best_score}, number: {tag_to_number[best_match]})")
+                            logger.info(f"Found tag: {best_match} (similarity: {best_score}, number: {tag_to_number[best_match]})")
                             processed_identifiers.add(word_clean)
                             continue
 
-        print(f"SPARE search completed. Found {spare_found_count} SPARE identifiers.")
-        print(f"Final spare_identifiers found: {spare_identifiers}")
-        print(f"Total tags with assigned numbers: {len(tag_to_number) - spare_found_count}")
-        print(f"Total spares with assigned numbers: {spare_found_count}")
+        logger.info(f"{self.spare_examples} search completed. Found {spare_found_count} {self.spare_examples} identifiers.")
+        logger.info(f"Final spare_identifiers found: {spare_identifiers}")
+        logger.info(f"Total tags with assigned numbers: {len(tag_to_number) - spare_found_count}")
+        logger.info(f"Total spares with assigned numbers: {spare_found_count}")
 
         # Step 2: Find cable descriptions near each MC using spatial proximity
         for mc_i in mc_indices:
@@ -496,11 +605,11 @@ class TagJBExtractor:
                 if distance_x <= search_radius_x and distance_y <= search_radius_y:
                     nearby_words.append(word_j.strip())
                     nearby_indices.append(j)
-                    print(f"Word '{word_j.strip()}' at distance ({distance_x}, {distance_y}) from MC")
+                    logger.debug(f"Word '{word_j.strip()}' at distance ({distance_x}, {distance_y}) from {self.mc_examples}")
                 
             # تمیز کردن و ترکیب متن
             combined_text = ' '.join(nearby_words).upper()
-            print(f"Combined text near MC {mc_i}: '{combined_text}'")
+            logger.debug(f"Combined text near {self.mc_examples} {mc_i}: '{combined_text}'")
             
             # جستجو با patterns مختلف
             found_cable = False
@@ -539,12 +648,12 @@ class TagJBExtractor:
                     cable_desc = f"{number} {cable_type_full}"
                     if cable_desc not in cable_descriptions:
                         cable_descriptions.append(cable_desc)
-                        print(f"Found cable description: {cable_desc}")
+                        logger.info(f"Found cable description: {cable_desc}")
                         found_cable = True
             
             # اگر هیچ cable description پیدا نشد، تمام کلمات نزدیک را چاپ کن
             if not found_cable:
-                print(f"No cable description found near MC. Nearby words: {nearby_words}")
+                logger.debug(f"No cable description found near {self.mc_examples}. Nearby words: {nearby_words}")
                 
                 # جستجوی دستی برای اعداد
                 for word in nearby_words:
@@ -552,14 +661,14 @@ class TagJBExtractor:
                     # جستجو برای اعداد منفرد که ممکن است cable باشند
                     if re.match(r'^\d+$', clean_word):
                         potential_cable = f"{clean_word} pair"  # default to pair
-                        print(f"Found potential cable number: {clean_word}")
+                        logger.debug(f"Found potential cable number: {clean_word}")
                         if potential_cable not in cable_descriptions:
                             cable_descriptions.append(potential_cable)
 
-        print('Final cable_descriptions:', cable_descriptions)
-        print('Final spare_identifiers:', spare_identifiers)
-        print('Final tag_to_number mapping:', tag_to_number)
-        print('Final tags found:', tags)
+        logger.info('Final cable_descriptions:', cable_descriptions)
+        logger.info('Final spare_identifiers:', spare_identifiers)
+        logger.info('Final tag_to_number mapping:', tag_to_number)
+        logger.info('Final tags found:', tags)
 
         # Update final sets
         self.all_tags.update(tags)
@@ -568,7 +677,7 @@ class TagJBExtractor:
         self.all_spares = spare_identifiers
 
         return tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number
-
+        
     def get_similarity_reports(self) -> List[Dict[str, Any]]:
         """
         دریافت گزارشات کامل شباهت بین تگ‌های شناسایی شده و تگ‌های مرجع
@@ -801,7 +910,7 @@ class TagJBExtractor:
             
         except Exception as e:
             logger.error(f"Error in create_tag_jb_mapping: {e}")
-            return {}  # در صورت خطا، دیکشنری خالی برگردان
+            return {} 
     
 # Add this new method to the TagJBExtractor class (place it before process_excel method)
 
@@ -1284,7 +1393,12 @@ class TagJBExtractor:
     def draw_bounding_boxes(self, image: np.ndarray, tags: Set[str], jb_identifiers: Set[str], 
                     mc_identifiers: Set[str], cable_descriptions: List[str], spare_identifiers: List[str],
                     tag_to_number: Dict[str, int]) -> Tuple[np.ndarray, Dict[str, int]]:
-
+    
+        jb_examples = self.jb_examples
+        mc_examples = self.mc_examples
+        spare_examples = self.spare_examples
+        cable_examples = self.cable_examples
+    
         if len(image.shape) == 2:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
 
@@ -1314,9 +1428,10 @@ class TagJBExtractor:
                         'position': (x, y, w, h),
                         'color': (255, 0, 0)
                     })
+        
         # پردازش Spare identifiers
         spare_count = 0
-        spare_pattern = re.compile(r'\bSPARE\b', re.IGNORECASE)
+        spare_pattern = re.compile(rf'\b{spare_examples}\b', re.IGNORECASE)
         for i, text in enumerate(ocr_data['text']):
             text_clean = text.strip().upper()
             if spare_pattern.search(text_clean):
@@ -1328,7 +1443,7 @@ class TagJBExtractor:
                 processed_identifiers.add(text_clean)
                 x, y, w, h = region_key
                 spare_count += 1
-                spare_id = f"SPARE_{spare_count}"
+                spare_id = f"{spare_examples}_{spare_count}"
                 all_components.append({
                     'type': 'Spare',
                     'text': text_clean,
@@ -1537,7 +1652,7 @@ class TagJBExtractor:
         cv2.putText(image, "MC", (legend_x_pos + 200, legend_y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
         cv2.putText(image, "Cable", (legend_x_pos + 300, legend_y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 200), 2)
         cv2.putText(image, "Spare", (legend_x_pos + 400, legend_y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (128, 0, 128), 2)
-        cv2.putText(image, "Numbering: Tags are unique by name, Spares have individual numbers", 
+        cv2.putText(image, "Numbering:Tags are unique by name, {spare_examples}s have individual numbers", 
                     (legend_x_pos, legend_y_pos + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
         
         # بررسی تطابق شماره تگ با شماره زوج
@@ -1548,10 +1663,10 @@ class TagJBExtractor:
         status_x_pos = 10
         
         if is_consistent:
-            status_message = f"Tag numbering OK: Max tag #{max_tag_number} matches pair number {extracted_pair_number}"
+            status_message = f"Tag numbering OK: Max #{max_tag_number} matches pair number {extracted_pair_number}"
             status_color = (0, 255, 0)  # سبز برای موفقیت
         else:
-            status_message = f"WARNING: Max tag #{max_tag_number} doesn't match pair number {extracted_pair_number} - CHECK NUMBERING!"
+            status_message = f"WARNING: Max tag #{max_tag_number}doesn't match pair number {extracted_pair_number} - CHECK NUMBERING!"
             status_color = (0, 0, 255)  # قرمز برای هشدار
         
         # افزودن پیام وضعیت با پس‌زمینه برای وضوح بیشتر
@@ -1848,8 +1963,8 @@ class TagJBExtractor:
                 'statistics': stats,
                 'similarity_reports': all_similarity_reports,
                 'tag_numbers': master_tag_numbers,
-                'wire_colors': {tag: self.generate_mc_wire_colors(master_tag_numbers).get(tag, []) for tag in master_tag_numbers},
-                'scr_numbers': {tag: self.generate_scr_numbers(master_tag_numbers).get(tag, []) for tag in master_tag_numbers}
+                'wire_colors': {tag: self.generate_mc_wire_colors(master_tag_numbers[tag]) for tag in master_tag_numbers},
+                'scr_numbers': {tag: self.generate_scr_number(master_tag_numbers[tag]) for tag in master_tag_numbers}
             }, f, indent=2)
         
         logger.info(f"Processing completed in {self.processing_time:.2f} seconds")
@@ -1859,60 +1974,134 @@ class TagJBExtractor:
         
         return unmatched_excel_tags, unmatched_pdf_tags
     
-    def generate_mc_wire_colors(self, tag_to_number: Dict[str, int]) -> Dict[str, List[str]]:
+    def set_wire_color_rule(self, rule):
         """
-        برای هر تگ، رنگ‌های سیم MC را تولید می‌کند با استفاده از شماره‌های تگ استخراج شده توسط bounding box.
+        تنظیم قانون تولید رنگ سیم
         
         Args:
-            tag_to_number: دیکشنری نگاشت تگ‌ها به شماره‌های آن‌ها از bounding box
-            
-        Returns:
-            دیکشنری نگاشت تگ‌ها به لیست رنگ‌های سیم
+            rule: قانون تولید رنگ سیم
         """
-        wire_colors = {}
-        
-        # فقط برای تگ‌هایی که در tag_to_number وجود دارند، رنگ سیم تولید می‌کنیم
-        for tag, number in tag_to_number.items():
-            # تبدیل شماره تگ به فرمت دو رقمی (01، 02، ...)
-            tag_num_str = f"{number:02d}"
+        try:
+            logger.info(f"Setting wire color rule: {rule}")
+            self.wire_color_rule = rule
             
-            # برای هر تگ، یک زوج رنگ با شماره تگ تولید می‌کنیم
-            wires = [f"BK{tag_num_str}", f"WT{tag_num_str}"]
-            
-            # ذخیره لیست رنگ‌های سیم برای این تگ
-            wire_colors[tag] = wires
-            
-            logger.debug(f"Generated wire colors for {tag} (#{number}): {wires}")
-        
-        return wire_colors
+            # تست قانون با یک نمونه
+            test_colors = self.generate_mc_wire_colors(1)
+            logger.info(f"Test wire colors for tag #1: {test_colors}")
+        except Exception as e:
+            logger.error(f"Error setting wire color rule: {e}")
 
-
-    def generate_scr_numbers(self, tag_to_number: Dict[str, int]) -> Dict[str, List[str]]:
+    def set_scr_number_rule(self, rule):
         """
-        برای هر تگ، شماره‌های SCR را تولید می‌کند با استفاده از شماره‌های تگ استخراج شده توسط bounding box.
+        تنظیم قانون تولید شماره SCR
         
         Args:
-            tag_to_number: دیکشنری نگاشت تگ‌ها به شماره‌های آن‌ها از bounding box
+            rule: قانون تولید شماره SCR
+        """
+        try:
+            logger.info(f"Setting SCR number rule: {rule}")
+            self.scr_number_rule = rule
+            
+            # تست قانون با یک نمونه
+            test_scr = self.generate_scr_number(1)
+            logger.info(f"Test SCR number for tag #1: {test_scr}")
+        except Exception as e:
+            logger.error(f"Error setting SCR number rule: {e}")
+
+    def generate_mc_wire_colors(self, tag_number):
+        """
+        تولید رنگ‌های سیم بر اساس شماره تگ و قانون تعریف شده
+        
+        Args:
+            tag_number: شماره تگ
             
         Returns:
-            دیکشنری نگاشت تگ‌ها به لیست شماره‌های SCR
+            لیست رنگ‌های سیم
         """
-        scr_numbers = {}
+        try:
+            if not hasattr(self, 'wire_color_rule') or not self.wire_color_rule:
+                return []
+                
+            # جداسازی قانون‌ها با کاما
+            color_rules = [rule.strip() for rule in self.wire_color_rule.split(',')]
+            
+            # تولید رنگ‌ها با استفاده از قانون
+            colors = []
+            for rule in color_rules:
+                # جایگزینی {number} با شماره تگ
+                if '{number' in rule:
+                    # بررسی فرمت اختیاری
+                    format_match = re.search(r'\{number:([^}]+)\}', rule)
+                    if format_match:
+                        format_spec = format_match.group(1)
+                        formatted_number = format(tag_number, format_spec)
+                        color = rule.replace(format_match.group(0), formatted_number)
+                    else:
+                        color = rule.replace('{number}', str(tag_number))
+                else:
+                    # جایگزینی ساده عبارات ریاضی
+                    # مثال: BK{number*2-1} -> BK1 برای tag_number=1
+                    expr_match = re.search(r'\{([^}]+)\}', rule)
+                    if expr_match:
+                        expr = expr_match.group(1).replace('number', str(tag_number))
+                        try:
+                            result = eval(expr)
+                            color = rule.replace(expr_match.group(0), str(result))
+                        except Exception as e:
+                            logger.error(f"Error evaluating expression {expr}: {e}")
+                            color = rule
+                    else:
+                        color = rule
+                
+                colors.append(color)
+            
+            return ', '.join(colors)
+        except Exception as e:
+            logger.error(f"Error generating wire colors: {e}")
+            return ""
+
+    def generate_scr_number(self, tag_number):
+        """
+        تولید شماره SCR بر اساس شماره تگ و قانون تعریف شده
         
-        # فقط برای تگ‌هایی که در tag_to_number وجود دارند، شماره SCR تولید می‌کنیم
-        for tag, number in tag_to_number.items():
-            # برای هر تگ، یک SCR با شماره‌های متناسب با شماره تگ تولید می‌کنیم
-            first_scr_num = (number * 2) - 1
-            second_scr_num = number * 2
+        Args:
+            tag_number: شماره تگ
             
-            scrs = [f"{first_scr_num} {second_scr_num} SCR"]
+        Returns:
+            شماره SCR
+        """
+        try:
+            if not hasattr(self, 'scr_number_rule') or not self.scr_number_rule:
+                return ''
+                
+            # جایگزینی {number} با شماره تگ
+            if '{number' in self.scr_number_rule:
+                # بررسی فرمت اختیاری
+                format_match = re.search(r'\{number:([^}]+)\}', self.scr_number_rule)
+                if format_match:
+                    format_spec = format_match.group(1)
+                    formatted_number = format(tag_number, format_spec)
+                    scr_number = self.scr_number_rule.replace(format_match.group(0), formatted_number)
+                else:
+                    scr_number = self.scr_number_rule.replace('{number}', str(tag_number))
+            else:
+                # جایگزینی ساده عبارات ریاضی
+                # مثال: {number*2-1} {number*2} SCR -> "1 2 SCR" برای tag_number=1
+                def replace_expr(match):
+                    expr = match.group(1).replace('number', str(tag_number))
+                    try:
+                        result = eval(expr)
+                        return str(result)
+                    except Exception as e:
+                        logger.error(f"Error evaluating expression {expr}: {e}")
+                        return match.group(0)
+                
+                scr_number = re.sub(r'\{([^}]+)\}', replace_expr, self.scr_number_rule)
             
-            # ذخیره لیست شماره‌های SCR برای این تگ
-            scr_numbers[tag] = scrs
-            
-            logger.debug(f"Generated SCR numbers for {tag} (#{number}): {scrs}")
-        
-        return scr_numbers
+            return scr_number
+        except Exception as e:
+            logger.error(f"Error generating SCR number: {e}")
+            return ''
 
     def add_wire_colors_and_scr_to_dataframe(self, df: pd.DataFrame, tag_to_number: Dict[str, int], 
                                     output_path: str, pdf_results: Dict[str, Dict[int, Tuple]],                       

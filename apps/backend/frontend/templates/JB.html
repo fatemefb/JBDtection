@@ -346,34 +346,13 @@
             formData.append('excel_file', document.getElementById('excelInput').files[0]);
             // Add output path
             formData.append('output_path', document.getElementById('outputPath').value);
-            // Create one-shot input text for pattern learning
-            let oneShotInput = '';
-            const jbExamples = document.getElementById('jbExamples').value.trim();
-            if (jbExamples) {
-                oneShotInput += `JB_EXAMPLES: ${jbExamples}\n`;
-            }
-            const mcExamples = document.getElementById('mcExamples').value.trim();
-            if (mcExamples) {
-                oneShotInput += `MC_EXAMPLES: ${mcExamples}\n`;
-            }
-            const spareExamples = document.getElementById('spareExamples').value.trim();
-            if (spareExamples) {
-                oneShotInput += `SPARE_EXAMPLES: ${spareExamples}\n`;
-            }
-            const cableExamples = document.getElementById('cableExamples').value.trim();
-            if (cableExamples) {
-                oneShotInput += `CABLE_EXAMPLES: ${cableExamples}\n`;
-            }
-            const wireColorRule = document.getElementById('wireColorRule').value.trim();
-            if (wireColorRule) {
-                oneShotInput += `WIRE_COLOR_RULE: ${wireColorRule}\n`;
-            }
-            const scrNumberRule = document.getElementById('scrNumberRule').value.trim();
-            if (scrNumberRule) {
-                oneShotInput += `SCR_NUMBER_RULE: ${scrNumberRule}\n`;
-            }
-            formData.append('one_shot_input', oneShotInput);
-            formData.append('enable_pattern_learning', 'true');
+            // الگوها
+            formData.append('jb_examples', document.getElementById('jbExamples').value);
+            formData.append('mc_examples', document.getElementById('mcExamples').value);
+            formData.append('spare_examples', document.getElementById('spareExamples').value);
+            formData.append('cable_examples', document.getElementById('cableExamples').value);
+            formData.append('wire_color_rule', document.getElementById('wireColorRule').value);
+            formData.append('scr_number_rule', document.getElementById('scrNumberRule').value);
             // Update UI to show processing state
             document.getElementById('processButton').disabled = true;
             document.getElementById('processButton').innerHTML = translations[currentLang]['processing'];
