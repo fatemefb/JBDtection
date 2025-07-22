@@ -3,14 +3,28 @@
 -r requirements.txt
 
 # Replace OpenCV with headless version for Linux servers
-opencv-python-headless>=4.5.0
+opencv-python-headless==4.12.0.88
 
 # GPU support packages (optional)
-tensorflow>=2.10.0; platform_system=="Linux"  # For GPU acceleration
+nvidia-cublas-cu12==12.6.4.1
+nvidia-cuda-cupti-cu12==12.6.80
+nvidia-cuda-nvrtc-cu12==12.6.77
+nvidia-cuda-runtime-cu12==12.6.77
+nvidia-cudnn-cu12==9.5.1.17
+nvidia-cufft-cu12==11.3.0.4
+nvidia-cufile-cu12==1.11.1.6
+nvidia-curand-cu12==10.3.7.77
+nvidia-cusolver-cu12==11.7.1.2
+nvidia-cusparse-cu12==12.5.4.2
+nvidia-cusparselt-cu12==0.6.3
+nvidia-nccl-cu12==2.26.2
+nvidia-nvjitlink-cu12==12.6.85
+nvidia-nvtx-cu12==12.6.77
+tensorflow==2.10.0; platform_system=="Linux"  # For GPU acceleration
 torch>=2.0.0; platform_system=="Linux"  # PyTorch for GPU acceleration
 torchvision>=0.15.0; platform_system=="Linux"
 torchaudio>=2.0.0; platform_system=="Linux"
 
 # Linux-specific optimizations
-psutil>=5.9.0  # For system monitoring
-gunicorn>=20.0.0  # Production WSGI server
+psutil==7.0.0  # For system monitoring
+gunicorn==23.0.0  # Production WSGI server
