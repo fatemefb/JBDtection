@@ -66,7 +66,7 @@ ENV TESSDATA_PREFIX=/usr/local/share/
 
 # --------------------- Python App Setup ------------------
 WORKDIR /app
-COPY requirements.txt .
+COPY requirements-linux.txt .
 RUN pip3 install --upgrade pip && pip3 install --prefer-binary --no-cache-dir -r requirements.txt
 
 COPY . .
