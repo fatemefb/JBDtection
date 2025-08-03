@@ -6,19 +6,17 @@ import re
 import os
 import gc
 import fitz 
-from typing import Dict, List, Set, Tuple, Optional ,Union
 import tempfile
 import logging
 from multiprocessing import Pool, cpu_count
 import Levenshtein
 import time
-from typing import Any
 import os
 import tempfile
 import math
 import json
 import traceback
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Set, Union, Any, Optional
 import math
 import string
 import shutil
@@ -54,7 +52,7 @@ class VectorMatcher:
         self.tag_vectors[tag] = self.create_tag_vector(tag)
         logging.info(f"Reference tag added: {tag}")
     
-    def create_tag_vector(self, tag: str) -> Dict[str, float]:
+    def create_tag_vector(self, tag: str) -> 'Dict[str, float]':
         """Create an enhanced feature vector for a tag."""
         tag = str(tag).upper().strip()
         vector = {}
@@ -133,7 +131,7 @@ class VectorMatcher:
                 score += 0.8
         return score / max(len(digits1), len(digits2)) > 0.6
 
-    def calculate_similarity(self, v1: Dict[str, float], v2: Dict[str, float]) -> float:
+    def calculate_similarity(self, v1: 'Dict[str, float]', v2: 'Dict[str, float]') -> float:
         """Calculate cosine similarity between two tag vectors."""
         dot_product = 0.0
         norm1 = 0.0
@@ -150,7 +148,7 @@ class VectorMatcher:
             return 0.0
         return dot_product / (norm1**0.5 * norm2**0.5)
 
-    def find_similar_tags(self, input_tag: str) -> List[Tuple[str, float]]:
+    def find_similar_tags(self, input_tag: str) -> 'List[Tuple[str, float]]':
         """Find similar tags with improved matching logic and more flexible thresholds."""
         if not input_tag:
             return []
@@ -240,7 +238,7 @@ class TagJBExtractor:
     کلاسی برای استخراج تگ‌ها و شناسه‌های JB از نمودارهای PDF و تطبیق آن‌ها با داده‌های اکسل.
     """
     
-    def __init__(self, tesseract_path: Optional[str] = None, excel_path: Optional[str] = None):
+    def __init__(self, tesseract_path: 'Optional[str]' = None, excel_path: 'Optional[str]' = None):
         """Initialize the extractor with optional tesseract and excel paths."""
         if tesseract_path:
             if not os.path.exists(tesseract_path):
@@ -362,36 +360,36 @@ class TagJBExtractor:
                 self.jb_examples = jb_examples[0].upper()  # اولین عنصر را انتخاب کن
             elif isinstance(jb_examples, str) and jb_examples.strip():
                 self.jb_examples = jb_examples.strip().upper()
-            logger.info(f"JB examples set: {self.jb_examples}")
+            logger.info(f"JB examples Set: {self.jb_examples}")
         
         if mc_examples is not None:
             if isinstance(mc_examples, list) and mc_examples:
                 self.mc_examples = mc_examples[0].upper()  # اولین عنصر را انتخاب کن
             elif isinstance(mc_examples, str) and mc_examples.strip():
                 self.mc_examples = mc_examples.strip().upper()
-            logger.info(f"MC examples set: {self.mc_examples}")
+            logger.info(f"MC examples Set: {self.mc_examples}")
         
         if spare_examples is not None:
             if isinstance(spare_examples, list) and spare_examples:
                 self.spare_examples = spare_examples[0].upper()  # اولین عنصر را انتخاب کن
             elif isinstance(spare_examples, str) and spare_examples.strip():
                 self.spare_examples = spare_examples.strip().upper()
-            logger.info(f"SPARE examples set: {self.spare_examples}")
+            logger.info(f"SPARE examples Set: {self.spare_examples}")
         
         if cable_examples is not None:
             if isinstance(cable_examples, list):
                 self.cable_examples = ', '.join(cable_examples)
             elif isinstance(cable_examples, str):
                 self.cable_examples = cable_examples.strip()
-            logger.info(f"Cable examples set: {self.cable_examples}")
+            logger.info(f"Cable examples Set: {self.cable_examples}")
         
         if wire_color_rule is not None:
             self.wire_color_rule = wire_color_rule
-            logger.info(f"Wire color rule set: {wire_color_rule}")
+            logger.info(f"Wire color rule Set: {wire_color_rule}")
         
         if scr_number_rule is not None:
             self.scr_number_rule = scr_number_rule
-            logger.info(f"SCR number rule set: {scr_number_rule}")
+            logger.info(f"SCR number rule Set: {scr_number_rule}")
         
         # به‌روزرسانی الگوهای regex بر اساس مثال‌های جدید
         self._compile_regex_patterns()
@@ -419,7 +417,7 @@ class TagJBExtractor:
         except Exception as e:
             logger.error(f"Error compiling regex patterns: {e}")
         
-    def extract_from_image(self, image: np.ndarray) -> Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int]]:
+    def extract_from_image(self, image: np.ndarray) -> 'Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int]]':
         """
         Extract tags, JB identifiers, MC identifiers, cable descriptions, and SPAREs from the image.
         Also assigns and returns sequential numbers to tags and spares.
@@ -432,13 +430,13 @@ class TagJBExtractor:
         """
         # اطمینان از وجود الگوها
         if not self.jb_examples:
-            logger.warning("JB examples not set, using default 'JB'")
+            logger.warning("JB examples not Set, using default 'JB'")
             self.jb_examples = "JB"
         if not self.mc_examples:
-            logger.warning("MC examples not set, using default 'MC'")
+            logger.warning("MC examples not Set, using default 'MC'")
             self.mc_examples = "MC"
         if not self.spare_examples:
-            logger.warning("SPARE examples not set, using default 'SPARE'")
+            logger.warning("SPARE examples not Set, using default 'SPARE'")
             self.spare_examples = "SPARE"
             
         logger.info(f"Using patterns - JB: '{self.jb_examples}', MC: '{self.mc_examples}', SPARE: '{self.spare_examples}'")
@@ -448,7 +446,7 @@ class TagJBExtractor:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
         
         # تطبیق کامل config با draw_bounding_boxes
-        custom_config = r'--oem 3 --psm 11 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZsparetcoilpr0123456789-.'
+        custom_config = r'--oem 3 --psm 11 -c tessedit_char_whiteList=ABCDEFGHIJKLMNOPQRSTUVWXYZsparetcoilpr0123456789-.'
 
         # OCR output with position data
         logger.info("Starting OCR extraction...")
@@ -665,12 +663,12 @@ class TagJBExtractor:
                         if potential_cable not in cable_descriptions:
                             cable_descriptions.append(potential_cable)
 
-        logger.info('Final cable_descriptions:', cable_descriptions)
-        logger.info('Final spare_identifiers:', spare_identifiers)
-        logger.info('Final tag_to_number mapping:', tag_to_number)
-        logger.info('Final tags found:', tags)
+        logger.info(f'Final cable_descriptions:, {cable_descriptions}')
+        logger.info(f'Final spare_identifiers: {spare_identifiers}')
+        logger.info(f'Final tag_to_number mapping: {tag_to_number}')
+        logger.info(f'Final tags found: {tags}')
 
-        # Update final sets
+        # Update final Sets
         self.all_tags.update(tags)
         self.all_jbs.update(jb_identifiers)
         self.all_mcs.update(mc_identifiers)
@@ -678,7 +676,7 @@ class TagJBExtractor:
 
         return tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number
         
-    def get_similarity_reports(self) -> List[Dict[str, Any]]:
+    def get_similarity_reports(self) -> 'List[Dict[str, Any]]':
         """
         دریافت گزارشات کامل شباهت بین تگ‌های شناسایی شده و تگ‌های مرجع
         
@@ -687,7 +685,7 @@ class TagJBExtractor:
         """
         return self.similarity_reports
     
-    def get_top_similar_tags(self, n: int = 10) -> List[Dict[str, Any]]:
+    def get_top_similar_tags(self, n: int = 10) -> 'List[Dict[str, Any]]':
         """
         دریافت n تگ با بالاترین شباهت
         
@@ -821,12 +819,12 @@ class TagJBExtractor:
         return min(1.0, similarity)  # Ensure result is at most 1.0
     
                 
-    def create_tag_jb_mapping(self, pdf_results: Dict[int, Tuple]) -> Dict[str, str]:
+    def create_tag_jb_mapping(self, pdf_results: 'Dict[int, Tuple[Any, ...]]') -> 'Dict[str, str]':
         """
         Create a mapping from tags to JB identifiers.
         
         Args:
-            pdf_results: Dictionary mapping page numbers to tuples of (tags, jb_identifiers)
+            pdf_results: Dictionary mapping page numbers to Tuples of (tags, jb_identifiers)
             
         Returns:
             Dictionary mapping tags to their associated JB identifiers
@@ -920,11 +918,11 @@ class TagJBExtractor:
         
         Args:
             image: numpy.ndarray - The preprocessed image
-            tag_coordinates: list - List of dictionaries containing tag coordinates
+            tag_coordinates: List - List of Dictionaries containing tag coordinates
             column_threshold: int - Threshold for column detection
             
         Returns:
-            set - New tags found during column analysis
+            Set - New tags found during column analysis
         """
         height, width = image.shape
         columns = {}
@@ -1006,7 +1004,7 @@ class TagJBExtractor:
         return new_tags
 
 
-    def process_pdf_page(self, page_info: Tuple[fitz.Page, str, int]) -> Tuple[int, Set[str], Set[str], Set[str], List[str], List[str]]:
+    def process_pdf_page(self, page_info: 'Tuple[fitz.Page, str, int]') -> 'Tuple[int, Set[str], Set[str], Set[str], List[str], List[str]]':
         """
         Process a single PDF page in parallel.
         
@@ -1038,7 +1036,7 @@ class TagJBExtractor:
         return page_num + 1, tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers ,tag_to_number
 
 
-    def process_pdf(self, pdf_path: str) -> Dict[int, Tuple[Set[str], Set[str], Set[str], List[str], List[str]]]:
+    def process_pdf(self, pdf_path: str) -> 'Dict[int, Tuple[Set[str], Set[str], Set[str], List[str], List[str]]]':
         """
         Process all pages in a PDF file.
         
@@ -1046,7 +1044,7 @@ class TagJBExtractor:
             pdf_path: Path to the PDF file
             
         Returns:
-            Dictionary mapping page numbers to tuples of (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers ,tag_to_number)
+            Dictionary mapping page numbers to Tuples of (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers ,tag_to_number)
         """
         results = {}
         
@@ -1127,7 +1125,7 @@ class TagJBExtractor:
         
         return results
 
-    def process_multiple_pdfs(self, pdf_paths: List[str]) -> Dict[int, Tuple[Set[str], Set[str], Set[str], List[str], List[str]]]:
+    def process_multiple_pdfs(self, pdf_paths: 'List[str]') -> 'Dict[int, Tuple[Set[str], Set[str], Set[str], List[str], List[str]]]':
         """
         Process multiple PDF files in parallel with improved resource management.
         
@@ -1135,7 +1133,7 @@ class TagJBExtractor:
             pdf_paths: List of paths to PDF files
             
         Returns:
-            Dictionary mapping page numbers to tuples of (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers,tag_to_number)
+            Dictionary mapping page numbers to Tuples of (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers,tag_to_number)
         """
         combined_results = {}
         page_offset = 0
@@ -1169,14 +1167,14 @@ class TagJBExtractor:
         
         return combined_results
 
-    def process_excel_with_io_list(self, intermediate_excel_path: str, excel_path: str ,output_path: str) -> Tuple[pd.DataFrame, List[str], List[str]]:
+    def process_excel_with_io_list(self, intermediate_excel_path: str, excel_path: str ,output_path: str) -> 'Tuple[pd.DataFrame, List[str], List[str]]':
         """
         ترکیب داده‌های فایل intermediate با فایل IO List و ایجاد فایل اکسل نهایی.
         این تابع تمام ستون‌های IO List را حفظ می‌کند و ستون‌های جدید از فایل intermediate را به آن اضافه می‌کند.
         
         Args:
             intermediate_excel_path: مسیر فایل اکسل intermediate
-            io_list_path: مسیر فایل اکسل IO List
+            io_List_path: مسیر فایل اکسل IO List
             output_path: مسیر فایل اکسل خروجی
             
         Returns:
@@ -1277,7 +1275,7 @@ class TagJBExtractor:
             logger.error(traceback.format_exc())
             return pd.DataFrame(), [], []
         
-    def create_simple_vector(self, tag: str) -> List[float]:
+    def create_simple_vector(self, tag: str) -> 'List[float]':
             """Create an improved feature vector for a tag"""
             tag = str(tag).upper().strip()
             
@@ -1310,7 +1308,7 @@ class TagJBExtractor:
             return vector
 
         
-    def calculate_vector_similarity(self, vec1: List[float], vec2: List[float]) -> float:
+    def calculate_vector_similarity(self, vec1: 'List[float]', vec2: 'List[float]') -> float:
             """Calculate improved similarity between two vectors"""
             if len(vec1) != len(vec2):
                 return 0.0
@@ -1345,7 +1343,7 @@ class TagJBExtractor:
                 logger.error(f"Error in similarity calculation: {e}")
                 return 0.0
 
-    def run(self, pdf_paths: List[str], excel_path: str, output_excel_path: str, intermediate_excel_path: str) -> Tuple[List[str], List[str], List[str]]:
+    def run(self, pdf_paths: 'List[str]', excel_path: str, output_excel_path: str, intermediate_excel_path: str) -> 'Tuple[List[str], List[str], List[str]]':
         """
         Run the complete process with parallel processing support.
         
@@ -1390,9 +1388,9 @@ class TagJBExtractor:
         
         return unmatched_io_tags, unmatched_tags
 
-    def draw_bounding_boxes(self, image: np.ndarray, tags: Set[str], jb_identifiers: Set[str], 
-                    mc_identifiers: Set[str], cable_descriptions: List[str], spare_identifiers: List[str],
-                    tag_to_number: Dict[str, int]) -> Tuple[np.ndarray, Dict[str, int]]:
+    def draw_bounding_boxes(self, image: np.ndarray, tags: 'Set[str]', jb_identifiers: 'Set[str]', 
+                    mc_identifiers: 'Set[str]', cable_descriptions: 'List[str]', spare_identifiers: 'List[str]',
+                    tag_to_number: 'Dict[str, int]') -> 'Tuple[np.ndarray, Dict[str, int]]':
     
         jb_examples = self.jb_examples
         mc_examples = self.mc_examples
@@ -1402,7 +1400,7 @@ class TagJBExtractor:
         if len(image.shape) == 2:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
 
-        custom_config = r'--oem 3 --psm 11 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZsparetcoilpr0123456789-.'
+        custom_config = r'--oem 3 --psm 11 -c tessedit_char_whiteList=ABCDEFGHIJKLMNOPQRSTUVWXYZsparetcoilpr0123456789-.'
         ocr_data = pytesseract.image_to_data(image, config=custom_config, output_type=pytesseract.Output.DICT)
 
         processed_regions = set()
@@ -1679,7 +1677,7 @@ class TagJBExtractor:
 
         return image, tag_to_number
     
-    def add_tag_numbers_to_dataframe(self, df: pd.DataFrame, tag_to_number: Dict[str, int]) -> pd.DataFrame:
+    def add_tag_numbers_to_dataframe(self, df: pd.DataFrame, tag_to_number: 'Dict[str, int]') -> pd.DataFrame:
         """
         Add tag numbers to the dataframe based on the mapping from draw_bounding_boxes.
         
@@ -1702,7 +1700,7 @@ class TagJBExtractor:
         return df
 
 
-    def create_annotated_pdf(self, pdf_path: str, output_pdf_path: str) -> Dict[str, int]:
+    def create_annotated_pdf(self, pdf_path: str, output_pdf_path: str) -> 'Dict[str, int]':
         """
         Create a new PDF with bounding boxes for tags and JBs using vector matching.
         Also returns a mapping of tags to their assigned numbers.
@@ -1714,7 +1712,7 @@ class TagJBExtractor:
         Returns:
             Dictionary mapping tags to their assigned numbers
         """
-        # Master dictionary to store all tag-to-number mappings across all pages
+        # Master Dictionary to store all tag-to-number mappings across all pages
         all_tag_numbers = {}
         
         try:
@@ -1769,7 +1767,7 @@ class TagJBExtractor:
                         image, tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number
                     )
                     
-                    # Update the master dictionary with this page's tag numbers
+                    # Update the master Dictionary with this page's tag numbers
                     all_tag_numbers.update(page_tag_numbers)
 
                     # Add information overlay with stats
@@ -1821,7 +1819,7 @@ class TagJBExtractor:
             logger.error(f"Error creating annotated PDF: {e}")
             return {}
 
-    def _create_unmatched_tags_excel(self, unmatched_excel_tags: List[str], unmatched_pdf_tags: List[str], output_path: str) -> None:
+    def _create_unmatched_tags_excel(self, unmatched_excel_tags: 'List[str]', unmatched_pdf_tags: 'List[str]', output_path: str) -> None:
         """
         ایجاد فایل اکسل دو ستونه برای نمایش تگ‌های تطبیق نیافته
         
@@ -1855,7 +1853,7 @@ class TagJBExtractor:
             logger.error(f"Error creating unmatched tags Excel file: {e}")
             logger.error(traceback.format_exc())
 
-    def run_with_annotated_pdf(self, pdf_paths: List[str], excel_path: str, output_excel_path: str, output_pdf_dir: str) -> Tuple[List[str], List[str]]:
+    def run_with_annotated_pdf(self, pdf_paths: 'List[str]', excel_path: str, output_excel_path: str, output_pdf_dir: str) -> 'Tuple[List[str], List[str]]':
         """
         Run complete process with vector-based matching and generate annotated PDFs.
         Also adds tag numbers to the output Excel file.
@@ -1865,7 +1863,7 @@ class TagJBExtractor:
             excel_path: Input Excel file path
             output_excel_path: Output Excel file path
             output_pdf_dir: Directory path for storing processed PDFs
-            io_list_path: Optional path to IO List Excel file
+            io_List_path: Optional path to IO List Excel file
             
         Returns:
             Tuple of (unmatched_excel_tags, unmatched_pdf_tags)
@@ -1881,7 +1879,7 @@ class TagJBExtractor:
         # Store all similarity reports for detailed analysis
         all_similarity_reports = []
         
-        # Master dictionary to store tag-to-number mappings from all PDFs
+        # Master Dictionary to store tag-to-number mappings from all PDFs
         master_tag_numbers = {}
         
         # Dictionary to store all PDF processing results
@@ -1902,7 +1900,7 @@ class TagJBExtractor:
             output_pdf_path = os.path.join(output_pdf_dir, f"annotated_{pdf_filename}")
             pdf_tag_numbers = self.create_annotated_pdf(pdf_path, output_pdf_path)
             
-            # Update master tag numbers dictionary
+            # Update master tag numbers Dictionary
             master_tag_numbers.update(pdf_tag_numbers)
             
             # Collect similarity reports from this PDF
@@ -1989,7 +1987,7 @@ class TagJBExtractor:
             test_colors = self.generate_mc_wire_colors(1)
             logger.info(f"Test wire colors for tag #1: {test_colors}")
         except Exception as e:
-            logger.error(f"Error setting wire color rule: {e}")
+            logger.error(f"Error Setting wire color rule: {e}")
 
     def set_scr_number_rule(self, rule):
         """
@@ -2006,7 +2004,7 @@ class TagJBExtractor:
             test_scr = self.generate_scr_number(1)
             logger.info(f"Test SCR number for tag #1: {test_scr}")
         except Exception as e:
-            logger.error(f"Error setting SCR number rule: {e}")
+            logger.error(f"Error Setting SCR number rule: {e}")
 
     def generate_mc_wire_colors(self, tag_number):
         """
@@ -2103,8 +2101,8 @@ class TagJBExtractor:
             logger.error(f"Error generating SCR number: {e}")
             return ''
 
-    def add_wire_colors_and_scr_to_dataframe(self, df: pd.DataFrame, tag_to_number: Dict[str, int], 
-                                    output_path: str, pdf_results: Dict[str, Dict[int, Tuple]],                       
+    def add_wire_colors_and_scr_to_dataframe(self, df: pd.DataFrame, tag_to_number: 'Dict[str, int]', 
+                                    output_path: str, pdf_results: 'Dict[str, Dict[int, Tuple[Any, ...]]]',                       
                                     pdf_name: str = None) -> pd.DataFrame:
             """
             رنگ‌های سیم MC و شماره‌های SCR را به دیتافریم اضافه می‌کند و یک فایل اکسل جدید ایجاد می‌کند.
@@ -2131,6 +2129,10 @@ class TagJBExtractor:
                 for pdf_name, page_results_dict in pdf_results.items():
                     logger.info(f"Processing PDF: {pdf_name}")
                     
+                    if page_results_dict is None:
+                        logger.warning(f"page_results_dict for PDF {pdf_name} is None, skipping.")
+                        continue
+
                     # پردازش هر صفحه از این PDF
                     for page_num, page_results in page_results_dict.items():
                         self._process_page_results(new_df_data, page_num, page_results, pdf_name, tag_to_number)
@@ -2169,7 +2171,7 @@ class TagJBExtractor:
                 logger.info(f"Number of warnings: {warnings_count}")
                 logger.info(f"Output file: {output_path}")
                 
-                return df  # دیتافریم اصلی را برمی‌گردانیم
+                return new_df  # دیتافریم اصلی را برمی‌گردانیم
                 
             except Exception as e:
                 logger.error(f"Error in add_wire_colors_and_scr_to_dataframe: {e}")
@@ -2214,8 +2216,8 @@ class TagJBExtractor:
                     
         return None
 
-    def _process_page_results(self, new_df_data: List[Dict], page_num: int, page_results: Any, 
-                pdf_name: str, tag_to_number: Dict[str, int]):
+    def _process_page_results(self, new_df_data: 'List[Dict]', page_num: int, page_results: Any, 
+                pdf_name: str, tag_to_number: 'Dict[str, int]'):
         """
         پردازش نتایج یک صفحه و افزودن آن‌ها به لیست داده‌های دیتافریم
         با استفاده از اطلاعات دقیق استخراج شده توسط draw_bounding_boxes
@@ -2258,7 +2260,7 @@ class TagJBExtractor:
                 logger.warning(f"Unexpected type for page_results in PDF {pdf_name}, page {page_num}: {type(page_results)}")
                 return
             
-            # تبدیل به set اگر لیست هستند
+            # تبدیل به Set اگر لیست هستند
             if not isinstance(page_tags, set):
                 page_tags = set(page_tags) if hasattr(page_tags, '__iter__') else set()
             if not isinstance(page_jbs, set):
@@ -2416,9 +2418,9 @@ class TagJBExtractor:
             
             logger.error(traceback.format_exc())
 
-    def _get_unique_wire_colors(self, tag: str, wire_colors: Dict[str, List[str]], 
-                            used_wire_colors: Dict[str, Dict[str, bool]], 
-                            tag_to_number: Dict[str, int], as_list: bool = False) -> Union[str, List[str]]:
+    def _get_unique_wire_colors(self, tag: str, wire_colors: 'Dict[str, List[str]]', 
+                            used_wire_colors: 'Dict[str, Dict[str, bool]]', 
+                            tag_to_number: 'Dict[str, int]', as_list: bool = False) -> 'Union[str, List[str]]':
         """
         برای هر تگ، رنگ‌های سیم منحصر به فرد را برمی‌گرداند و از تکرار جلوگیری می‌کند.
         
@@ -2427,7 +2429,7 @@ class TagJBExtractor:
             wire_colors: دیکشنری رنگ‌های سیم
             used_wire_colors: دیکشنری رنگ‌های استفاده شده
             tag_to_number: دیکشنری شماره تگ‌ها
-            as_list: اگر True باشد، لیست رنگ‌ها را برمی‌گرداند، در غیر این صورت رشته
+            as_List: اگر True باشد، لیست رنگ‌ها را برمی‌گرداند، در غیر این صورت رشته
         
         Returns:
             رشته رنگ‌های سیم با کاما جدا شده یا لیست رنگ‌ها
@@ -2449,7 +2451,7 @@ class TagJBExtractor:
         
         return default_colors if as_list else ', '.join(default_colors)
             
-    def check_tag_number_consistency(self, tag_to_number: Dict[str, int]) -> Tuple[bool, int, int]:
+    def check_tag_number_consistency(self, tag_to_number: 'Dict[str, int]') -> 'Tuple[bool, int, int]':
         """
         بررسی می‌کند که آیا بزرگترین شماره تگ با شماره زوج در توضیحات کابل مطابقت دارد یا خیر.
         
@@ -2466,7 +2468,7 @@ class TagJBExtractor:
                 return True, 0, 0
             
             # اطلاعات دیباگ برای بررسی مقادیر tag_to_number
-            logger.debug(f"Tag to number dictionary: {tag_to_number}")
+            logger.debug(f"Tag to number Dictionary: {tag_to_number}")
             
             # پیدا کردن بزرگترین شماره تگ - با بررسی دقیق‌تر
             # ابتدا همه مقادیر را به عنوان لیست استخراج می‌کنیم
@@ -2479,7 +2481,7 @@ class TagJBExtractor:
                 logger.debug(f"Maximum tag number from all tags: {max_tag_number}")
             else:
                 max_tag_number = 0
-                logger.warning("No tag numbers found in tag_to_number dictionary")
+                logger.warning("No tag numbers found in tag_to_number Dictionary")
             
             # استخراج شماره زوج از توضیحات کابل
             cable_descriptions = []
@@ -2586,7 +2588,7 @@ class TagJBExtractor:
             logger.error(traceback.format_exc())
             return False, 0, 0
         
-    def get_processing_stats(self) -> Dict[str, Any]:
+    def get_processing_stats(self) -> 'Dict[str, Any]':
         """
         Return detailed statistics about the processing results.
         """

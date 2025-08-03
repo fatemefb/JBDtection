@@ -6,13 +6,24 @@ import logging
 import traceback
 from typing import List, Dict, Set, Tuple, Any, Optional, Union
 
+
 # Check for GPU support
 try:
     import tensorflow as tf
     TF_AVAILABLE = True
-except ImportError:
+    
+    # بررسی وضعیت GPU به روش امن
+    gpus = tf.config.list_physical_devices('GPU')
+    if gpus:
+        gpu_info = f"Found {len(gpus)} GPU(s): {gpus}"
+        print(f"GPU detected: {gpu_info}")
+    else:
+        print("No GPU detected, using CPU only.")
+        
+except (ImportError, AttributeError, TypeError) as e:
     TF_AVAILABLE = False
-
+    print(f"TensorFlow not available or error initializing: {e}")
+    
 try:
     from DataAnalysisModule import TagJBExtractor
 except ImportError:
