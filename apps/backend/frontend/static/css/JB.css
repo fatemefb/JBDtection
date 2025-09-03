@@ -575,6 +575,7 @@ footer {
     background: transparent;
     margin-top: 15px;
 }
+<<<<<<< HEAD
 /* Style for the path input field */
 .input-with-icon {
     position: relative;
@@ -680,6 +681,9 @@ body.dark .path-selected {
     50% { background-color: rgba(52, 152, 219, 0.3); }
     100% { background-color: #16213e; }
 }
+=======
+
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
 .lang-switch {
     display: flex;
     gap: 10px;
@@ -1116,7 +1120,10 @@ html[dir="rtl"] .file-item {
     pointer-events: none;
 }
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
 @keyframes ripple {
     to {
         transform: scale(2.5);
@@ -1215,6 +1222,7 @@ body.dark .logout-btn {
 
 body.dark .logout-btn:hover {
     background: rgba(231, 76, 60, 0.25);
+<<<<<<< HEAD
 }/* استایل دکمه انتخاب پوشه */
 /* استایل دکمه انتخاب پوشه - مشابه با label های دیگر */
 .folder-select-btn {
@@ -1501,4 +1509,6 @@ html[dir="rtl"] .menu-item.active a::after {
 
 .menu-item.active a:hover {
     transform: translateY(-2px) scale(1.05);
+=======
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
 }

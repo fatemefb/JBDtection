@@ -85,9 +85,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
     libgl1 libglib2.0-0 libsm6 libxext6 libxrender-dev \
     libtesseract-dev libleptonica-dev \
+<<<<<<< HEAD
     zenity \
     kdialog \
     python3.8 python3-pip python3-tk tzdata && \
+=======
+    python3.8 python3-pip tzdata && \
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
     ln -sf /usr/bin/python3.8 /usr/bin/python && ln -sf /usr/bin/pip3 /usr/bin/pip && \
     rm -rf /var/lib/apt/lists/*
 
@@ -96,15 +100,27 @@ COPY --from=builder /usr/local /usr/local
 
 # اضافه کردن مسیر Tesseract به PATH
 ENV PATH="/usr/local/bin:${PATH}"
+<<<<<<< HEAD
 ENV TESSDATA_PREFIX=/usr/local/share/tessdata
+=======
+ENV TESSDATA_PREFIX=/usr/local/share/
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
 
 # نصب پکیج‌های پایتونی
 WORKDIR /app
 COPY requirements-linux.txt .
+<<<<<<< HEAD
 RUN pip install --upgrade pip \
     && pip install --ignore-installed --prefer-binary --no-cache-dir -r requirements-linux.txt
+=======
+RUN pip install --upgrade pip && pip install --prefer-binary --no-cache-dir -r requirements-linux.txt
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
 
 # کد برنامه
 COPY . .
 
+<<<<<<< HEAD
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
+=======
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9

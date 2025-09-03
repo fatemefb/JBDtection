@@ -417,16 +417,26 @@ class TagJBExtractor:
         except Exception as e:
             logger.error(f"Error compiling regex patterns: {e}")
         
+<<<<<<< HEAD
     def extract_from_image(self, image: np.ndarray) -> 'Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str]]':
         """
         Extract tags, JB identifiers, MC identifiers, cable descriptions, SPAREs, and raw cable descriptions from the image.
+=======
+    def extract_from_image(self, image: np.ndarray) -> 'Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int]]':
+        """
+        Extract tags, JB identifiers, MC identifiers, cable descriptions, and SPAREs from the image.
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
         Also assigns and returns sequential numbers to tags and spares.
             
         Args:
             image: Input image as numpy array
                 
         Returns:
+<<<<<<< HEAD
             Tuple of (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions)
+=======
+            Tuple of (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number)
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
         """
         # اطمینان از وجود الگوها
         if not self.jb_examples:
@@ -457,7 +467,10 @@ class TagJBExtractor:
         mc_identifiers = set()
         cable_descriptions = []
         spare_identifiers = []
+<<<<<<< HEAD
         raw_cable_descriptions = []  # متغیر جدید برای ذخیره متن اصلی تشخیص داده شده
+=======
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
         tag_to_number = {}  # Dictionary to store tag/spare to number mapping
         processed_identifiers = set()
 
@@ -610,11 +623,14 @@ class TagJBExtractor:
             combined_text = ' '.join(nearby_words).upper()
             logger.debug(f"Combined text near {self.mc_examples} {mc_i}: '{combined_text}'")
             
+<<<<<<< HEAD
             # ذخیره متن اصلی در متغیر raw_cable_descriptions
             if combined_text:
                 raw_cable_descriptions.append(combined_text)
                 logger.info(f"Added raw cable description: '{combined_text}'")
             
+=======
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
             # جستجو با patterns مختلف
             found_cable = False
             for pattern in cable_patterns:
@@ -669,8 +685,12 @@ class TagJBExtractor:
                         if potential_cable not in cable_descriptions:
                             cable_descriptions.append(potential_cable)
 
+<<<<<<< HEAD
         logger.info(f'Final cable_descriptions: {cable_descriptions}')
         logger.info(f'Final raw_cable_descriptions: {raw_cable_descriptions}')
+=======
+        logger.info(f'Final cable_descriptions:, {cable_descriptions}')
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
         logger.info(f'Final spare_identifiers: {spare_identifiers}')
         logger.info(f'Final tag_to_number mapping: {tag_to_number}')
         logger.info(f'Final tags found: {tags}')
@@ -681,7 +701,11 @@ class TagJBExtractor:
         self.all_mcs.update(mc_identifiers)
         self.all_spares = spare_identifiers
 
+<<<<<<< HEAD
         return tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions
+=======
+        return tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
         
     def get_similarity_reports(self) -> 'List[Dict[str, Any]]':
         """
@@ -1011,7 +1035,11 @@ class TagJBExtractor:
         return new_tags
 
 
+<<<<<<< HEAD
     def process_pdf_page(self, page_info: 'Tuple[fitz.Page, str, int]') ->  'Tuple[int, Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str]]':
+=======
+    def process_pdf_page(self, page_info: 'Tuple[fitz.Page, str, int]') -> 'Tuple[int, Set[str], Set[str], Set[str], List[str], List[str]]':
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
         """
         Process a single PDF page in parallel.
         
@@ -1032,7 +1060,11 @@ class TagJBExtractor:
         
         # Load and process image
         image = cv2.imread(image_path)
+<<<<<<< HEAD
         tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions = self.extract_from_image(image)
+=======
+        tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers , tag_to_number = self.extract_from_image(image)
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
         
         # Clean up temporary image file
         try:
@@ -1040,9 +1072,16 @@ class TagJBExtractor:
         except:
             pass
             
+<<<<<<< HEAD
         return page_num + 1, tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions
 
     def process_pdf(self, pdf_path: str) ->'Dict[int, Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str]]]':
+=======
+        return page_num + 1, tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers ,tag_to_number
+
+
+    def process_pdf(self, pdf_path: str) -> 'Dict[int, Tuple[Set[str], Set[str], Set[str], List[str], List[str]]]':
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
         """
         Process all pages in a PDF file.
         
@@ -1106,10 +1145,17 @@ class TagJBExtractor:
                         continue
                     
                     # Extract tags and JB identifiers
+<<<<<<< HEAD
                     tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers , tag_to_number , raw_cable_descriptions = self.extract_from_image(image)
                     
                     # Store results
                     results[page_num + 1] = (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers,tag_to_number , raw_cable_descriptions )
+=======
+                    tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers , tag_to_number= self.extract_from_image(image)
+                    
+                    # Store results
+                    results[page_num + 1] = (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers,tag_to_number)
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
                     
                     # Print results immediately for this page
                     print(f"Page {page_num + 1}:")
@@ -1117,7 +1163,10 @@ class TagJBExtractor:
                     print(f"  JB identifiers found ({len(jb_identifiers)}): {', '.join(sorted(jb_identifiers))}")
                     print(f"  MC identifiers found ({len(mc_identifiers)}): {', '.join(sorted(mc_identifiers))}")
                     print(f"  Cable descriptions found ({len(cable_descriptions)}): {', '.join(sorted(cable_descriptions))}")
+<<<<<<< HEAD
                     print(f"  Raw cable descriptions found ({len(raw_cable_descriptions)}): {', '.join(raw_cable_descriptions)}")
+=======
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
                     print(f"  Spare identifiers found ({len(spare_identifiers)}): {', '.join(sorted(spare_identifiers))}")
                     print(f"  Spare identifiers found ({len(tag_to_number)}): {', '.join(sorted(tag_to_number))}")
                     # Clean up temporary image file
@@ -1140,7 +1189,11 @@ class TagJBExtractor:
             pdf_paths: List of paths to PDF files
             
         Returns:
+<<<<<<< HEAD
             Dictionary mapping page numbers to Tuples of (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers,tag_to_number ,raw_cable_descriptions)
+=======
+            Dictionary mapping page numbers to Tuples of (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers,tag_to_number)
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
         """
         combined_results = {}
         page_offset = 0
@@ -1155,8 +1208,13 @@ class TagJBExtractor:
                 # Use imap instead of map for better memory management with large files
                 for pdf_result in pool.imap_unordered(self.process_pdf, pdf_paths):
                     if pdf_result:
+<<<<<<< HEAD
                         for page_num, (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers ,tag_to_number ,raw_cable_descriptions) in pdf_result.items():
                             combined_results[page_num + page_offset] = (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers ,tag_to_number,raw_cable_descriptions)
+=======
+                        for page_num, (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers ,tag_to_number) in pdf_result.items():
+                            combined_results[page_num + page_offset] = (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers ,tag_to_number)
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
                         page_offset += max(pdf_result.keys()) if pdf_result else 0
                         
         except Exception as e:
@@ -1166,7 +1224,11 @@ class TagJBExtractor:
                 try:
                     pdf_result = self.process_pdf(pdf_path)
                     for page_num, (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers ,tag_to_number) in pdf_result.items():
+<<<<<<< HEAD
                         combined_results[page_num + page_offset] = (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers ,tag_to_number,raw_cable_descriptions)
+=======
+                        combined_results[page_num + page_offset] = (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers ,tag_to_number)
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
                     page_offset += max(pdf_result.keys()) if pdf_result else 0
                 except Exception as e:
                     logger.error(f"Error processing PDF {pdf_path}: {e}")
@@ -1216,7 +1278,11 @@ class TagJBExtractor:
             # ستون‌های intermediate که می‌خواهیم اضافه کنیم
             intermediate_columns_to_add = [
                 'PDF_Name', 'Page', 'JB', 'MC', 'Tag_Number', 
+<<<<<<< HEAD
                 'Wire_Code_1', 'Wire_Code_2', 'Terminal_First_Number', 'Terminal_Second_Number', 'SCR_Terminal_Number','Cable_code',
+=======
+                'BK_Colors', 'WT_Colors', 'Terminal_First', 'Terminal_Second', 'Terminal_Label',
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
                 'Cable_Description', 'Type', 'Tag_Number_Status'
             ]
             
@@ -2078,7 +2144,11 @@ class TagJBExtractor:
         try:
             if not hasattr(self, 'scr_number_rule') or not self.scr_number_rule:
                 return ''
+<<<<<<< HEAD
                     
+=======
+                
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
             # جایگزینی {number} با شماره تگ
             if '{number' in self.scr_number_rule:
                 # بررسی فرمت اختیاری
@@ -2100,9 +2170,15 @@ class TagJBExtractor:
                     except Exception as e:
                         logger.error(f"Error evaluating expression {expr}: {e}")
                         return match.group(0)
+<<<<<<< HEAD
                     
                 scr_number = re.sub(r'\{([^}]+)\}', replace_expr, self.scr_number_rule)
                 
+=======
+                
+                scr_number = re.sub(r'\{([^}]+)\}', replace_expr, self.scr_number_rule)
+            
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
             return scr_number
         except Exception as e:
             logger.error(f"Error generating SCR number: {e}")
@@ -2155,7 +2231,11 @@ class TagJBExtractor:
                     # تنظیم ترتیب ستون‌های نهایی
                     column_order = [
                         'PDF_Name', 'Page', 'JB', 'MC', 'Tag/SPARE', 'Tag_Number', 
+<<<<<<< HEAD
                         'Wire_Code_1', 'Wire_Code_2', 'Terminal_First_Number', 'Terminal_Second_Number','Cable_Code', 'SCR_Terminal_Number',
+=======
+                        'BK_Colors', 'WT_Colors', 'Terminal_First', 'Terminal_Second', 'Terminal_Label',
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
                         'Cable_Description', 'Type', 'Tag_Number_Status'  # اضافه کردن ستون وضعیت
                     ]
                     
@@ -2246,8 +2326,11 @@ class TagJBExtractor:
             page_cable_descriptions = []
             page_spares = []
             page_tag_to_number = {}
+<<<<<<< HEAD
             page_raw_cable_descriptions = []  # متغیر جدید
 
+=======
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
             
             # استخراج داده‌ها از page_results با توجه به ساختار آن
             if isinstance(page_results, tuple) and len(page_results) >= 5:
@@ -2256,16 +2339,24 @@ class TagJBExtractor:
                 page_mcs = page_results[2]
                 page_cable_descriptions = page_results[3]
                 page_spares = page_results[4]
+<<<<<<< HEAD
                 page_raw_cable_descriptions = page_results[5]
                 if len(page_results) >= 6:
                     page_tag_to_number = page_results[6]
+=======
+                if len(page_results) >= 6:
+                    page_tag_to_number = page_results[5]
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
             elif isinstance(page_results, dict):
                 page_tags = page_results.get('tags', set())
                 page_jbs = page_results.get('jbs', set())
                 page_mcs = page_results.get('mcs', set())
                 page_cable_descriptions = page_results.get('cable_descriptions', [])
                 page_spares = page_results.get('spares', [])
+<<<<<<< HEAD
                 page_raw_cable_descriptions = page_results.get('raw_cable_descriptions', [])
+=======
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
                 page_tag_to_number = page_results.get('tag_to_number', {})
             else:
                 logger.warning(f"Unexpected type for page_results in PDF {pdf_name}, page {page_num}: {type(page_results)}")
@@ -2283,9 +2374,16 @@ class TagJBExtractor:
             main_jb = list(page_jbs)[0] if page_jbs else ''
             main_mc = list(page_mcs)[0] if page_mcs else ''
             main_cable_desc = page_cable_descriptions[0] if page_cable_descriptions else ''
+<<<<<<< HEAD
             main_raw_cable_desc = page_raw_cable_descriptions[0] if page_raw_cable_descriptions else ''
             logger.info(f"PDF: {pdf_name}, Page {page_num}: JB={main_jb}, MC={main_mc}, Tags={len(page_tags)}, Spares={len(page_spares)}, Cable Desc='{main_cable_desc}', Raw='{main_raw_cable_desc}'")
             logger.info(f"Tag numbers directly from bounding box: {page_tag_to_number}")
+=======
+            
+            logger.info(f"PDF: {pdf_name}, Page {page_num}: JB={main_jb}, MC={main_mc}, Tags={len(page_tags)}, Spares={len(page_spares)}")
+            logger.info(f"Tag numbers directly from bounding box: {page_tag_to_number}")
+            
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
             # استخراج عدد پشت "Pair" از Cable_Description
             pair_number = self.extract_pair_number(main_cable_desc)
             logger.info(f"Extracted pair number from cable description: {pair_number}")
@@ -2322,8 +2420,11 @@ class TagJBExtractor:
                         jb = main_jb
                         mc = main_mc
                         cable_desc = main_cable_desc
+<<<<<<< HEAD
                         raw_cable_desc = main_raw_cable_desc  # متغیر جدید
 
+=======
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
                         
                         # تولید رنگ‌های سیم و شماره‌های SCR بر اساس شماره تگ
                         tag_num_str = f"{tag_num:02d}"
@@ -2342,6 +2443,7 @@ class TagJBExtractor:
                             'MC': mc,
                             'Tag/SPARE': tag,
                             'Tag_Number': tag_num,
+<<<<<<< HEAD
                             'Wire_Code_1': bk_color,
                             'Wire_Code_2': wt_color,
                             'Terminal_First_Number': str(first_scr_num),
@@ -2349,6 +2451,14 @@ class TagJBExtractor:
                             'SCR_Terminal_Number': 'SCR',
                             'Cable_Code': cable_desc,
                             'Cable_Description': raw_cable_desc,  # ستون جدید                       
+=======
+                            'BK_Colors': bk_color,
+                            'WT_Colors': wt_color,
+                            'Terminal_First': str(first_scr_num),
+                            'Terminal_Second': str(second_scr_num),
+                            'Terminal_Label': 'SCR',
+                            'Cable_Description': cable_desc,
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
                             'Type': 'Tag',
                             'Tag_Number_Status': tag_number_status  # ستون برای مقایسه شماره زوج و تگ
                         })
@@ -2391,7 +2501,10 @@ class TagJBExtractor:
                     jb = main_jb
                     mc = main_mc
                     cable_desc = main_cable_desc
+<<<<<<< HEAD
                     raw_cable_desc = main_raw_cable_desc 
+=======
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
                     
                     # تولید رنگ‌های سیم و شماره‌های SCR بر اساس شماره اسپیر
                     spare_num_str = f"{spare_number:02d}"
@@ -2410,6 +2523,7 @@ class TagJBExtractor:
                         'MC': mc,
                         'Tag/SPARE': spare,
                         'Tag_Number': spare_number,
+<<<<<<< HEAD
                         'Wire_Code_1': bk_color,
                         'Wire_Code_2': wt_color,
                         'Terminal_First_Number': str(first_scr_num),
@@ -2417,6 +2531,14 @@ class TagJBExtractor:
                         'SRC_Terminal_Number': 'SCR',
                         'Cable_Code': cable_desc,
                         'Cable_Description': raw_cable_desc,  
+=======
+                        'BK_Colors': bk_color,
+                        'WT_Colors': wt_color,
+                        'Terminal_First': str(first_scr_num),
+                        'Terminal_Second': str(second_scr_num),
+                        'Terminal_Label': 'SCR',
+                        'Cable_Description': cable_desc,
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
                         'Type': 'SPARE',
                         'Tag_Number_Status': tag_number_status  # ستون برای مقایسه شماره زوج و تگ
                     })

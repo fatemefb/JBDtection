@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session
+<<<<<<< HEAD
 from typing import List, Tuple, Dict, Set, Optional, Any, Union
 import os
 import re
@@ -26,6 +27,17 @@ from TagJBExtractorLogger import LoggedTagJBExtractor
 from LinuxTagJBExtractorLogger import LoggedLinuxTagJBExtractor
 from DataAnalysisModule import TagJBExtractor
 from werkzeug.utils import secure_filename
+=======
+import os
+import tempfile
+import logging
+import platform
+from pathlib import Path
+
+# تنظیم لاگینگ
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -42,10 +54,13 @@ app.secret_key = 'jb_detection_system_secret_key'
 UPLOAD_FOLDER = tempfile.gettempdir()
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
+<<<<<<< HEAD
 # مسیر پشتیبان‌گیری روی سرور (مسیر ثابت)
 SERVER_BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 os.makedirs(SERVER_BACKUP_DIR, exist_ok=True)
 
+=======
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
 # تنظیم مسیر پیش‌فرض Tesseract بر اساس سیستم عامل
 system = platform.system().lower()
 if system == 'windows':
@@ -77,10 +92,15 @@ VALID_USERS = {
     'user': 'user123'
 }
 
+<<<<<<< HEAD
 # ایجاد لاگر برای فایل اصلی
 logger = get_logger('app')
 
 
+=======
+# Import DataAnalysisModule here
+from DataAnalysisModule import TagJBExtractor
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
 
 def get_platform_specific_extractor(tesseract_path=None, excel_path=None):
     """
@@ -90,6 +110,7 @@ def get_platform_specific_extractor(tesseract_path=None, excel_path=None):
     
     if system == 'linux':
         try:
+<<<<<<< HEAD
             logger.info("استفاده از استخراج کننده مخصوص لینوکس با پشتیبانی از GPU و قابلیت لاگینگ")
             return LoggedLinuxTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
         except ImportError as e:
@@ -112,10 +133,38 @@ def get_platform_specific_extractor(tesseract_path=None, excel_path=None):
             logger.info("استفاده از استخراج کننده عمومی با قابلیت لاگینگ")
             return LoggedTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
     
+=======
+            from LinuxTagJBExtractor import LinuxTagJBExtractor
+            logger.info("استفاده از استخراج کننده مخصوص لینوکس با پشتیبانی از GPU")
+            return LinuxTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
+        except ImportError as e:
+            logger.warning(f"خطا در بارگذاری LinuxTagJBExtractor: {e}")
+            from DataAnalysisModule import TagJBExtractor
+            logger.info("استفاده از استخراج کننده عمومی")
+            return TagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
+    
+    elif system == 'windows':
+        try:
+            # در صورتی که پیاده‌سازی مخصوص ویندوز داشته باشید، می‌توانید اینجا import کنید
+            # from WindowsTagJBExtractor import WindowsTagJBExtractor
+            # logger.info("استفاده از استخراج کننده مخصوص ویندوز")
+            # return WindowsTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
+            
+            # فعلاً از پیاده‌سازی عمومی استفاده می‌کنیم
+            from DataAnalysisModule import TagJBExtractor
+            logger.info("استفاده از استخراج کننده عمومی در ویندوز")
+            return TagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
+        except ImportError as e:
+            logger.warning(f"خطا در بارگذاری استخراج کننده ویندوز: {e}")
+            from DataAnalysisModule import TagJBExtractor
+            logger.info("استفاده از استخراج کننده عمومی")
+            return TagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
     
     elif system == 'darwin':  # macOS
         try:
             # در صورتی که پیاده‌سازی مخصوص macOS داشته باشید، می‌توانید اینجا import کنید
+<<<<<<< HEAD
             # from MacTagJBExtractorLogger import LoggedMacTagJBExtractor
             # logger.info("استفاده از استخراج کننده مخصوص macOS با قابلیت لاگینگ")
             # return LoggedMacTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
@@ -332,6 +381,27 @@ def copy_to_output_paths(server_files: List[str], output_path: str) -> Tuple[boo
         error_message = f"خطا در کپی فایل‌ها: {str(e)}"
         logger.error(error_message)
         return False, False, "", output_path, error_message  # برگرداندن مسیر اصلی حتی در صورت خطا
+=======
+            # from MacTagJBExtractor import MacTagJBExtractor
+            # logger.info("استفاده از استخراج کننده مخصوص macOS")
+            # return MacTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
+            
+            # فعلاً از پیاده‌سازی عمومی استفاده می‌کنیم
+            from DataAnalysisModule import TagJBExtractor
+            logger.info("استفاده از استخراج کننده عمومی در macOS")
+            return TagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
+        except ImportError as e:
+            logger.warning(f"خطا در بارگذاری استخراج کننده macOS: {e}")
+            from DataAnalysisModule import TagJBExtractor
+            logger.info("استفاده از استخراج کننده عمومی")
+            return TagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
+    
+    else:
+        # سیستم عامل ناشناخته، از پیاده‌سازی عمومی استفاده می‌کنیم
+        from DataAnalysisModule import TagJBExtractor
+        logger.info(f"سیستم عامل ناشناخته '{system}'، استفاده از استخراج کننده عمومی")
+        return TagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
 
 @app.route('/')
 def home():
@@ -349,6 +419,7 @@ def login():
     # بررسی اعتبار نام کاربری و رمز عبور
     if username in VALID_USERS and VALID_USERS[username] == password:
         session['username'] = username
+<<<<<<< HEAD
         # تنظیم لاگر با نام کاربری جدید
         global logger
         logger = get_logger('app', username)
@@ -356,14 +427,23 @@ def login():
         return jsonify({'status': 'success'})
     else:
         logger.warning(f"تلاش ناموفق برای ورود با نام کاربری: {username}")
+=======
+        return jsonify({'status': 'success'})
+    else:
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
         return jsonify({'status': 'error', 'message': 'نام کاربری یا رمز عبور اشتباه است'})
 
 @app.route('/logout')
 def logout():
+<<<<<<< HEAD
     username = session.get('username', 'anonymous')
     # حذف اطلاعات کاربر از session
     session.pop('username', None)
     logger.info(f"کاربر {username} از سیستم خارج شد")
+=======
+    # حذف اطلاعات کاربر از session
+    session.pop('username', None)
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
     return redirect(url_for('home'))
 
 @app.route('/dashboard')
@@ -372,6 +452,7 @@ def dashboard():
     if 'username' not in session:
         return redirect(url_for('home'))
     # نمایش صفحه داشبورد
+<<<<<<< HEAD
     username = session.get('username')
     logger.info(f"کاربر {username} به داشبورد دسترسی پیدا کرد")
     return render_template('JB.html', username=username)
@@ -463,6 +544,9 @@ def select_folder():
                     'status': 'error',
                     'message': error_message
                 })
+=======
+    return render_template('JB.html', username=session['username'])
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
 
 @app.route('/system-info')
 def system_info():
@@ -475,8 +559,11 @@ def system_info():
             'message': 'لطفاً ابتدا وارد سیستم شوید'
         }), 401
     
+<<<<<<< HEAD
     username = session.get('username')
     
+=======
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
     system_info = {
         'platform': platform.system(),
         'platform_version': platform.version(),
@@ -497,17 +584,26 @@ def system_info():
                 if extractor.gpu_type == "NVIDIA" and hasattr(extractor, 'cuda_device_count'):
                     system_info['cuda_device_count'] = extractor.cuda_device_count
     except Exception as e:
+<<<<<<< HEAD
         logger.error(f"خطا در دریافت اطلاعات GPU: {e}", extra={'user': username})
         system_info['gpu_error'] = str(e)
     
     logger.info(f"کاربر {username} اطلاعات سیستم را درخواست کرد", extra={'system_info': system_info})
     
+=======
+        logger.error(f"خطا در دریافت اطلاعات GPU: {e}")
+        system_info['gpu_error'] = str(e)
+    
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
     return jsonify({
         'status': 'success',
         'system_info': system_info
     })
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
 @app.route('/process', methods=['POST'])
 def process_files():
     if 'username' not in session:
@@ -515,14 +611,18 @@ def process_files():
             'status': 'error',
             'message': 'لطفاً ابتدا وارد سیستم شوید'
         }), 401
+<<<<<<< HEAD
     
     username = session.get('username')
     logger.info(f"کاربر {username} درخواست پردازش فایل‌ها را ارسال کرد")
+=======
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
         
     try:
         # Get PDF and Excel files
         pdf_files = request.files.getlist('pdf_files')
         excel_file = request.files['excel_file']
+<<<<<<< HEAD
         output_dir = request.form.get('output_path')
         
         # اعتبارسنجی مسیر خروجی
@@ -545,6 +645,10 @@ def process_files():
         # حفظ مسیر اصلی برای نمایش به کاربر
         original_output_dir = output_dir
 
+=======
+        output_dir = request.form.get('output_path', '')
+        
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
         # گزینه استفاده از GPU (اگر در دسترس باشد)
         use_gpu = request.form.get('use_gpu', 'false').lower() == 'true'
         
@@ -556,12 +660,21 @@ def process_files():
         wire_color_rule = request.form.get('wire_color_rule', '').strip()
         scr_number_rule = request.form.get('scr_number_rule', '').strip()
         
+<<<<<<< HEAD
         # ذخیره فایل‌ها در سرور
+=======
+        # ایجاد مسیرهای خروجی
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        
+        # ذخیره فایل‌ها
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
         pdf_paths = []
         for pdf in pdf_files:
             temp_path = os.path.join(app.config['UPLOAD_FOLDER'], pdf.filename)
             pdf.save(temp_path)
             pdf_paths.append(temp_path)
+<<<<<<< HEAD
             logger.info(f"فایل PDF ذخیره شد: {pdf.filename} در مسیر {temp_path}")
         
         # ذخیره فایل اکسل
@@ -578,6 +691,20 @@ def process_files():
         
         # حالا که excel_path را داریم، می‌توانیم extractor را ایجاد کنیم
         logger.info("در حال راه‌اندازی استخراج کننده مناسب برای سیستم عامل...")
+=======
+            logger.info(f"Saved PDF: {pdf.filename}")
+        
+        excel_path = os.path.join(app.config['UPLOAD_FOLDER'], excel_file.filename)
+        excel_file.save(excel_path)
+        logger.info(f"Saved Excel file: {excel_file.filename}")
+        
+        output_excel_path = os.path.join(output_dir, 'output.xlsx')
+        output_pdf_dir = os.path.join(output_dir, 'annotated_pdfs')
+        os.makedirs(output_pdf_dir, exist_ok=True)
+        
+        # حالا که excel_path را داریم، می‌توانیم extractor را ایجاد کنیم
+        logger.info("Initializing platform-specific extractor...")
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
         extractor = get_platform_specific_extractor(
             tesseract_path=DEFAULT_TESSERACT_PATH,
             excel_path=excel_path
@@ -593,7 +720,10 @@ def process_files():
                 wire_color_rule=wire_color_rule,
                 scr_number_rule=scr_number_rule
             )
+<<<<<<< HEAD
         
+=======
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
         # نمایش اطلاعات GPU اگر در دسترس باشد
         gpu_info = {}
         if hasattr(extractor, 'gpu_available'):
@@ -607,6 +737,7 @@ def process_files():
                 else:
                     logger.info("پردازش GPU غیرفعال شده است (توسط کاربر)")
         
+<<<<<<< HEAD
         # پردازش فایل‌ها در سرور
         logger.info(f"شروع پردازش {len(pdf_paths)} فایل PDF و Excel...")
         unmatched_excel_tags, unmatched_pdf_tags = extractor.run_with_annotated_pdf(
@@ -631,16 +762,32 @@ def process_files():
             server_files=server_output_files,
             output_path=output_dir  # اصلاح شد: windows_output_dir به output_dir تغییر کرد
         )
+=======
+        # پردازش فایل‌ها
+        logger.info("Starting PDF and Excel processing...")
+        unmatched_excel_tags, unmatched_pdf_tags = extractor.run_with_annotated_pdf(
+            pdf_paths=pdf_paths,
+            excel_path=excel_path,
+            output_excel_path=output_excel_path,
+            output_pdf_dir=output_pdf_dir
+        )
+        
+        # لیست PDF های حاشیه‌نویسی شده
+        annotated_pdfs = [f for f in os.listdir(output_pdf_dir) if f.startswith('annotated_')]
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
         
         # پاکسازی فایل‌های موقت
         for path in pdf_paths:
             os.remove(path)
         os.remove(excel_path)
         
+<<<<<<< HEAD
         # تنظیم مسیرهای نمایشی (همیشه ویندوزی)
         display_output_excel_path = os.path.join(display_output_dir, 'output.xlsx')
         display_output_pdf_dir = os.path.join(display_output_dir, 'annotated_pdfs')
 
+=======
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
         # آماده‌سازی پاسخ
         response = {
             'status': 'success',
@@ -652,9 +799,14 @@ def process_files():
                     'excel_file': excel_file.filename
                 },
                 'output_files': {
+<<<<<<< HEAD
                     # مسیرهای ویندوزی برای نمایش به کاربر
                     'excel_path': display_output_excel_path,
                     'annotated_pdfs_dir': display_output_pdf_dir,
+=======
+                    'excel_path': output_excel_path,
+                    'annotated_pdfs_dir': output_pdf_dir,
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
                     'annotated_pdfs': annotated_pdfs
                 },
                 'results': {
@@ -664,6 +816,7 @@ def process_files():
                     'unmatched_pdf_count': len(unmatched_pdf_tags)
                 },
                 'system': {
+<<<<<<< HEAD
                     # همیشه ویندوز نمایش دهید حتی در سرور لینوکس
                     'platform': "Windows",
                     'gpu_info': gpu_info
@@ -674,10 +827,15 @@ def process_files():
                     'client_copy_success': client_copy_success,
                     'user_output_dir': original_output_dir,  
                     'display_output_dir': display_output_dir
+=======
+                    'platform': platform.system(),
+                    'gpu_info': gpu_info
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
                 }
             }
         }
         
+<<<<<<< HEAD
         # اضافه کردن پیام خطا اگر کپی به کلاینت ناموفق بود
         if not client_copy_success and error_message:
             response['details']['backup']['client_error'] = error_message
@@ -690,6 +848,13 @@ def process_files():
     
     except Exception as e:
         logger.error(f"خطا در پردازش فایل‌ها: {str(e)}", extra={'user': username})
+=======
+        logger.info("Processing completed successfully")
+        return jsonify(response)
+    
+    except Exception as e:
+        logger.error(f"Error during processing: {str(e)}")
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
         return jsonify({
             'status': 'error',
             'message': str(e),
@@ -707,10 +872,13 @@ if __name__ == '__main__':
     print(f"سیستم عامل: {platform.system()}")
     print(f"مسیر Tesseract: {DEFAULT_TESSERACT_PATH}")
     
+<<<<<<< HEAD
     # ایجاد پوشه پشتیبان‌گیری اگر وجود ندارد
     os.makedirs(SERVER_BACKUP_DIR, exist_ok=True)
     print(f"مسیر پشتیبان‌گیری: {SERVER_BACKUP_DIR}")
     
+=======
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
     # بررسی وضعیت GPU
     try:
         extractor = get_platform_specific_extractor(tesseract_path=DEFAULT_TESSERACT_PATH)
@@ -723,7 +891,10 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"خطا در بررسی وضعیت GPU: {e}")
     
+<<<<<<< HEAD
     logger.info("سرور راه‌اندازی شد")
+=======
+>>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
     print("در حال راه‌اندازی سرور...")
     print("=" * 50)
     
