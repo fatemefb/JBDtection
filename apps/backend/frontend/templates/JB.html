@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JB Detection System</title>
+    <link rel="icon" href="{{ url_for('static', filename='images/favicon.png') }}" type="image/png">
+    <link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.png') }}" type="image/png">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/favicon.png') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/JB.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <!-- هدر اصلی با لوگو و عنوان بزرگ -->
+            <div class="main-header">
+                <div class="logo-title-container">
+                    <div class="logo-icon">
+                        <img src="{{ url_for('static', filename='images/favicon.png') }}" alt="JB Detection" width="80" height="80">
+                    </div>
+                    <h1 class="main-title">سیستم تشخیص JB</h1>
+                </div>
+                <div class="header-content">
+                    <p id="subtitle">سیستم پیشرفته شناسایی و تطابق تگ‌های PDF و Excel</p>
+                </div>
+            </div>
+            
+            <!-- نوار ناوبری با کنترل‌ها -->
+            <div class="main-nav">
+                <div class="nav-controls">
+                    <div class="lang-switch">
+                        <button id="faBtn" class="lang-btn active">فارسی</button>
+                        <button id="enBtn" class="lang-btn">English</button>
+                    </div>
+
+                    <div class="theme-switch">
+                        <button id="themeBtn" class="theme-btn"><i class="fas fa-moon"></i></button>
+                    </div>
+                    
+                    <div class="user-info">
+                        <span id="username-display">{{ username }}</span>
+                        <a href="/logout" class="logout-btn" title="خروج از سیستم">
+                            <i class="fas fa-sign-out-alt"></i>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </header>
+        
+        <main>
+            <div class="dashboard">
+                
+                <section class="upload-section">
+                    <h2 id="upload-title"><i class="fas fa-file-upload"></i> بارگذاری فایل‌ها</h2>
+                    <form id="processForm">
+                        <div class="upload-container">
+                            <div class="upload-box">
+                                <h3 id="pdf-title">فایل‌های PDF دیاگرام</h3>
+                                <input type="file" id="pdfInput" name="pdf_files" multiple accept=".pdf" required>
+                                <label for="pdfInput">
+                                    <span class="icon"><i class="fas fa-file-pdf"></i></span>
+                                    <span id="select-pdf">انتخاب فایل‌های PDF</span>
+                                </label>
+                                <div id="pdfList" class="file-list"></div>
+                            </div>
+                            <div class="upload-box">
+                                <h3 id="excel-title">فایل Excel اطلاعات کنترل</h3>
+                                <input type="file" id="excelInput" name="excel_file" accept=".xlsx,.xls" required>
+                                <label for="excelInput">
+                                    <span class="icon"><i class="fas fa-file-excel"></i></span>
+                                    <span id="select-excel">انتخاب فایل Excel</span>
+                                </label>
+                                <div id="excelName" class="file-list"></div>
+                            </div>
+                        </div>
+                        <div class="settings-section">
+                            <h2 id="settings-title"><i class="fas fa-cog"></i> تنظیمات خروجی</h2>
+                            <div class="settings-container">
+                                <div class="upload-box">
+                                    <h3 id="output-folder-title">پوشه خروجی</h3>
+                                    <input type="text" id="outputPath" name="output_path" class="folder-path-input" placeholder="مسیر پوشه خروجی را وارد کنید..." required>
+                                    <div class="folder-path-examples" id="folderPathExamples">
+                                        <p id="path-examples-title">مثال‌های مسیر:</p>
+                                        <p class="path-example">C:\Users\YourName\Documents\Output</p>
+                                        <p class="path-example">/home/username/documents/output</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="pattern-section">
+                            <h2 id="pattern-title"><i class="fas fa-magic"></i> یادگیری الگوها</h2>
+                            <div class="pattern-container">
+                                <p class="pattern-description" id="pattern-desc">
+                                    الگوهای سفارشی را برای افزایش دقت شناسایی وارد کنید. سیستم از مثال‌های شما یاد می‌گیرد.
+                                </p>
+                                <div class="pattern-inputs">
+                                    <div class="pattern-group">
+                                        <label for="jbExamples" id="jb-examples-label">شناسایی Junction Box (JB) :</label>
+                                        <input type="text" id="jbExamples" name="jb_examples" placeholder="JB , JM , ...">
+                                        <p class="hint" id="jb-examples-hint"> حروف یا ترکیبی از حروف که نشان‌دهنده Junction Box هستند</p>
+                                    </div>
+                                    <div class="pattern-group">
+                                        <label for="mcExamples" id="mc-examples-label">شناسایی  Multi Cable (MC):</label>
+                                        <input type="text" id="mcExamples" name="mc_examples" placeholder="MC, M-C , ...">
+                                        <p class="hint" id="mc-examples-hint">حروف یا ترکیبی از حروف که نشان‌دهنده  Multi Cable هستند</p>
+                                    </div>
+                                    <div class="pattern-group">
+                                        <label for="spareExamples" id="spare-examples-label">شناسایی SPARE:</label>
+                                        <input type="text" id="spareExamples" name="spare_examples" placeholder="SPARE, spare, ...">
+                                        <p class="hint" id="spare-examples-hint">حروف یا ترکیبی از حروف که نشان‌دهنده  Spare هستند</p>
+                                    </div>
+                                    <div class="pattern-group">
+                                        <label for="cableExamples" id="cable-examples-label">شناسایی توضیحات کابل ها:</label>
+                                        <input type="text" id="cableExamples" name="cable_examples" placeholder="12P, 8P, 24 PAIR, 36T, 48 CORE...">
+                                        <p class="hint" id="cable-examples-hint">حروف یا ترکیبی از حروف که نشان دهنده توضیحات کابل باشد (اعداد میتواند هر عددی باشند)</p>
+                                    </div>
+                                    <div class="pattern-divider"></div>
+                                    <div class="pattern-group">
+                                        <label for="wireColorRule" id="wire-color-rule-label">شناسایی قاعده رنگ سیم :</label>
+                                        <input type="text" id="wireColorRule" name="wire_color_rule" placeholder="BK{number:02d}, WT{number:02d}">
+                                        <p class="hint" id="wire-color-rule-hint">قاعده رنگ سیم با استفاده از {number}:</p>
+                                    </div>
+                                    <div class="pattern-group">
+                                        <label for="scrNumberRule" id="scr-number-rule-label">قاعده Terminal Number:</label>
+                                        <input type="text" id="scrNumberRule" name="scr_number_rule" placeholder="{number*2-1} {number*2} SCR">
+                                        <p class="hint" id="scr-number-rule-hint">تعداد SCR_Terminal_Number در میان Terminal_First_Number , Terminal_Seconde_Number</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="process-section">
+                            <button type="submit" id="processButton" class="process-btn">
+                                <i class="fas fa-play"></i> <span id="process-btn-text">شروع پردازش</span>
+                            </button>
+                        </div>
+                    </form>
+                </section>
+                <section class="diagram-preview-section">
+                    <h2 id="preview-title"><i class="fas fa-image"></i> پیش‌نمایش دیاگرام‌های آپلود شده</h2>
+                    <div id="diagramPreview" class="diagram-preview-container">
+                        <p id="no-files-selected">هنوز فایلی انتخاب نشده است.</p>
+                    </div>
+                </section>
+                <section class="results-section">
+                    <h2 id="results-title"><i class="fas fa-chart-bar"></i> نتایج پردازش</h2>
+                    <div class="results-container">
+                        <div class="progress-box">
+                            <h3 id="progress-title">پیشرفت</h3>
+                            <div class="progress-bar">
+                                <div class="progress" id="progressBar" style="width: 0%;"></div>
+                            </div>
+                        </div>
+                        <div class="stats-container">
+                            <h3 id="stats-title">آمار</h3>
+                            <div class="stats-grid">
+                                <div class="stat-item">
+                                    <span class="stat-label" id="unmatched-tags-label">تگ‌های بدون تطابق</span>
+                                    <span class="stat-value" id="totalTags">0</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label" id="pages-processed-label">صفحات پردازش‌شده</span>
+                                    <span class="stat-value" id="pagesProcessed">0</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="log-box">
+                            <h3 id="log-title">گزارش پردازش</h3>
+                            <pre id="logOutput" class="log-content">آماده پردازش فایل‌ها...</pre>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+
+        <footer>
+            <p id="footer-text">&copy; 2025 JB Detection System. All rights reserved.</p>
+        </footer>
+    </div>
+
+    <script>
+        // Translation object
+        const translations = {
+            'fa': {
+                'title': 'سیستم تشخیص JB',
+                'subtitle': 'سیستم پیشرفته شناسایی و تطابق تگ‌های PDF و Excel',
+                'upload-title': '<i class="fas fa-file-upload"></i> بارگذاری فایل‌ها',
+                'pdf-title': 'فایل‌های PDF دیاگرام',
+                'select-pdf': 'انتخاب فایل‌های PDF',
+                'excel-title': 'فایل Excel اطلاعات کنترل',
+                'select-excel': 'انتخاب فایل Excel',
+                'settings-title': '<i class="fas fa-cog"></i> تنظیمات خروجی',
+                'output-path-label': 'مسیر خروجی:',
+                'output-folder-title': 'پوشه خروجی',
+                'output-path-placeholder': 'مسیر پوشه خروجی را وارد کنید...',
+                'path-examples-title': 'مثال‌های مسیر:',
+                'pattern-title': '<i class="fas fa-magic"></i> یادگیری الگوها',
+                'pattern-desc': 'الگوهای سفارشی را برای افزایش دقت شناسایی وارد کنید. سیستم از مثال‌های شما یاد می‌گیرد.',
+                'jb-examples-label': 'شناسایی Junction Box (JB) :',
+                'jb-examples-hint': 'حروف یا ترکیبی از حروف که نشان‌دهنده Junction Box هستند',
+                'mc-examples-label': 'شناسایی  Multi Cable (MC):',
+                'mc-examples-hint': 'حروف یا ترکیبی از حروف که نشان‌دهنده  Multi Cable هستند',
+                'spare-examples-label': 'شناسایی SPARE:',
+                'spare-examples-hint': 'حروف یا ترکیبی از حروف که نشان‌دهنده  Spare هستند',
+                'cable-examples-label': 'شناسایی توضیحات کابل ها:',
+                'cable-examples-hint': 'حروف یا ترکیبی از حروف که نشان دهنده توضیحات کابل باشد (اعداد میتواند هر عددی باشند)',
+                'wire-color-rule-label': 'شناسایی قاعده رنگ سیم :',
+                'wire-color-rule-hint': 'قاعده رنگ سیم با استفاده از {number}:',
+                'scr-number-rule-label': 'قاعده Terminal Number:',
+                'scr-number-rule-hint': 'تعداد SCR_Terminal_Number در میان Terminal_First_Number , Terminal_Seconde_Number',
+                'process-btn-text': 'شروع پردازش',
+                'preview-title': '<i class="fas fa-image"></i> پیش‌نمایش دیاگرام‌های آپلود شده',
+                'no-files-selected': 'هنوز فایلی انتخاب نشده است.',
+                'results-title': '<i class="fas fa-chart-bar"></i> نتایج پردازش',
+                'progress-title': 'پیشرفت',
+                'stats-title': 'آمار',
+                'unmatched-tags-label': 'تگ‌های بدون تطابق',
+                'pages-processed-label': 'صفحات پردازش‌شده',
+                'log-title': 'گزارش پردازش',
+                'log-ready': 'آماده پردازش فایل‌ها...',
+                'processing': '<i class="fas fa-spinner fa-spin"></i> در حال پردازش...',
+                'processing-started': 'پردازش آغاز شد...\n',
+                'processing-success': '✅ پردازش با موفقیت انجام شد!\n\n',
+                'output-excel': '📊 فایل خروجی Excel: ',
+                'unmatched-excel-tags': '📋 تگ‌های بدون تطابق در Excel:\n',
+                'unmatched-pdf-tags': '\n📋 تگ‌های بدون تطابق در PDF:\n',
+                'no-unmatched-tags': '   هیچ تگ بدون تطابق\n',
+                'error': '❌ خطا: ',
+                'no-file-selected': 'فایلی انتخاب نشده',
+                'footer-text': '&copy; 2025 سیستم تشخیص JB. تمامی حقوق محفوظ است.'
+            },
+            'en': {
+                'title': 'JB Detection System',
+                'subtitle': 'Advanced PDF and Excel Tag Detection and Matching System',
+                'upload-title': '<i class="fas fa-file-upload"></i> Upload Files',
+                'pdf-title': 'PDF Diagram Files',
+                'select-pdf': 'Select PDF Files',
+                'excel-title': 'Control Information Excel File',
+                'select-excel': 'Select Excel File',
+                'settings-title': '<i class="fas fa-cog"></i> Output Settings',
+                'output-path-label': 'Output Path:',
+                'output-folder-title': 'Output Folder',
+                'output-path-placeholder': 'Enter output folder path...',
+                'path-examples-title': 'Path examples:',
+                'pattern-title': '<i class="fas fa-magic"></i> Pattern Learning',
+                'pattern-desc': 'Enter custom patterns to improve detection accuracy. The system learns from your examples.',
+                'jb-examples-label': 'Junction Box (JB) Detection:',
+                'jb-examples-hint': 'Letters or combinations that indicate Junction Box',
+                'mc-examples-label': 'Multi Cable (MC) Detection:',
+                'mc-examples-hint': 'Letters or combinations that indicate Multi Cable',
+                'spare-examples-label': 'SPARE Detection:',
+                'spare-examples-hint': 'Letters or combinations that indicate Spare',
+                'cable-examples-label': 'Cable Description Detection:',
+                'cable-examples-hint': 'Letters or combinations that indicate cable descriptions (numbers can be any value)',
+                'wire-color-rule-label': 'Wire Color Rule Detection:',
+                'wire-color-rule-hint': 'Wire color rule using {number}:',
+                'scr-number-rule-label': 'Terminal Number Rule:',
+                'scr-number-rule-hint': 'Number of SCR_Terminal_Number between Terminal_First_Number and Terminal_Second_Number',
+                'process-btn-text': 'Start Processing',
+                'preview-title': '<i class="fas fa-image"></i> Uploaded Diagrams Preview',
+                'no-files-selected': 'No file selected yet.',
+                'results-title': '<i class="fas fa-chart-bar"></i> Processing Results',
+                'progress-title': 'Progress',
+                'stats-title': 'Statistics',
+                'unmatched-tags-label': 'Unmatched Tags',
+                'pages-processed-label': 'Pages Processed',
+                'log-title': 'Processing Log',
+                'log-ready': 'Ready to process files...',
+                'processing': '<i class="fas fa-spinner fa-spin"></i> Processing...',
+                'processing-started': 'Processing started...\n',
+                'processing-success': '✅ Processing completed successfully!\n\n',
+                'output-excel': '📊 Output Excel saved to: ',
+                'unmatched-excel-tags': '📋 Unmatched Excel Tags:\n',
+                'unmatched-pdf-tags': '\n📋 Unmatched PDF Tags:\n',
+                'no-unmatched-tags': '   No unmatched tags\n',
+                'error': '❌ Error: ',
+                'no-file-selected': 'No file selected',
+                'footer-text': '&copy; 2025 JB Detection System. All rights reserved.'
+            }
+        };
+
+        // Theme and language switch logic
+        const themeBtn = document.getElementById('themeBtn');
+        const faBtn = document.getElementById('faBtn');
+        const enBtn = document.getElementById('enBtn');
+        let currentTheme = localStorage.getItem('theme') || 'light';
+        let currentLang = localStorage.getItem('lang') || 'fa';
+
+        function setTheme(theme) {
+            document.body.classList.remove('light', 'dark');
+            document.body.classList.add(theme);
+            themeBtn.innerHTML = theme === 'dark' ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
+            localStorage.setItem('theme', theme);
+        }
+
+        function setLang(lang) {
+            faBtn.classList.toggle('active', lang === 'fa');
+            enBtn.classList.toggle('active', lang === 'en');
+            document.documentElement.dir = lang === 'fa' ? 'rtl' : 'ltr';
+            currentLang = lang;
+
+            // Update all text elements
+            document.querySelector('.main-title').textContent = translations[lang]['title'];
+            document.getElementById('subtitle').innerHTML = translations[lang]['subtitle'];
+            document.getElementById('upload-title').innerHTML = translations[lang]['upload-title'];
+            document.getElementById('pdf-title').innerHTML = translations[lang]['pdf-title'];
+            document.getElementById('select-pdf').innerHTML = translations[lang]['select-pdf'];
+            document.getElementById('excel-title').innerHTML = translations[lang]['excel-title'];
+            document.getElementById('select-excel').innerHTML = translations[lang]['select-excel'];
+            document.getElementById('settings-title').innerHTML = translations[lang]['settings-title'];
+            document.getElementById('output-folder-title').innerHTML = translations[lang]['output-folder-title'];
+            document.getElementById('outputPath').placeholder = translations[lang]['output-path-placeholder'];
+            document.getElementById('path-examples-title').innerHTML = translations[lang]['path-examples-title'];
+            document.getElementById('pattern-title').innerHTML = translations[lang]['pattern-title'];
+            document.getElementById('pattern-desc').innerHTML = translations[lang]['pattern-desc'];
+            document.getElementById('jb-examples-label').innerHTML = translations[lang]['jb-examples-label'];
+            document.getElementById('jb-examples-hint').innerHTML = translations[lang]['jb-examples-hint'];
+            document.getElementById('mc-examples-label').innerHTML = translations[lang]['mc-examples-label'];
+            document.getElementById('mc-examples-hint').innerHTML = translations[lang]['mc-examples-hint'];
+            document.getElementById('spare-examples-label').innerHTML = translations[lang]['spare-examples-label'];
+            document.getElementById('spare-examples-hint').innerHTML = translations[lang]['spare-examples-hint'];
+            document.getElementById('cable-examples-label').innerHTML = translations[lang]['cable-examples-label'];
+            document.getElementById('cable-examples-hint').innerHTML = translations[lang]['cable-examples-hint'];
+            document.getElementById('wire-color-rule-label').innerHTML = translations[lang]['wire-color-rule-label'];
+            document.getElementById('wire-color-rule-hint').innerHTML = translations[lang]['wire-color-rule-hint'];
+            document.getElementById('scr-number-rule-label').innerHTML = translations[lang]['scr-number-rule-label'];
+            document.getElementById('scr-number-rule-hint').innerHTML = translations[lang]['scr-number-rule-hint'];
+            document.getElementById('process-btn-text').innerHTML = translations[lang]['process-btn-text'];
+            document.getElementById('preview-title').innerHTML = translations[lang]['preview-title'];
+            document.getElementById('no-files-selected').innerHTML = translations[lang]['no-files-selected'];
+            document.getElementById('results-title').innerHTML = translations[lang]['results-title'];
+            document.getElementById('progress-title').innerHTML = translations[lang]['progress-title'];
+            document.getElementById('stats-title').innerHTML = translations[lang]['stats-title'];
+            document.getElementById('unmatched-tags-label').innerHTML = translations[lang]['unmatched-tags-label'];
+            document.getElementById('pages-processed-label').innerHTML = translations[lang]['pages-processed-label'];
+            document.getElementById('log-title').innerHTML = translations[lang]['log-title'];
+            document.getElementById('logOutput').textContent = translations[lang]['log-ready'];
+            document.getElementById('footer-text').innerHTML = translations[lang]['footer-text'];
+            
+            localStorage.setItem('lang', lang);
+        }
+
+        themeBtn.addEventListener('click', () => {
+            currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+            setTheme(currentTheme);
+        });
+
+        faBtn.addEventListener('click', () => {
+            setLang('fa');
+        });
+
+        enBtn.addEventListener('click', () => {
+            setLang('en');
+        });
+
+        // Initialize theme and language
+        setTheme(currentTheme);
+        setLang(currentLang);
+
+        // PDF file input handler
+        document.getElementById('pdfInput').addEventListener('change', (e) => {
+            const pdfList = document.getElementById('pdfList');
+            const diagramPreview = document.getElementById('diagramPreview');
+            
+            // پاک کردن لیست قبلی
+            pdfList.innerHTML = '';
+            
+            if (e.target.files.length > 0) {
+                // نمایش فایل‌های انتخاب شده در لیست
+                for (let i = 0; i < e.target.files.length; i++) {
+                    const fileName = e.target.files[i].name;
+                    const fileItem = document.createElement('div');
+                    fileItem.className = 'file-item';
+                    fileItem.innerHTML = `<i class="fas fa-file-pdf"></i> ${fileName}`;
+                    pdfList.appendChild(fileItem);
+                }
+                
+                // اضافه کردن انیمیشن برای نشان دادن انتخاب موفق
+                const fileItems = pdfList.querySelectorAll('.file-item');
+                fileItems.forEach((item, index) => {
+                    item.style.animation = 'none';
+                    setTimeout(() => {
+                        item.style.animation = 'fileSelected 0.5s ease';
+                        item.style.animationDelay = `${index * 0.1}s`;
+                    }, 10);
+                });
+                
+                // به‌روزرسانی پیش‌نمایش دیاگرام‌ها
+                diagramPreview.innerHTML = '';
+                for (let i = 0; i < Math.min(e.target.files.length, 3); i++) {
+                    const file = e.target.files[i];
+                    const reader = new FileReader();
+                    reader.onload = function(event) {
+                        const previewItem = document.createElement('div');
+                        previewItem.className = 'preview-item';
+                        previewItem.innerHTML = `
+                            <div class="preview-header">
+                                <i class="fas fa-file-pdf"></i> ${file.name}
+                            </div>
+                            <div class="preview-placeholder">
+                                <i class="fas fa-file-pdf fa-3x"></i>
+                                <p>${file.name}</p>
+                            </div>
+                        `;
+                        diagramPreview.appendChild(previewItem);
+                    };
+                    reader.readAsDataURL(file);
+                }
+                
+                if (e.target.files.length > 3) {
+                    const moreFiles = document.createElement('div');
+                    moreFiles.className = 'more-files';
+                    moreFiles.innerHTML = `<p>+${e.target.files.length - 3} ${currentLang === 'fa' ? 'فایل دیگر' : 'more files'}</p>`;
+                    diagramPreview.appendChild(moreFiles);
+                }
+            } else {
+                // اگر هیچ فایلی انتخاب نشده باشد
+                pdfList.innerHTML = '';
+                diagramPreview.innerHTML = `<p id="no-files-selected">${translations[currentLang]['no-files-selected']}</p>`;
+            }
+        });
+
+        // Excel file input handler
+        document.getElementById('excelInput').addEventListener('change', (e) => {
+            const excelName = document.getElementById('excelName');
+            excelName.innerHTML = '';
+            
+            if (e.target.files.length > 0) {
+                const fileName = e.target.files[0].name;
+                const fileItem = document.createElement('div');
+                fileItem.className = 'file-item';
+                fileItem.innerHTML = `<i class="fas fa-file-excel"></i> ${fileName}`;
+                excelName.appendChild(fileItem);
+                
+                // اضافه کردن انیمیشن برای نشان دادن انتخاب موفق
+                fileItem.style.animation = 'none';
+                setTimeout(() => {
+                    fileItem.style.animation = 'fileSelected 0.5s ease';
+                }, 10);
+            } else {
+                // اگر هیچ فایلی انتخاب نشده باشد
+                excelName.innerHTML = `<p>${translations[currentLang]['no-file-selected']}</p>`;
+            }
+        });
+
+        // Existing form and file handlers
+        document.getElementById('processForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData();
+            // Add PDF files
+            const pdfFiles = document.getElementById('pdfInput').files;
+            for (let i = 0; i < pdfFiles.length; i++) {
+                formData.append('pdf_files', pdfFiles[i]);
+            }
+            // Add Excel file
+            formData.append('excel_file', document.getElementById('excelInput').files[0]);
+            // Add output path
+            formData.append('output_path', document.getElementById('outputPath').value);
+            // الگوها
+            formData.append('jb_examples', document.getElementById('jbExamples').value);
+            formData.append('mc_examples', document.getElementById('mcExamples').value);
+            formData.append('spare_examples', document.getElementById('spareExamples').value);
+            formData.append('cable_examples', document.getElementById('cableExamples').value);
+            formData.append('wire_color_rule', document.getElementById('wireColorRule').value);
+            formData.append('scr_number_rule', document.getElementById('scrNumberRule').value);
+            // Update UI to show processing state
+            document.getElementById('processButton').disabled = true;
+            document.getElementById('processButton').innerHTML = translations[currentLang]['processing'];
+            document.getElementById('logOutput').textContent = translations[currentLang]['processing-started'];
+            document.getElementById('progressBar').style.width = '10%';
+            try {
+                const response = await fetch('/process', {
+                    method: 'POST',
+                    body: formData
+                });
+                document.getElementById('progressBar').style.width = '70%';
+                const result = await response.json();
+                document.getElementById('progressBar').style.width = '100%';
+                if (result.status === 'success') {
+                    document.getElementById('totalTags').textContent = (result.details?.results?.unmatched_pdf_tags?.length || 0) + (result.details?.results?.unmatched_excel_tags?.length || 0);
+                    document.getElementById('pagesProcessed').textContent = result.details?.output_files?.annotated_pdfs?.length || 0;
+                    let logContent = translations[currentLang]['processing-success'];
+                    const excelPath = standardizeWindowsPath(result.details.output_files.excel_path);
+                    logContent += translations[currentLang]['output-excel'] + `${excelPath}\n\n`;
+                    
+                    logContent += translations[currentLang]['unmatched-excel-tags'];
+                    const unmatchedExcelTags = result.details.results.unmatched_excel_tags || [];
+                    if (unmatchedExcelTags.length === 0) {
+                        logContent += translations[currentLang]['no-unmatched-tags'];
+                    } else {
+                        unmatchedExcelTags.forEach(tag => {
+                            logContent += `   • ${tag}\n`;
+                        });
+                    }
+                    logContent += translations[currentLang]['unmatched-pdf-tags'];
+                    const unmatchedPdfTags = result.details.results.unmatched_pdf_tags || [];
+                    if (unmatchedPdfTags.length === 0) {
+                        logContent += translations[currentLang]['no-unmatched-tags'];
+                    } else {
+                        unmatchedPdfTags.forEach(tag => {
+                            logContent += `   • ${tag}\n`;
+                        });
+                    }
+                    document.getElementById('logOutput').textContent = logContent;
+                } else {
+                    document.getElementById('logOutput').textContent = translations[currentLang]['error'] + 
+                        `${result.message}\n\n${JSON.stringify(result.details || {}, null, 2)}`;
+                }
+            } catch (error) {
+                document.getElementById('progressBar').style.width = '100%';
+                document.getElementById('logOutput').textContent = translations[currentLang]['error'] + `${error.message}\n`;
+            } finally {
+                document.getElementById('processButton').disabled = false;
+                document.getElementById('processButton').innerHTML = '<i class="fas fa-play"></i> <span id="process-btn-text">' + 
+                    translations[currentLang]['process-btn-text'] + '</span>';
+            }
+        });
+        
+        // تابع تبدیل همه مسیرها به فرمت ویندوزی استاندارد
+        function standardizeWindowsPath(path) {
+            if (!path) return '';
+            // ابتدا همه / ها را به \ تبدیل می‌کنیم
+            let windowsPath = path.replace(/\//g, '\\');
+            
+            // حذف \ های اضافی
+            while (windowsPath.includes('\\\\')) {
+                windowsPath = windowsPath.replace(/\\\\/g, '\\');
+            }
+            
+            return windowsPath;
+        }
+
+        // Add ripple effect to buttons and clickable elements
+        function createRipple(event, element) {
+            const circle = document.createElement('span');
+            const diameter = Math.max(element.clientWidth, element.clientHeight);
+            const radius = diameter / 2;
+            
+            const rect = element.getBoundingClientRect();
+            
+            circle.style.width = circle.style.height = `${diameter}px`;
+            circle.style.left = `${event.clientX - rect.left - radius}px`;
+            circle.style.top = `${event.clientY - rect.top - radius}px`;
+            circle.classList.add('ripple');
+            
+            const ripple = element.getElementsByClassName('ripple')[0];
+            if (ripple) {
+                ripple.remove();
+            }
+            
+            element.appendChild(circle);
+            
+            setTimeout(() => {
+                circle.remove();
+            }, 600);
+        }
+        
+        // Add ripple effect to buttons
+        document.querySelectorAll('button, label[for="pdfInput"], label[for="excelInput"]').forEach(button => {
+            button.addEventListener('click', function(e) {
+                createRipple(e, this);
+            });
+        });
+
+        // Add smooth transition when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            document.body.style.transition = 'background-color 0.5s ease, color 0.5s ease';
+            setTimeout(() => {
+                document.querySelectorAll('*').forEach(el => {
+                    if (el !== document.body) {
+                        el.style.transition = 'inherit';
+                    }
+                });
+            }, 100);
+            
+            // Add animation effect
+            document.body.style.animation = 'none';
+            setTimeout(() => {
+                document.body.style.animation = '';
+            }, 10);
+            
+            // تنظیم عنوان صفحه با آیکون
+            document.title = currentLang === 'fa' ? 'سیستم تشخیص JB' : 'JB Detection System';
+        });
+
+        // اضافه کردن CSS برای انیمیشن انتخاب فایل
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes fileSelected {
+                0% { transform: translateY(10px); opacity: 0; }
+                100% { transform: translateY(0); opacity: 1; }
+            }
+            
+            .file-item {
+                display: flex;
+                align-items: center;
+                margin: 5px 0;
+                padding: 8px 12px;
+                background-color: var(--input-bg);
+                border-radius: 4px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                animation: fileSelected 0.5s ease;
+            }
+            
+            .file-item i {
+                margin-right: 8px;
+                color: var(--accent-color);
+            }
+            
+            .preview-item {
+                margin: 10px 0;
+                border: 1px solid var(--border-color);
+                border-radius: 8px;
+                overflow: hidden;
+                background-color: var(--card-bg);
+                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                animation: fileSelected 0.5s ease;
+            }
+            
+            .preview-header {
+                padding: 8px 12px;
+                background-color: var(--header-bg);
+                border-bottom: 1px solid var(--border-color);
+                font-weight: 500;
+            }
+            
+            .preview-placeholder {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                padding: 30px;
+                color: var(--text-muted);
+                text-align: center;
+            }
+            
+            .preview-placeholder i {
+                margin-bottom: 10px;
+                color: var(--accent-color);
+            }
+            
+            .more-files {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                padding: 10px;
+                background-color: var(--card-bg);
+                border-radius: 8px;
+                margin-top: 10px;
+                border: 1px dashed var(--border-color);
+            }
+            
+            /* استایل برای هدر جدید */
+            .main-header {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                padding: 20px 0;
+                margin-bottom: 15px;
+                border-bottom: 1px solid var(--border-color);
+                background-color: var(--header-bg);
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            }
+            
+            .logo-title-container {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin-bottom: 10px;
+            }
+            
+            /* استایل جدید برای لوگو - بدون حاشیه و کاملاً گرد */
+            .logo-icon {
+                width: 90px;
+                height: 90px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin-right: 15px;
+                border-radius: 100%;
+                background: none; /* حذف پس‌زمینه */
+                box-shadow: none; /* حذف سایه */
+                padding: 0; /* حذف حاشیه داخلی */
+                transition: transform 0.3s ease;
+                border: none; /* حذف هرگونه حاشیه */
+            }
+            
+            .logo-icon img {
+                width: 100%; /* تصویر کامل */
+                height: 100%; /* تصویر کامل */
+                object-fit: contain;
+                border-radius: 80%; /* گرد کردن تصویر */
+                transition: transform 0.3s ease;
+            }
+            
+            /* افکت هاور برای لوگو */
+            .logo-icon:hover {
+                transform: scale(1.1);
+            }
+            
+            .logo-icon:hover img {
+                transform: scale(1.05);
+            }
+            
+            .main-title {
+                font-size: 2.5rem;
+                font-weight: 700;
+                color: white; /* تغییر رنگ عنوان به سفید */
+                margin: 0;
+                text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+            }
+            
+            .header-content {
+                text-align: center;
+                margin-top: 5px;
+            }
+            
+            .header-content p {
+                font-size: 1.2rem;
+                color: var(--text-muted);
+                margin: 0;
+            }
+            
+            .main-nav {
+                width: 100%;
+                display: flex;
+                justify-content: flex-end;
+                padding: 10px 20px;
+                background-color: var(--card-bg);
+                border-radius: 12px; /* گرد کردن منوی ناوبری */
+                box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+                overflow: hidden; /* اطمینان از گرد بودن گوشه‌ها */
+            }
+            
+            .nav-controls {
+                display: flex;
+                align-items: center;
+                gap: 15px;
+            }
+            
+            /* استایل برای RTL */
+            html[dir="rtl"] .file-item i {
+                margin-right: 0;
+                margin-left: 8px;
+            }
+            
+            html[dir="rtl"] .logo-icon {
+                margin-right: 0;
+                margin-left: 15px;
+            }
+            
+            /* استایل برای دکمه‌های زبان و تم - گرد کردن کامل */
+            .lang-btn, .theme-btn {
+                padding: 8px 12px;
+                border: none;
+                border-radius: 80px; /* گرد کردن کامل دکمه‌ها */
+                background-color: var(--input-bg);
+                color: var(--text-color);
+                cursor: pointer;
+                transition: background-color 0.3s ease, transform 0.2s ease;
+                font-weight: 500;
+                position: relative;
+                overflow: hidden;
+            }
+            
+            .lang-btn.active {
+                background-color: #3498db; /* رنگ آبی برای دکمه‌های زبان فعال */
+                color: white;
+            }
+            
+            .lang-btn:hover, .theme-btn:hover {
+                background-color: var(--hover-color);
+                transform: translateY(-2px);
+            }
+            
+            /* استایل برای اطلاعات کاربر - گرد کردن کامل */
+            .user-info {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                padding: 5px 15px; /* افزایش پدینگ افقی */
+                background-color: var(--input-bg);
+                border-radius: 50px; /* گرد کردن کامل */
+            }
+            
+            #username-display {
+                font-weight: 500;
+            }
+            
+            .logout-btn {
+                color: var(--text-color);
+                text-decoration: none;
+                padding: 5px;
+                border-radius: 80%; /* گرد کردن کامل آیکون خروج */
+                transition: color 0.3s ease, background-color 0.3s ease;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 30px;
+                height: 30px;
+            }
+            
+            /* تغییر رنگ آیکون خروج در حالت شب به سفید */
+            body.dark .logout-btn {
+                color: white;
+            }
+            
+            .logout-btn:hover {
+                color: white;
+                background-color: var(--accent-color);
+            }
+            
+            /* افکت ریپل */
+            .ripple {
+                position: absolute;
+                background-color: rgba(255, 255, 255, 0.3);
+                border-radius: 80%;
+                transform: scale(0);
+                animation: ripple 0.6s linear;
+                pointer-events: none;
+            }
+            
+            @keyframes ripple {
+                to {
+                    transform: scale(4);
+                    opacity: 0;
+                }
+            }
+            
+            /* انیمیشن چرخش لوگو */
+            @keyframes logoSpin {
+                0% { transform: rotateY(0deg); }
+                100% { transform: rotateY(360deg); }
+            }
+            
+            /* اضافه کردن انیمیشن چرخش به لوگو در هنگام بارگذاری صفحه */
+            .logo-icon.initial-load {
+                animation: logoSpin 1.5s ease-in-out;
+            }
+            
+            /* تغییر رنگ پس‌زمینه هدر در حالت تاریک */
+            body.dark .main-header {
+                background-color: #1a2035;
+            }
+            
+            /* تغییر رنگ پس‌زمینه منوی ناوبری در حالت تاریک */
+            body.dark .main-nav {
+                background-color: #2c3e50;
+            }
+            
+            /* تغییر رنگ متن عنوان در حالت تاریک */
+            body.dark .main-title {
+                color: white;
+                text-shadow: 0 1px 3px rgba(0,0,0,0.3);
+            }
+            
+            /* استایل برای دکمه‌های آپلود فایل - گرد کردن کامل */
+            label[for="pdfInput"], 
+            label[for="excelInput"] {
+                border-radius: 50px; /* گرد کردن کامل دکمه‌های آپلود */
+                overflow: hidden;
+            }
+            
+            /* استایل برای دکمه پردازش - گرد کردن کامل */
+            .process-btn {
+                border-radius: 50px; /* گرد کردن کامل دکمه پردازش */
+            }
+            
+            /* استایل برای فیلد ورودی مسیر پوشه */
+            .folder-path-input {
+                width: 100%;
+                padding: 12px 15px;
+                border: 1px solid var(--border-color);
+                border-radius: 50px;
+                background-color: var(--input-bg);
+                color: var(--text-color);
+                font-size: 1rem;
+                transition: border-color 0.3s ease, box-shadow 0.3s ease;
+                margin-bottom: 10px;
+            }
+            
+            .folder-path-input:focus {
+                border-color: var(--accent-color);
+                box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+                outline: none;
+            }
+            
+            /* استایل برای مثال‌های مسیر */
+            .folder-path-examples {
+                margin-top: 5px;
+                padding: 10px;
+                background-color: var(--card-bg);
+                border-radius: 8px;
+                border: 1px dashed var(--border-color);
+            }
+            
+            .folder-path-examples p {
+                margin: 5px 0;
+                font-size: 0.9rem;
+                color: var(--text-muted);
+            }
+            
+            .path-example {
+                padding: 5px 10px;
+                background-color: var(--input-bg);
+                border-radius: 4px;
+                margin: 5px 0;
+                font-family: monospace;
+                word-break: break-all;
+            }
+        `;
+        document.head.appendChild(style);
+        
+        // اضافه کردن انیمیشن چرخش به لوگو در هنگام بارگذاری صفحه
+        document.addEventListener('DOMContentLoaded', () => {
+            const logoIcon = document.querySelector('.logo-icon');
+            logoIcon.classList.add('initial-load');
+            
+            // حذف کلاس انیمیشن پس از اتمام آن
+            setTimeout(() => {
+                logoIcon.classList.remove('initial-load');
+            }, 1500);
+        });
+    </script>
+</body>
+</html>
