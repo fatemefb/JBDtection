@@ -4,12 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JB Detection System</title>
-<<<<<<< HEAD
     <link rel="icon" href="{{ url_for('static', filename='images/favicon.png') }}" type="image/png">
     <link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.png') }}" type="image/png">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/favicon.png') }}">
-=======
->>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
     <link rel="stylesheet" href="{{ url_for('static', filename='css/JB.css') }}">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
@@ -17,7 +14,6 @@
 <body>
     <div class="container">
         <header>
-<<<<<<< HEAD
             <!-- هدر اصلی با لوگو و عنوان بزرگ -->
             <div class="main-header">
                 <div class="logo-title-container">
@@ -49,24 +45,6 @@
                             <i class="fas fa-sign-out-alt"></i>
                         </a>
                     </div>
-=======
-            <h1 id="title"><i class="fas fa-search-location"></i> سیستم تشخیص JB</h1>
-            <p id="subtitle">سیستم پیشرفته شناسایی و تطابق تگ‌های PDF و Excel</p>
-                <div class="topbar">
-                                <div class="lang-switch">
-                    <button id="faBtn" class="lang-btn active">فارسی</button>
-                    <button id="enBtn" class="lang-btn">English</button>
-                </div>
-
-                <div class="theme-switch">
-                    <button id="themeBtn" class="theme-btn"><i class="fas fa-moon"></i></button>
-                </div>
-                                <div class="user-info">
-                    <span id="username-display">{{ username }}</span>
-                    <a href="/logout" class="logout-btn" title="خروج از سیستم">
-                        <i class="fas fa-sign-out-alt"></i>
-                    </a>
->>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
                 </div>
             </div>
         </header>
@@ -100,7 +78,6 @@
                         <div class="settings-section">
                             <h2 id="settings-title"><i class="fas fa-cog"></i> تنظیمات خروجی</h2>
                             <div class="settings-container">
-<<<<<<< HEAD
                                 <div class="upload-box">
                                     <h3 id="output-folder-title">پوشه خروجی</h3>
                                     <input type="text" id="outputPath" name="output_path" class="folder-path-input" placeholder="مسیر پوشه خروجی را وارد کنید..." required>
@@ -108,13 +85,6 @@
                                         <p id="path-examples-title">مثال‌های مسیر:</p>
                                         <p class="path-example">C:\Users\YourName\Documents\Output</p>
                                         <p class="path-example">/home/username/documents/output</p>
-=======
-                                <div class="setting-item">
-                                    <label for="outputPath" id="output-path-label">مسیر خروجی:</label>
-                                    <div class="input-with-icon">
-                                        <i class="fas fa-folder"></i>
-                                        <input type="text" id="outputPath" name="output_path" placeholder="مسیر پوشه خروجی را وارد کنید..." required>
->>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
                                     </div>
                                 </div>
                             </div>
@@ -127,7 +97,6 @@
                                 </p>
                                 <div class="pattern-inputs">
                                     <div class="pattern-group">
-<<<<<<< HEAD
                                         <label for="jbExamples" id="jb-examples-label">شناسایی Junction Box (JB) :</label>
                                         <input type="text" id="jbExamples" name="jb_examples" placeholder="JB , JM , ...">
                                         <p class="hint" id="jb-examples-hint"> حروف یا ترکیبی از حروف که نشان‌دهنده Junction Box هستند</p>
@@ -157,37 +126,6 @@
                                         <label for="scrNumberRule" id="scr-number-rule-label">قاعده Terminal Number:</label>
                                         <input type="text" id="scrNumberRule" name="scr_number_rule" placeholder="{number*2-1} {number*2} SCR">
                                         <p class="hint" id="scr-number-rule-hint">تعداد SCR_Terminal_Number در میان Terminal_First_Number , Terminal_Seconde_Number</p>
-=======
-                                        <label for="jbExamples" id="jb-examples-label">مثال‌های JB:</label>
-                                        <input type="text" id="jbExamples" name="jb_examples" placeholder="JB001, JB-002, JB_003...">
-                                        <p class="hint" id="jb-examples-hint">مثال‌های جداشده با کاما از شناسه‌های JB</p>
-                                    </div>
-                                    <div class="pattern-group">
-                                        <label for="mcExamples" id="mc-examples-label">مثال‌های MC:</label>
-                                        <input type="text" id="mcExamples" name="mc_examples" placeholder="MC001, MC-002, MC_003...">
-                                        <p class="hint" id="mc-examples-hint">مثال‌های جداشده با کاما از شناسه‌های MC</p>
-                                    </div>
-                                    <div class="pattern-group">
-                                        <label for="spareExamples" id="spare-examples-label">مثال‌های SPARE:</label>
-                                        <input type="text" id="spareExamples" name="spare_examples" placeholder="SPARE, SPARE1, SPARE-1...">
-                                        <p class="hint" id="spare-examples-hint">مثال‌های جداشده با کاما از شناسه‌های SPARE</p>
-                                    </div>
-                                    <div class="pattern-group">
-                                        <label for="cableExamples" id="cable-examples-label">مثال‌های کابل:</label>
-                                        <input type="text" id="cableExamples" name="cable_examples" placeholder="12P, 24 PAIR, 36T, 48 CORE...">
-                                        <p class="hint" id="cable-examples-hint">مثال‌های جداشده با کاما از توصیف کابل‌ها</p>
-                                    </div>
-                                    <div class="pattern-divider"></div>
-                                    <div class="pattern-group">
-                                        <label for="wireColorRule" id="wire-color-rule-label">قاعده رنگ سیم:</label>
-                                        <input type="text" id="wireColorRule" name="wire_color_rule" placeholder="BK{number:02d}, WT{number:02d}">
-                                        <p class="hint" id="wire-color-rule-hint">قاعده تولید رنگ سیم با استفاده از {number}</p>
-                                    </div>
-                                    <div class="pattern-group">
-                                        <label for="scrNumberRule" id="scr-number-rule-label">قاعده شماره SCR:</label>
-                                        <input type="text" id="scrNumberRule" name="scr_number_rule" placeholder="{number*2-1} {number*2} SCR">
-                                        <p class="hint" id="scr-number-rule-hint">قاعده تولید شماره SCR با استفاده از {number}</p>
->>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
                                     </div>
                                 </div>
                             </div>
@@ -245,11 +183,7 @@
         // Translation object
         const translations = {
             'fa': {
-<<<<<<< HEAD
                 'title': 'سیستم تشخیص JB',
-=======
-                'title': '<i class="fas fa-search-location"></i> JB Detection System',
->>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
                 'subtitle': 'سیستم پیشرفته شناسایی و تطابق تگ‌های PDF و Excel',
                 'upload-title': '<i class="fas fa-file-upload"></i> بارگذاری فایل‌ها',
                 'pdf-title': 'فایل‌های PDF دیاگرام',
@@ -258,7 +192,6 @@
                 'select-excel': 'انتخاب فایل Excel',
                 'settings-title': '<i class="fas fa-cog"></i> تنظیمات خروجی',
                 'output-path-label': 'مسیر خروجی:',
-<<<<<<< HEAD
                 'output-folder-title': 'پوشه خروجی',
                 'output-path-placeholder': 'مسیر پوشه خروجی را وارد کنید...',
                 'path-examples-title': 'مثال‌های مسیر:',
@@ -276,23 +209,6 @@
                 'wire-color-rule-hint': 'قاعده رنگ سیم با استفاده از {number}:',
                 'scr-number-rule-label': 'قاعده Terminal Number:',
                 'scr-number-rule-hint': 'تعداد SCR_Terminal_Number در میان Terminal_First_Number , Terminal_Seconde_Number',
-=======
-                'output-path-placeholder': 'مسیر پوشه خروجی را وارد کنید...',
-                'pattern-title': '<i class="fas fa-magic"></i> یادگیری الگوها',
-                'pattern-desc': 'الگوهای سفارشی را برای افزایش دقت شناسایی وارد کنید. سیستم از مثال‌های شما یاد می‌گیرد.',
-                'jb-examples-label': 'مثال‌های JB:',
-                'jb-examples-hint': 'مثال‌های جداشده با کاما از شناسه‌های JB',
-                'mc-examples-label': 'مثال‌های MC:',
-                'mc-examples-hint': 'مثال‌های جداشده با کاما از شناسه‌های MC',
-                'spare-examples-label': 'مثال‌های SPARE:',
-                'spare-examples-hint': 'مثال‌های جداشده با کاما از شناسه‌های SPARE',
-                'cable-examples-label': 'مثال‌های کابل:',
-                'cable-examples-hint': 'مثال‌های جداشده با کاما از توصیف کابل‌ها',
-                'wire-color-rule-label': 'قاعده رنگ سیم:',
-                'wire-color-rule-hint': 'قاعده تولید رنگ سیم با استفاده از {number}',
-                'scr-number-rule-label': 'قاعده شماره SCR:',
-                'scr-number-rule-hint': 'قاعده تولید شماره SCR با استفاده از {number}',
->>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
                 'process-btn-text': 'شروع پردازش',
                 'preview-title': '<i class="fas fa-image"></i> پیش‌نمایش دیاگرام‌های آپلود شده',
                 'no-files-selected': 'هنوز فایلی انتخاب نشده است.',
@@ -315,11 +231,7 @@
                 'footer-text': '&copy; 2025 سیستم تشخیص JB. تمامی حقوق محفوظ است.'
             },
             'en': {
-<<<<<<< HEAD
                 'title': 'JB Detection System',
-=======
-                'title': '<i class="fas fa-search-location"></i> JB Detection System',
->>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
                 'subtitle': 'Advanced PDF and Excel Tag Detection and Matching System',
                 'upload-title': '<i class="fas fa-file-upload"></i> Upload Files',
                 'pdf-title': 'PDF Diagram Files',
@@ -328,7 +240,6 @@
                 'select-excel': 'Select Excel File',
                 'settings-title': '<i class="fas fa-cog"></i> Output Settings',
                 'output-path-label': 'Output Path:',
-<<<<<<< HEAD
                 'output-folder-title': 'Output Folder',
                 'output-path-placeholder': 'Enter output folder path...',
                 'path-examples-title': 'Path examples:',
@@ -346,23 +257,6 @@
                 'wire-color-rule-hint': 'Wire color rule using {number}:',
                 'scr-number-rule-label': 'Terminal Number Rule:',
                 'scr-number-rule-hint': 'Number of SCR_Terminal_Number between Terminal_First_Number and Terminal_Second_Number',
-=======
-                'output-path-placeholder': 'Enter output folder path...',
-                'pattern-title': '<i class="fas fa-magic"></i> Pattern Learning',
-                'pattern-desc': 'Enter custom patterns to improve detection accuracy. The system learns from your examples.',
-                'jb-examples-label': 'JB Examples:',
-                'jb-examples-hint': 'Comma-separated examples of JB identifiers',
-                'mc-examples-label': 'MC Examples:',
-                'mc-examples-hint': 'Comma-separated examples of MC identifiers',
-                'spare-examples-label': 'SPARE Examples:',
-                'spare-examples-hint': 'Comma-separated examples of SPARE identifiers',
-                'cable-examples-label': 'Cable Examples:',
-                'cable-examples-hint': 'Comma-separated examples of cable descriptions',
-                'wire-color-rule-label': 'Wire Color Rule:',
-                'wire-color-rule-hint': 'Rule for generating wire colors using {number}',
-                'scr-number-rule-label': 'SCR Number Rule:',
-                'scr-number-rule-hint': 'Rule for generating SCR numbers using {number}',
->>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
                 'process-btn-text': 'Start Processing',
                 'preview-title': '<i class="fas fa-image"></i> Uploaded Diagrams Preview',
                 'no-files-selected': 'No file selected yet.',
@@ -407,11 +301,7 @@
             currentLang = lang;
 
             // Update all text elements
-<<<<<<< HEAD
             document.querySelector('.main-title').textContent = translations[lang]['title'];
-=======
-            document.getElementById('title').innerHTML = translations[lang]['title'];
->>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
             document.getElementById('subtitle').innerHTML = translations[lang]['subtitle'];
             document.getElementById('upload-title').innerHTML = translations[lang]['upload-title'];
             document.getElementById('pdf-title').innerHTML = translations[lang]['pdf-title'];
@@ -419,14 +309,9 @@
             document.getElementById('excel-title').innerHTML = translations[lang]['excel-title'];
             document.getElementById('select-excel').innerHTML = translations[lang]['select-excel'];
             document.getElementById('settings-title').innerHTML = translations[lang]['settings-title'];
-<<<<<<< HEAD
             document.getElementById('output-folder-title').innerHTML = translations[lang]['output-folder-title'];
             document.getElementById('outputPath').placeholder = translations[lang]['output-path-placeholder'];
             document.getElementById('path-examples-title').innerHTML = translations[lang]['path-examples-title'];
-=======
-            document.getElementById('output-path-label').innerHTML = translations[lang]['output-path-label'];
-            document.getElementById('outputPath').placeholder = translations[lang]['output-path-placeholder'];
->>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
             document.getElementById('pattern-title').innerHTML = translations[lang]['pattern-title'];
             document.getElementById('pattern-desc').innerHTML = translations[lang]['pattern-desc'];
             document.getElementById('jb-examples-label').innerHTML = translations[lang]['jb-examples-label'];
@@ -473,7 +358,6 @@
         setTheme(currentTheme);
         setLang(currentLang);
 
-<<<<<<< HEAD
         // PDF file input handler
         document.getElementById('pdfInput').addEventListener('change', (e) => {
             const pdfList = document.getElementById('pdfList');
@@ -560,8 +444,6 @@
             }
         });
 
-=======
->>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
         // Existing form and file handlers
         document.getElementById('processForm').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -599,17 +481,11 @@
                     document.getElementById('totalTags').textContent = (result.details?.results?.unmatched_pdf_tags?.length || 0) + (result.details?.results?.unmatched_excel_tags?.length || 0);
                     document.getElementById('pagesProcessed').textContent = result.details?.output_files?.annotated_pdfs?.length || 0;
                     let logContent = translations[currentLang]['processing-success'];
-<<<<<<< HEAD
                     const excelPath = standardizeWindowsPath(result.details.output_files.excel_path);
                     logContent += translations[currentLang]['output-excel'] + `${excelPath}\n\n`;
                     
                     logContent += translations[currentLang]['unmatched-excel-tags'];
                     const unmatchedExcelTags = result.details.results.unmatched_excel_tags || [];
-=======
-                    logContent += translations[currentLang]['output-excel'] + `${result.details?.output_files?.excel_path || 'N/A'}\n\n`;
-                    logContent += translations[currentLang]['unmatched-excel-tags'];
-                    const unmatchedExcelTags = result.details?.results?.unmatched_excel_tags || [];
->>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
                     if (unmatchedExcelTags.length === 0) {
                         logContent += translations[currentLang]['no-unmatched-tags'];
                     } else {
@@ -618,11 +494,7 @@
                         });
                     }
                     logContent += translations[currentLang]['unmatched-pdf-tags'];
-<<<<<<< HEAD
                     const unmatchedPdfTags = result.details.results.unmatched_pdf_tags || [];
-=======
-                    const unmatchedPdfTags = result.details?.results?.unmatched_pdf_tags || [];
->>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
                     if (unmatchedPdfTags.length === 0) {
                         logContent += translations[currentLang]['no-unmatched-tags'];
                     } else {
@@ -644,7 +516,6 @@
                     translations[currentLang]['process-btn-text'] + '</span>';
             }
         });
-<<<<<<< HEAD
         
         // تابع تبدیل همه مسیرها به فرمت ویندوزی استاندارد
         function standardizeWindowsPath(path) {
@@ -660,75 +531,6 @@
             return windowsPath;
         }
 
-=======
-
-        // File input display handlers
-        document.getElementById('pdfInput').addEventListener('change', (e) => {
-            const fileList = document.getElementById('pdfList');
-            fileList.innerHTML = '';
-            const diagramPreview = document.getElementById('diagramPreview');
-            diagramPreview.innerHTML = '';
-            if (e.target.files.length > 0) {
-                const files = Array.from(e.target.files);
-                files.forEach(file => {
-                    const fileItem = document.createElement('div');
-                    fileItem.className = 'file-item';
-                    fileItem.innerHTML = `<i class="fas fa-file-pdf"></i> ${file.name}`;
-                    fileList.appendChild(fileItem);
-                    // PDF preview (icon + name)
-                    const previewItem = document.createElement('div');
-                    previewItem.className = 'diagram-preview-item';
-                    previewItem.innerHTML = `<i class='fas fa-file-pdf fa-2x' style='color:#e74c3c'></i> <span>${file.name}</span>`;
-                    diagramPreview.appendChild(previewItem);
-                });
-            } else {
-                fileList.textContent = translations[currentLang]['no-file-selected'];
-                diagramPreview.innerHTML = '<p>' + translations[currentLang]['no-files-selected'] + '</p>';
-            }
-        });
-
-        document.getElementById('excelInput').addEventListener('change', (e) => {
-            const excelName = document.getElementById('excelName');
-            if (e.target.files.length > 0) {
-                const fileName = e.target.files[0].name;
-                excelName.innerHTML = `<div class="file-item"><i class="fas fa-file-excel"></i> ${fileName}</div>`;
-            } else {
-                excelName.textContent = translations[currentLang]['no-file-selected'];
-            }
-        });
-                // Animation counter function
-        function animateCounter(elementId, targetValue) {
-            const element = document.getElementById(elementId);
-            const startValue = parseInt(element.textContent) || 0;
-            const duration = 1500; // ms
-            const stepTime = 50;
-            const steps = duration / stepTime;
-            const increment = (targetValue - startValue) / steps;
-            
-            let currentValue = startValue;
-            let currentStep = 0;
-            
-            const counterInterval = setInterval(() => {
-                currentStep++;
-                currentValue += increment;
-                
-                if (currentStep >= steps) {
-                    clearInterval(counterInterval);
-                    currentValue = targetValue;
-                }
-                
-                element.textContent = Math.round(currentValue);
-                
-                // Add a pulse animation when the value changes
-                element.style.animation = 'none';
-                setTimeout(() => {
-                    element.style.animation = 'pulse 0.5s';
-                }, 10);
-                
-            }, stepTime);
-        }
-        
->>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
         // Add ripple effect to buttons and clickable elements
         function createRipple(event, element) {
             const circle = document.createElement('span');
@@ -760,11 +562,6 @@
                 createRipple(e, this);
             });
         });
-<<<<<<< HEAD
-
-=======
-        
->>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
         // Add smooth transition when page loads
         document.addEventListener('DOMContentLoaded', () => {
             document.body.style.transition = 'background-color 0.5s ease, color 0.5s ease';
@@ -781,7 +578,6 @@
             setTimeout(() => {
                 document.body.style.animation = '';
             }, 10);
-<<<<<<< HEAD
             
             // تنظیم عنوان صفحه با آیکون
             document.title = currentLang === 'fa' ? 'سیستم تشخیص JB' : 'JB Detection System';
@@ -1125,8 +921,6 @@
             setTimeout(() => {
                 logoIcon.classList.remove('initial-load');
             }, 1500);
-=======
->>>>>>> cbb5d98a23d71507658622ffd4dcbb3466e03ea9
         });
     </script>
 </body>
