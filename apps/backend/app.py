@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_from_directory
 from typing import List, Tuple, Dict, Set, Optional, Any, Union
 import os
 import re
@@ -20,12 +20,23 @@ from datetime import datetime
 from multiprocessing import Pool, cpu_count
 import subprocess  
 import tkinter as tk
+import sys
+sys.path.append(os.path.dirname(os.path.abspath(__file__))) 
 from tkinter import filedialog 
 from logger_config import get_logger, LoggerMixin
 from TagJBExtractorLogger import LoggedTagJBExtractor
 from LinuxTagJBExtractorLogger import LoggedLinuxTagJBExtractor
 from DataAnalysisModule import TagJBExtractor
 from werkzeug.utils import secure_filename
+from file_naming import (
+    BASE_OUTPUT_DIR,
+    get_project_output_dir,
+    get_log_dir,
+    generate_document_filename,
+    generate_log_filename,
+    create_zip_archive,
+    get_download_url
+)
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -42,9 +53,8 @@ app.secret_key = 'jb_detection_system_secret_key'
 UPLOAD_FOLDER = tempfile.gettempdir()
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# مسیر پشتیبان‌گیری روی سرور (مسیر ثابت)
-SERVER_BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
-os.makedirs(SERVER_BACKUP_DIR, exist_ok=True)
+# اطمینان از وجود دایرکتوری پایه
+os.makedirs(BASE_OUTPUT_DIR, exist_ok=True)
 
 # تنظیم مسیر پیش‌فرض Tesseract بر اساس سیستم عامل
 system = platform.system().lower()
@@ -80,8 +90,6 @@ VALID_USERS = {
 # ایجاد لاگر برای فایل اصلی
 logger = get_logger('app')
 
-
-
 def get_platform_specific_extractor(tesseract_path=None, excel_path=None):
     """
     بر اساس سیستم عامل، کلاس مناسب استخراج کننده را برمی‌گرداند
@@ -100,11 +108,6 @@ def get_platform_specific_extractor(tesseract_path=None, excel_path=None):
     elif system == 'windows':
         try:
             # در صورتی که پیاده‌سازی مخصوص ویندوز داشته باشید، می‌توانید اینجا import کنید
-            # from WindowsTagJBExtractorLogger import LoggedWindowsTagJBExtractor
-            # logger.info("استفاده از استخراج کننده مخصوص ویندوز با قابلیت لاگینگ")
-            # return LoggedWindowsTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
-            
-            # فعلاً از پیاده‌سازی عمومی استفاده می‌کنیم
             logger.info("استفاده از استخراج کننده عمومی با قابلیت لاگینگ در ویندوز")
             return LoggedTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
         except ImportError as e:
@@ -112,15 +115,8 @@ def get_platform_specific_extractor(tesseract_path=None, excel_path=None):
             logger.info("استفاده از استخراج کننده عمومی با قابلیت لاگینگ")
             return LoggedTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
     
-    
     elif system == 'darwin':  # macOS
         try:
-            # در صورتی که پیاده‌سازی مخصوص macOS داشته باشید، می‌توانید اینجا import کنید
-            # from MacTagJBExtractorLogger import LoggedMacTagJBExtractor
-            # logger.info("استفاده از استخراج کننده مخصوص macOS با قابلیت لاگینگ")
-            # return LoggedMacTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
-            
-            # فعلاً از پیاده‌سازی عمومی استفاده می‌کنیم
             logger.info("استفاده از استخراج کننده عمومی با قابلیت لاگینگ در macOS")
             return LoggedTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
         except ImportError as e:
@@ -132,206 +128,6 @@ def get_platform_specific_extractor(tesseract_path=None, excel_path=None):
         # سیستم عامل ناشناخته، از پیاده‌سازی عمومی استفاده می‌کنیم
         logger.info(f"سیستم عامل ناشناخته '{system}'، استفاده از استخراج کننده عمومی با قابلیت لاگینگ")
         return LoggedTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
-
-def standardize_path(path: str) -> str:
-    """
-    استانداردسازی مسیر با حفظ فرمت اصلی (ویندوزی یا لینوکسی)
-    
-    Args:
-        path: مسیر ورودی
-        
-    Returns:
-        مسیر استاندارد شده با همان فرمت اصلی
-    """
-    if not path:
-        return ""
-    
-    # تمیز کردن مسیر
-    path = path.strip()
-    
-    # تشخیص نوع مسیر (ویندوزی یا لینوکسی)
-    windows_path = is_windows_path(path)
-    
-    # استانداردسازی مسیر با استفاده از os.path.normpath
-    normalized_path = os.path.normpath(path)
-    
-    # اگر مسیر ویندوزی بود، اطمینان حاصل کن که با فرمت ویندوزی برگردانده شود
-    if windows_path:
-        # تبدیل اسلش‌های لینوکسی به بک‌اسلش ویندوزی
-        normalized_path = normalized_path.replace('/', '\\')
-    else:
-        # تبدیل بک‌اسلش‌های ویندوزی به اسلش لینوکسی
-        normalized_path = normalized_path.replace('\\', '/')
-    
-    return normalized_path
-
-def is_windows_path(path: str) -> bool:
-    """
-    تشخیص اینکه آیا مسیر ورودی در فرمت ویندوزی است یا خیر
-    
-    Args:
-        path: مسیر ورودی
-        
-    Returns:
-        True اگر مسیر ویندوزی باشد، False در غیر این صورت
-    """
-    # مسیر ویندوزی معمولاً شامل بک‌اسلش یا درایو (مثل C:) است
-    return '\\' in path or (':' in path and '/' not in path) or path.startswith('//') or path.startswith('\\\\')
-
-
-def create_samba_share(windows_path):
-    """
-    ایجاد یک اشتراک سمبا برای دسترسی به مسیر ویندوزی از لینوکس
-    
-    این تابع یک پوشه در لینوکس ایجاد می‌کند و آن را به عنوان یک اشتراک سمبا
-    تنظیم می‌کند تا کلاینت‌های ویندوزی بتوانند به آن دسترسی داشته باشند.
-    
-    Args:
-        windows_path: مسیر ویندوزی که می‌خواهیم به آن دسترسی داشته باشیم
-        
-    Returns:
-        tuple: (linux_path, share_name) - مسیر لینوکسی و نام اشتراک
-    """
-    if platform.system().lower() == 'windows':
-        # در ویندوز نیازی به ایجاد اشتراک نیست
-        return windows_path, None
-    
-    try:
-        # ایجاد یک نام منحصر به فرد برای اشتراک
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        share_name = f"jbdetection_share_{timestamp}"
-        
-        # ایجاد یک پوشه در لینوکس برای اشتراک گذاری
-        linux_path = os.path.join(tempfile.gettempdir(), share_name)
-        os.makedirs(linux_path, exist_ok=True)
-        
-        # تنظیم اشتراک سمبا
-        smb_conf_path = "/etc/samba/smb.conf"
-        
-        # بررسی دسترسی به فایل پیکربندی سمبا
-        if not os.access(smb_conf_path, os.W_OK):
-            logger.warning(f"دسترسی نوشتن به {smb_conf_path} وجود ندارد. از مسیر موقت استفاده می‌شود.")
-            # استفاده از یک فایل پیکربندی موقت
-            smb_conf_path = os.path.join(tempfile.gettempdir(), "smb.conf")
-        
-        # ایجاد پیکربندی اشتراک
-        share_config = f"""
-[{share_name}]
-   path = {linux_path}
-   browseable = yes
-   read only = no
-   guest ok = yes
-   create mask = 0777
-   directory mask = 0777
-"""
-        
-        # افزودن اشتراک به پیکربندی سمبا
-        with open(smb_conf_path, 'a') as f:
-            f.write(share_config)
-        
-        # راه‌اندازی مجدد سرویس سمبا
-        try:
-            subprocess.run(['systemctl', 'restart', 'smbd'], check=True)
-            logger.info(f"سرویس سمبا با موفقیت راه‌اندازی مجدد شد. اشتراک {share_name} ایجاد شد.")
-        except subprocess.CalledProcessError:
-            logger.warning("خطا در راه‌اندازی مجدد سرویس سمبا. تلاش با روش دیگر...")
-            try:
-                subprocess.run(['service', 'smbd', 'restart'], check=True)
-                logger.info(f"سرویس سمبا با موفقیت راه‌اندازی مجدد شد. اشتراک {share_name} ایجاد شد.")
-            except subprocess.CalledProcessError:
-                logger.error("خطا در راه‌اندازی مجدد سرویس سمبا.")
-        
-        return linux_path, share_name
-        
-    except Exception as e:
-        logger.error(f"خطا در ایجاد اشتراک سمبا: {e}")
-        # در صورت خطا، فقط یک پوشه موقت برمی‌گردانیم
-        linux_path = os.path.join(tempfile.gettempdir(), f"jbdetection_temp_{datetime.now().strftime('%Y%m%d%H%M%S')}")
-        os.makedirs(linux_path, exist_ok=True)
-        return linux_path, None
-
-def copy_to_output_paths(server_files: List[str], output_path: str) -> Tuple[bool, bool, str, str, str]:
-    """
-    کپی فایل‌های خروجی به مسیر تعیین شده توسط کاربر و همچنین به یک پوشه در سرور
-    
-    Args:
-        server_files: لیست مسیرهای فایل در سرور
-        output_path: مسیر خروجی تعیین شده توسط کاربر
-        
-    Returns:
-        Tuple of (server_success, output_success, server_output_path, final_output_path, error_message)
-    """
-    try:
-        logger.info(f"کپی فایل‌ها به مسیر خروجی: {output_path}")
-        
-        # استانداردسازی مسیر با حفظ فرمت اصلی
-        output_path = standardize_path(output_path)
-        
-        # ایجاد مسیر خروجی در سرور برای پشتیبان‌گیری
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        server_output_path = os.path.join(SERVER_BACKUP_DIR, f"output_{timestamp}")
-        os.makedirs(server_output_path, exist_ok=True)
-        
-        # کپی فایل‌ها به پوشه خروجی سرور
-        for src_file in server_files:
-            if os.path.isfile(src_file):
-                filename = os.path.basename(src_file)
-                dst_file = os.path.join(server_output_path, filename)
-                shutil.copy2(src_file, dst_file)
-                logger.info(f"فایل در سرور کپی شد: {src_file} -> {dst_file}")
-        
-        # مقادیر پیش‌فرض برای بازگشت
-        output_success = False
-        error_message = ""
-        
-        # تشخیص نوع مسیر ورودی (ویندوزی یا لینوکسی)
-        windows_path = is_windows_path(output_path)
-        
-        # اگر مسیر ورودی ویندوزی است
-        if windows_path:
-            try:
-                # تلاش برای دسترسی به مسیر ویندوزی
-                # برای این مثال، فرض می‌کنیم مسیر ویندوزی قابل دسترسی نیست
-                # و فقط مسیر را برمی‌گردانیم
-                output_success = False
-                error_message = f"مسیر ویندوزی '{output_path}' قابل دسترسی نیست. فایل‌ها فقط در سرور ذخیره شدند."
-                logger.warning(error_message)
-                
-                # نمایش مسیر انتخاب شده توسط کاربر بدون تغییر
-                final_output_path = output_path
-                
-            except Exception as e:
-                error_message = f"خطا در کپی فایل‌ها به مسیر ویندوزی: {str(e)}"
-                logger.error(error_message)
-                final_output_path = output_path  # حفظ مسیر اصلی برای نمایش
-        
-        # اگر مسیر ورودی لینوکسی است
-        else:
-            try:
-                # ایجاد پوشه اگر وجود ندارد
-                os.makedirs(output_path, exist_ok=True)
-                
-                # کپی فایل‌ها به مسیر لینوکسی
-                for src_file in server_files:
-                    if os.path.isfile(src_file):
-                        filename = os.path.basename(src_file)
-                        dst_file = os.path.join(output_path, filename)
-                        shutil.copy2(src_file, dst_file)
-                        logger.info(f"فایل در مسیر لینوکسی کپی شد: {src_file} -> {dst_file}")
-                
-                output_success = True
-                final_output_path = output_path  # حفظ مسیر اصلی برای نمایش
-            except Exception as e:
-                error_message = f"خطا در کپی فایل‌ها به مسیر لینوکسی: {str(e)}"
-                logger.error(error_message)
-                final_output_path = output_path  # حفظ مسیر اصلی برای نمایش
-        
-        return True, output_success, server_output_path, final_output_path, error_message
-    
-    except Exception as e:
-        error_message = f"خطا در کپی فایل‌ها: {str(e)}"
-        logger.error(error_message)
-        return False, False, "", output_path, error_message  # برگرداندن مسیر اصلی حتی در صورت خطا
 
 @app.route('/')
 def home():
@@ -376,94 +172,6 @@ def dashboard():
     logger.info(f"کاربر {username} به داشبورد دسترسی پیدا کرد")
     return render_template('JB.html', username=username)
 
-@app.route('/select-folder', methods=['GET'])
-def select_folder():
-    """
-    انتخاب پوشه با استفاده از دیالوگ گرافیکی
-    ابتدا از tkinter استفاده می‌کند و اگر با خطا مواجه شود، از روش‌های دیگر استفاده می‌کند
-    """
-    try:
-        # روش اول: استفاده از tkinter
-        import tkinter as tk
-        from tkinter import filedialog
-        
-        # ایجاد پنجره اصلی و مخفی کردن آن
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes('-topmost', True)  # اطمینان از اینکه دیالوگ در بالای همه پنجره‌ها باشد
-        
-        # باز کردن دیالوگ انتخاب پوشه
-        folder_path = filedialog.askdirectory()
-        
-        # بستن پنجره اصلی
-        root.destroy()
-        
-        if folder_path:
-            app.logger.info(f"Folder selected: {folder_path}")
-            return jsonify({
-                'status': 'success',
-                'folder_path': folder_path
-            })
-        else:
-            app.logger.info("Folder selection cancelled")
-            return jsonify({
-                'status': 'cancelled',
-                'message': 'انتخاب پوشه لغو شد'
-            })
-    
-    except Exception as e:
-        app.logger.error(f"Error in tkinter folder selection: {str(e)}")
-        # روش دوم: استفاده از zenity در لینوکس
-        try:
-            import subprocess
-            app.logger.info("Trying zenity for folder selection")
-            result = subprocess.run(['zenity', '--file-selection', '--directory'], 
-                                   capture_output=True, text=True)
-            if result.returncode == 0:
-                folder_path = result.stdout.strip()
-                app.logger.info(f"Folder selected with zenity: {folder_path}")
-                return jsonify({
-                    'status': 'success',
-                    'folder_path': folder_path
-                })
-            else:
-                app.logger.info("Zenity folder selection cancelled")
-                return jsonify({
-                    'status': 'cancelled',
-                    'message': 'انتخاب پوشه لغو شد'
-                })
-        
-        except Exception as e2:
-            app.logger.error(f"Error in zenity folder selection: {str(e2)}")
-            # روش سوم: استفاده از kdialog در KDE
-            try:
-                app.logger.info("Trying kdialog for folder selection")
-                result = subprocess.run(['kdialog', '--getexistingdirectory'], 
-                                      capture_output=True, text=True)
-                if result.returncode == 0:
-                    folder_path = result.stdout.strip()
-                    app.logger.info(f"Folder selected with kdialog: {folder_path}")
-                    return jsonify({
-                        'status': 'success',
-                        'folder_path': folder_path
-                    })
-                else:
-                    app.logger.info("KDialog folder selection cancelled")
-                    return jsonify({
-                        'status': 'cancelled',
-                        'message': 'انتخاب پوشه لغو شد'
-                    })
-            
-            except Exception as e3:
-                app.logger.error(f"Error in kdialog folder selection: {str(e3)}")
-                # همه روش‌ها با شکست مواجه شدند
-                error_message = f"Could not open folder selection dialog. Errors: tkinter: {str(e)}, zenity: {str(e2)}, kdialog: {str(e3)}"
-                app.logger.error(error_message)
-                return jsonify({
-                    'status': 'error',
-                    'message': error_message
-                })
-
 @app.route('/system-info')
 def system_info():
     """
@@ -482,7 +190,8 @@ def system_info():
         'platform_version': platform.version(),
         'processor': platform.processor(),
         'python_version': platform.python_version(),
-        'tesseract_path': DEFAULT_TESSERACT_PATH
+        'tesseract_path': DEFAULT_TESSERACT_PATH,
+        'output_base_dir': BASE_OUTPUT_DIR
     }
     
     # بررسی وضعیت GPU
@@ -519,31 +228,19 @@ def process_files():
     logger.info(f"کاربر {username} درخواست پردازش فایل‌ها را ارسال کرد")
         
     try:
+        # دریافت نام پروژه (الزامی)
+        project_name = request.form.get('project_name')
+        if not project_name:
+            logger.warning(f"کاربر {username} نام پروژه را وارد نکرد")
+            return jsonify({
+                'status': 'error',
+                'message': 'لطفاً نام پروژه را وارد کنید'
+            }), 400
+        
         # Get PDF and Excel files
         pdf_files = request.files.getlist('pdf_files')
         excel_file = request.files['excel_file']
-        output_dir = request.form.get('output_path')
         
-        # اعتبارسنجی مسیر خروجی
-        if not output_dir:
-            logger.warning(f"کاربر {username} مسیر خروجی معتبری وارد نکرد")
-            return jsonify({
-                'status': 'error',
-                'message': 'لطفاً یک مسیر خروجی معتبر وارد کنید'
-            }), 400
-        
-        # ایجاد یک مسیر منحصر به فرد برای پشتیبان‌گیری در سرور
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        server_output_dir = os.path.join(SERVER_BACKUP_DIR, f"{username}_{timestamp}")
-        os.makedirs(server_output_dir, exist_ok=True)
-        logger.info(f"مسیر پشتیبان‌گیری در سرور ایجاد شد: {server_output_dir}")
-        
-        # استانداردسازی مسیر خروجی با حفظ فرمت اصلی
-        display_output_dir = standardize_path(output_dir)
-        
-        # حفظ مسیر اصلی برای نمایش به کاربر
-        original_output_dir = output_dir
-
         # گزینه استفاده از GPU (اگر در دسترس باشد)
         use_gpu = request.form.get('use_gpu', 'false').lower() == 'true'
         
@@ -554,6 +251,23 @@ def process_files():
         cable_examples = request.form.get('cable_examples', '').strip()
         wire_color_rule = request.form.get('wire_color_rule', '').strip()
         scr_number_rule = request.form.get('scr_number_rule', '').strip()
+        
+        # ایجاد دایرکتوری خروجی پروژه
+        project_output_dir = get_project_output_dir(project_name)
+        logger.info(f"دایرکتوری خروجی پروژه: {project_output_dir}")
+        
+        # ایجاد دایرکتوری لاگ پروژه
+        log_dir = get_log_dir(project_name)
+        logger.info(f"دایرکتوری لاگ پروژه: {log_dir}")
+        
+        # تنظیم نام فایل‌های خروجی
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_excel_filename = generate_document_filename(project_name, "Excel", "xlsx")
+        output_excel_path = os.path.join(project_output_dir, output_excel_filename)
+        
+        # ایجاد دایرکتوری برای PDF های حاشیه‌نویسی شده
+        annotated_pdf_dir = os.path.join(project_output_dir, "annotated_pdfs")
+        os.makedirs(annotated_pdf_dir, exist_ok=True)
         
         # ذخیره فایل‌ها در سرور
         pdf_paths = []
@@ -567,13 +281,6 @@ def process_files():
         excel_path = os.path.join(app.config['UPLOAD_FOLDER'], excel_file.filename)
         excel_file.save(excel_path)
         logger.info(f"فایل Excel ذخیره شد: {excel_file.filename} در مسیر {excel_path}")
-        
-        # تنظیم مسیرهای خروجی در سرور
-        server_output_excel_path = os.path.join(server_output_dir, 'output.xlsx')
-        server_output_pdf_dir = os.path.join(server_output_dir, 'annotated_pdfs')
-        
-        # ایجاد پوشه PDF های حاشیه‌نویسی شده در سرور
-        os.makedirs(server_output_pdf_dir, exist_ok=True)
         
         # حالا که excel_path را داریم، می‌توانیم extractor را ایجاد کنیم
         logger.info("در حال راه‌اندازی استخراج کننده مناسب برای سیستم عامل...")
@@ -606,55 +313,78 @@ def process_files():
                 else:
                     logger.info("پردازش GPU غیرفعال شده است (توسط کاربر)")
         
-        # پردازش فایل‌ها در سرور
+        # پردازش فایل‌ها
         logger.info(f"شروع پردازش {len(pdf_paths)} فایل PDF و Excel...")
         unmatched_excel_tags, unmatched_pdf_tags = extractor.run_with_annotated_pdf(
             pdf_paths=pdf_paths,
             excel_path=excel_path,
-            output_excel_path=server_output_excel_path,
-            output_pdf_dir=server_output_pdf_dir
+            output_excel_path=output_excel_path,
+            output_pdf_dir=annotated_pdf_dir
         )
         
-        # لیست فایل‌های خروجی در سرور
-        server_output_files = [server_output_excel_path]
-        annotated_pdfs = []
+        # ایجاد فایل اکسل برای تگ‌های تطبیق نیافته
+        unmatched_excel_filename = generate_document_filename(project_name, "UnmatchedTags", "xlsx")
+        unmatched_excel_path = os.path.join(project_output_dir, unmatched_excel_filename)
         
-        for f in os.listdir(server_output_pdf_dir):
+        # ایجاد فایل اکسل برای تگ‌های تطبیق نیافته
+        if hasattr(extractor, '_create_unmatched_tags_excel'):
+            extractor._create_unmatched_tags_excel(unmatched_excel_tags, unmatched_pdf_tags, unmatched_excel_path)
+            logger.info(f"فایل Excel تگ‌های تطبیق نیافته ذخیره شد: {unmatched_excel_path}")
+        
+        # ایجاد فایل گزارش
+        report_filename = generate_document_filename(project_name, "Report", "json")
+        report_path = os.path.join(project_output_dir, report_filename)
+        
+        # ذخیره گزارش پردازش
+        with open(report_path, 'w') as f:
+            json.dump({
+                'project_name': project_name,
+                'processing_date': datetime.now().isoformat(),
+                'user': username,
+                'results': {
+                    'unmatched_excel_tags': len(unmatched_excel_tags),
+                    'unmatched_pdf_tags': len(unmatched_pdf_tags),
+                    'pdf_count': len(pdf_paths),
+                    'pdf_names': [os.path.basename(p) for p in pdf_paths]
+                }
+            }, f, indent=2)
+        
+        # لیست فایل‌های خروجی
+        output_files = [output_excel_path, unmatched_excel_path, report_path]
+        
+        # اضافه کردن PDF های حاشیه‌نویسی شده
+        for f in os.listdir(annotated_pdf_dir):
             if f.startswith('annotated_'):
-                pdf_path = os.path.join(server_output_pdf_dir, f)
-                server_output_files.append(pdf_path)
-                annotated_pdfs.append(f)
+                output_files.append(os.path.join(annotated_pdf_dir, f))
         
-        # کپی فایل‌های خروجی به مسیر ویندوزی کلاینت و همچنین به یک پوشه در سرور
-        server_copy_success, client_copy_success, server_output_path, client_output_path, error_message = copy_to_output_paths(
-            server_files=server_output_files,
-            output_path=output_dir  # اصلاح شد: windows_output_dir به output_dir تغییر کرد
-        )
+        # ایجاد فایل ZIP
+        zip_path = create_zip_archive(project_name, output_files)
+        
+        # ایجاد URL دانلود
+        download_url = get_download_url(zip_path)
         
         # پاکسازی فایل‌های موقت
         for path in pdf_paths:
             os.remove(path)
         os.remove(excel_path)
         
-        # تنظیم مسیرهای نمایشی (همیشه ویندوزی)
-        display_output_excel_path = os.path.join(display_output_dir, 'output.xlsx')
-        display_output_pdf_dir = os.path.join(display_output_dir, 'annotated_pdfs')
-
         # آماده‌سازی پاسخ
         response = {
             'status': 'success',
             'message': 'Processing completed successfully',
             'details': {
+                'project_name': project_name,
                 'input_files': {
                     'pdf_count': len(pdf_paths),
                     'pdf_names': [os.path.basename(p) for p in pdf_paths],
                     'excel_file': excel_file.filename
                 },
                 'output_files': {
-                    # مسیرهای ویندوزی برای نمایش به کاربر
-                    'excel_path': display_output_excel_path,
-                    'annotated_pdfs_dir': display_output_pdf_dir,
-                    'annotated_pdfs': annotated_pdfs
+                    'excel_path': output_excel_path,
+                    'unmatched_excel_path': unmatched_excel_path,
+                    'report_path': report_path,
+                    'zip_path': zip_path,
+                    'download_url': download_url
                 },
                 'results': {
                     'unmatched_excel_tags': unmatched_excel_tags,
@@ -663,23 +393,11 @@ def process_files():
                     'unmatched_pdf_count': len(unmatched_pdf_tags)
                 },
                 'system': {
-                    # همیشه ویندوز نمایش دهید حتی در سرور لینوکس
-                    'platform': "Windows",
+                    'platform': platform.system(),
                     'gpu_info': gpu_info
-                },
-                'backup': {
-                    'server_backup_path': server_output_dir,
-                    'server_output_path': server_output_path,
-                    'client_copy_success': client_copy_success,
-                    'user_output_dir': original_output_dir,  
-                    'display_output_dir': display_output_dir
                 }
             }
         }
-        
-        # اضافه کردن پیام خطا اگر کپی به کلاینت ناموفق بود
-        if not client_copy_success and error_message:
-            response['details']['backup']['client_error'] = error_message
         
         logger.info(f"پردازش با موفقیت به پایان رسید", extra={'user': username, 'results': {
             'unmatched_excel_count': len(unmatched_excel_tags),
@@ -689,6 +407,7 @@ def process_files():
     
     except Exception as e:
         logger.error(f"خطا در پردازش فایل‌ها: {str(e)}", extra={'user': username})
+        logger.error(traceback.format_exc())
         return jsonify({
             'status': 'error',
             'message': str(e),
@@ -697,6 +416,158 @@ def process_files():
                 'error_description': str(e)
             }
         }), 500
+
+@app.route('/api/process', methods=['POST'])
+def api_process():
+    """
+    API endpoint برای پردازش فایل‌ها
+    """
+    if 'username' not in session:
+        return jsonify({
+            'status': 'error',
+            'message': 'لطفاً ابتدا وارد سیستم شوید'
+        }), 401
+    
+    username = session.get('username')
+    logger.info(f"کاربر {username} درخواست API پردازش فایل‌ها را ارسال کرد")
+    
+    try:
+        # دریافت داده‌ها از درخواست
+        data = request.json
+        pdf_paths = data.get('pdf_paths', [])
+        excel_path = data.get('excel_path')
+        project_name = data.get('project_name')
+        
+        # اعتبارسنجی داده‌ها
+        if not pdf_paths or not excel_path:
+            return jsonify({
+                'status': 'error',
+                'message': 'مسیرهای PDF و Excel الزامی هستند'
+            }), 400
+        
+        if not project_name:
+            return jsonify({
+                'status': 'error',
+                'message': 'نام پروژه الزامی است'
+            }), 400
+        
+        # ایجاد دایرکتوری خروجی پروژه
+        project_output_dir = get_project_output_dir(project_name)
+        
+        # ایجاد دایرکتوری لاگ پروژه
+        log_dir = get_log_dir(project_name)
+        
+        # تنظیم نام فایل‌های خروجی
+        output_excel_filename = generate_document_filename(project_name, "Excel", "xlsx")
+        output_excel_path = os.path.join(project_output_dir, output_excel_filename)
+        
+        # ایجاد دایرکتوری برای PDF های حاشیه‌نویسی شده
+        annotated_pdf_dir = os.path.join(project_output_dir, "annotated_pdfs")
+        os.makedirs(annotated_pdf_dir, exist_ok=True)
+        
+        # ایجاد استخراج کننده
+        extractor = get_platform_specific_extractor(
+            tesseract_path=DEFAULT_TESSERACT_PATH,
+            excel_path=excel_path
+        )
+        
+        # پردازش فایل‌ها
+        unmatched_excel_tags, unmatched_pdf_tags = extractor.run_with_annotated_pdf(
+            pdf_paths=pdf_paths,
+            excel_path=excel_path,
+            output_excel_path=output_excel_path,
+            output_pdf_dir=annotated_pdf_dir
+        )
+        
+        # ایجاد فایل اکسل برای تگ‌های تطبیق نیافته
+        unmatched_excel_filename = generate_document_filename(project_name, "UnmatchedTags", "xlsx")
+        unmatched_excel_path = os.path.join(project_output_dir, unmatched_excel_filename)
+        
+        # ایجاد فایل اکسل برای تگ‌های تطبیق نیافته
+        if hasattr(extractor, '_create_unmatched_tags_excel'):
+            extractor._create_unmatched_tags_excel(unmatched_excel_tags, unmatched_pdf_tags, unmatched_excel_path)
+        
+        # لیست فایل‌های خروجی
+        output_files = [output_excel_path, unmatched_excel_path]
+        
+        # اضافه کردن PDF های حاشیه‌نویسی شده
+        for f in os.listdir(annotated_pdf_dir):
+            if f.startswith('annotated_'):
+                output_files.append(os.path.join(annotated_pdf_dir, f))
+        
+        # ایجاد فایل ZIP
+        zip_path = create_zip_archive(project_name, output_files)
+        
+        # ایجاد URL دانلود
+        download_url = get_download_url(zip_path)
+        
+        # آماده‌سازی پاسخ
+        response = {
+            'status': 'success',
+            'message': 'پردازش با موفقیت انجام شد',
+            'details': {
+                'project_name': project_name,
+                'output_files': {
+                    'excel_path': output_excel_path,
+                    'unmatched_excel_path': unmatched_excel_path,
+                    'zip_path': zip_path,
+                    'download_url': download_url
+                },
+                'results': {
+                    'unmatched_excel_tags': unmatched_excel_tags,
+                    'unmatched_pdf_tags': unmatched_pdf_tags,
+                    'unmatched_excel_count': len(unmatched_excel_tags),
+                    'unmatched_pdf_count': len(unmatched_pdf_tags)
+                }
+            }
+        }
+        
+        return jsonify(response)
+        
+    except Exception as e:
+        logger.error(f"خطا در API پردازش فایل‌ها: {str(e)}", extra={'user': username})
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/downloads/<path:filename>')
+def download_file(filename):
+    """
+    دانلود فایل از مسیر خروجی
+    """
+    if 'username' not in session:
+        return jsonify({
+            'status': 'error',
+            'message': 'لطفاً ابتدا وارد سیستم شوید'
+        }), 401
+    
+    username = session.get('username')
+    logger.info(f"کاربر {username} درخواست دانلود فایل {filename} را ارسال کرد")
+    
+    # بررسی امنیتی مسیر فایل
+    safe_path = os.path.normpath(os.path.join(BASE_OUTPUT_DIR, filename))
+    if not safe_path.startswith(BASE_OUTPUT_DIR):
+        logger.warning(f"تلاش برای دسترسی به فایل خارج از مسیر مجاز: {filename}")
+        return jsonify({
+            'status': 'error',
+            'message': 'دسترسی غیرمجاز'
+        }), 403
+    
+    # بررسی وجود فایل
+    if not os.path.exists(safe_path):
+        logger.warning(f"فایل درخواستی یافت نشد: {filename}")
+        return jsonify({
+            'status': 'error',
+            'message': 'فایل یافت نشد'
+        }), 404
+    
+    # ارسال فایل
+    directory = os.path.dirname(safe_path)
+    file_name = os.path.basename(safe_path)
+    logger.info(f"دانلود فایل {file_name} از مسیر {directory}")
+    return send_from_directory(directory, file_name, as_attachment=True)
 
 if __name__ == '__main__':
     # Print startup message
@@ -707,8 +578,8 @@ if __name__ == '__main__':
     print(f"مسیر Tesseract: {DEFAULT_TESSERACT_PATH}")
     
     # ایجاد پوشه پشتیبان‌گیری اگر وجود ندارد
-    os.makedirs(SERVER_BACKUP_DIR, exist_ok=True)
-    print(f"مسیر پشتیبان‌گیری: {SERVER_BACKUP_DIR}")
+    os.makedirs(BASE_OUTPUT_DIR, exist_ok=True)
+    print(f"مسیر خروجی: {BASE_OUTPUT_DIR}")
     
     # بررسی وضعیت GPU
     try:

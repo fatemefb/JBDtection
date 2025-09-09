@@ -21,6 +21,9 @@ import math
 import string
 import shutil
 import random
+import sys
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from file_utils import standardize_path, copy_to_output_paths
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -1870,11 +1873,16 @@ class TagJBExtractor:
             excel_path: Input Excel file path
             output_excel_path: Output Excel file path
             output_pdf_dir: Directory path for storing processed PDFs
-            io_List_path: Optional path to IO List Excel file
             
         Returns:
             Tuple of (unmatched_excel_tags, unmatched_pdf_tags)
         """
+        # استاندارد کردن مسیرها با استفاده از ماژول file_utils
+        from apps.backend.utils.file_utils import standardize_path, copy_to_output_paths
+        
+        output_excel_path = standardize_path(output_excel_path)
+        output_pdf_dir = standardize_path(output_pdf_dir)
+
         # Build tag vectors from Excel first
         start_time = time.time()
         self.build_tag_vectors_from_excel(excel_path)
@@ -1893,31 +1901,11 @@ class TagJBExtractor:
         all_pdf_results = {}
         
         # Process each PDF file
-        for pdf_idx, pdf_path in enumerate(pdf_paths):
-            pdf_filename = os.path.basename(pdf_path)
-            logger.info(f"Processing PDF {pdf_idx + 1}/{len(pdf_paths)}: {pdf_filename}")
-            
-            # Process PDF to extract tags and JBs
-            pdf_result = self.process_pdf(pdf_path)
-            
-            # Store PDF results with the PDF filename as key
-            all_pdf_results[pdf_filename] = pdf_result
-            
-            # Create annotated PDF with vector matching results and get tag numbers
-            output_pdf_path = os.path.join(output_pdf_dir, f"annotated_{pdf_filename}")
-            pdf_tag_numbers = self.create_annotated_pdf(pdf_path, output_pdf_path)
-            
-            # Update master tag numbers Dictionary
-            master_tag_numbers.update(pdf_tag_numbers)
-            
-            # Collect similarity reports from this PDF
-            all_similarity_reports.extend(self.similarity_reports)
-            
-            # Generate per-PDF statistics
-            pdf_stats = self.get_processing_stats()
-            logger.info(f"PDF {pdf_filename} statistics:")
-            for key, value in pdf_stats.items():
-                logger.info(f"  {key}: {value}")
+        annotated_pdf_files = []
+        for pdf_path in pdf_paths:
+            output_pdf_path = os.path.join(output_pdf_dir, f"annotated_{os.path.basename(pdf_path)}")
+            self.create_annotated_pdf(pdf_path, output_pdf_path)
+            annotated_pdf_files.append(output_pdf_path)
         
         # Create intermediate Excel file with JB, MC, Tag/SPARE, SCR, Wire Colors, and Cable Description
         intermediate_excel_path = os.path.join(output_pdf_dir, "intermediate_data.xlsx")
@@ -1949,7 +1937,6 @@ class TagJBExtractor:
             logger.info(f"Unmatched tags Excel file saved to: {unmatched_excel_path}")
         else:
             # If no IO List, just copy the intermediate file to the output path
-            
             shutil.copy2(intermediate_excel_path, output_excel_path)
             logger.info(f"Excel file saved to: {output_excel_path}")
             
@@ -1971,6 +1958,31 @@ class TagJBExtractor:
                 'wire_colors': {tag: self.generate_mc_wire_colors(master_tag_numbers[tag]) for tag in master_tag_numbers},
                 'scr_numbers': {tag: self.generate_scr_number(master_tag_numbers[tag]) for tag in master_tag_numbers}
             }, f, indent=2)
+        
+        # کپی فایل‌های خروجی به مسیرهای سرور و کاربر
+        server_output_dir = "/home/devio/JB-outputs"
+        output_files = annotated_pdf_files + [output_excel_path, unmatched_excel_path if excel_path else None, reports_path]
+        output_files = [f for f in output_files if f]  # حذف مقادیر None
+        
+        copy_result = copy_to_output_paths(
+            files_to_copy=output_files,
+            server_output_dir=server_output_dir,
+            user_output_dir=output_pdf_dir
+        )
+        
+        # ثبت نتیجه کپی فایل‌ها
+        if copy_result['server_success']:
+            logger.info(f"Output files successfully copied to server directory: {server_output_dir}")
+            logger.info(f"Server files: {copy_result['server_files']}")
+        else:
+            logger.warning(f"Failed to copy output files to server directory: {copy_result.get('error', 'Unknown error')}")
+        
+        if copy_result['user_path_success']:
+            logger.info(f"Output files successfully copied to user directory: {output_pdf_dir}")
+            logger.info(f"User files: {copy_result['user_files']}")
+            logger.info(f"Copy method used: {copy_result.get('method_used', 'local')}")
+        else:
+            logger.warning(f"Failed to copy output files to user directory: {copy_result.get('error', 'Unknown error')}")
         
         logger.info(f"Processing completed in {self.processing_time:.2f} seconds")
         logger.info(f"Summary statistics: {stats}")

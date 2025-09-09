@@ -55,6 +55,13 @@
                 <section class="upload-section">
                     <h2 id="upload-title"><i class="fas fa-file-upload"></i> بارگذاری فایل‌ها</h2>
                     <form id="processForm">
+                        <!-- بخش اطلاعات پروژه -->
+                        <div class="pattern-group">
+                            <label for="projectName" id="project-name-label">نام پروژه:</label>
+                            <input type="text" id="projectName" name="project_name" required placeholder="نام پروژه را وارد کنید...">
+                            <p class="hint" id="project-name-hint">نام پروژه برای ذخیره فایل‌های خروجی استفاده می‌شود</p>
+                        </div>
+                        
                         <div class="upload-container">
                             <div class="upload-box">
                                 <h3 id="pdf-title">فایل‌های PDF دیاگرام</h3>
@@ -75,20 +82,7 @@
                                 <div id="excelName" class="file-list"></div>
                             </div>
                         </div>
-                        <div class="settings-section">
-                            <h2 id="settings-title"><i class="fas fa-cog"></i> تنظیمات خروجی</h2>
-                            <div class="settings-container">
-                                <div class="upload-box">
-                                    <h3 id="output-folder-title">پوشه خروجی</h3>
-                                    <input type="text" id="outputPath" name="output_path" class="folder-path-input" placeholder="مسیر پوشه خروجی را وارد کنید..." required>
-                                    <div class="folder-path-examples" id="folderPathExamples">
-                                        <p id="path-examples-title">مثال‌های مسیر:</p>
-                                        <p class="path-example">C:\Users\YourName\Documents\Output</p>
-                                        <p class="path-example">/home/username/documents/output</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                        
                         <div class="pattern-section">
                             <h2 id="pattern-title"><i class="fas fa-magic"></i> یادگیری الگوها</h2>
                             <div class="pattern-container">
@@ -169,6 +163,13 @@
                             <h3 id="log-title">گزارش پردازش</h3>
                             <pre id="logOutput" class="log-content">آماده پردازش فایل‌ها...</pre>
                         </div>
+                        <!-- بخش دانلود فایل‌های خروجی -->
+                        <div class="download-box" id="downloadBox" style="display: none;">
+                            <h3 id="download-title">دانلود فایل‌های خروجی</h3>
+                            <div class="download-links" id="downloadLinks">
+                                <!-- لینک‌های دانلود به صورت پویا اینجا اضافه می‌شوند -->
+                            </div>
+                        </div>
                     </div>
                 </section>
             </div>
@@ -185,16 +186,14 @@
             'fa': {
                 'title': 'سیستم تشخیص JB',
                 'subtitle': 'سیستم پیشرفته شناسایی و تطابق تگ‌های PDF و Excel',
+                'project-name-label': 'نام پروژه:',
+                'project-name-placeholder': 'نام پروژه را وارد کنید...',
+                'project-name-hint': 'نام پروژه برای ذخیره فایل‌های خروجی استفاده می‌شود',
                 'upload-title': '<i class="fas fa-file-upload"></i> بارگذاری فایل‌ها',
                 'pdf-title': 'فایل‌های PDF دیاگرام',
                 'select-pdf': 'انتخاب فایل‌های PDF',
                 'excel-title': 'فایل Excel اطلاعات کنترل',
                 'select-excel': 'انتخاب فایل Excel',
-                'settings-title': '<i class="fas fa-cog"></i> تنظیمات خروجی',
-                'output-path-label': 'مسیر خروجی:',
-                'output-folder-title': 'پوشه خروجی',
-                'output-path-placeholder': 'مسیر پوشه خروجی را وارد کنید...',
-                'path-examples-title': 'مثال‌های مسیر:',
                 'pattern-title': '<i class="fas fa-magic"></i> یادگیری الگوها',
                 'pattern-desc': 'الگوهای سفارشی را برای افزایش دقت شناسایی وارد کنید. سیستم از مثال‌های شما یاد می‌گیرد.',
                 'jb-examples-label': 'شناسایی Junction Box (JB) :',
@@ -228,21 +227,26 @@
                 'no-unmatched-tags': '   هیچ تگ بدون تطابق\n',
                 'error': '❌ خطا: ',
                 'no-file-selected': 'فایلی انتخاب نشده',
-                'footer-text': '&copy; 2025 سیستم تشخیص JB. تمامی حقوق محفوظ است.'
+                'no-project-name': 'لطفاً نام پروژه را وارد کنید',
+                'footer-text': '&copy; 2025 سیستم تشخیص JB. تمامی حقوق محفوظ است.',
+                'download-title': 'دانلود فایل‌های خروجی',
+                'download-excel': 'دانلود فایل Excel',
+                'download-pdf': 'دانلود PDF شماره',
+                'download-all-pdfs': 'دانلود همه PDF ها',
+                'no-pdf-selected': 'لطفاً حداقل یک فایل PDF انتخاب کنید',
+                'no-excel-selected': 'لطفاً یک فایل Excel انتخاب کنید'
             },
             'en': {
                 'title': 'JB Detection System',
                 'subtitle': 'Advanced PDF and Excel Tag Detection and Matching System',
+                'project-name-label': 'Project Name:',
+                'project-name-placeholder': 'Enter project name...',
+                'project-name-hint': 'Project name is used for naming output files',
                 'upload-title': '<i class="fas fa-file-upload"></i> Upload Files',
                 'pdf-title': 'PDF Diagram Files',
                 'select-pdf': 'Select PDF Files',
                 'excel-title': 'Control Information Excel File',
                 'select-excel': 'Select Excel File',
-                'settings-title': '<i class="fas fa-cog"></i> Output Settings',
-                'output-path-label': 'Output Path:',
-                'output-folder-title': 'Output Folder',
-                'output-path-placeholder': 'Enter output folder path...',
-                'path-examples-title': 'Path examples:',
                 'pattern-title': '<i class="fas fa-magic"></i> Pattern Learning',
                 'pattern-desc': 'Enter custom patterns to improve detection accuracy. The system learns from your examples.',
                 'jb-examples-label': 'Junction Box (JB) Detection:',
@@ -276,7 +280,14 @@
                 'no-unmatched-tags': '   No unmatched tags\n',
                 'error': '❌ Error: ',
                 'no-file-selected': 'No file selected',
-                'footer-text': '&copy; 2025 JB Detection System. All rights reserved.'
+                'no-project-name': 'Please enter a project name',
+                'footer-text': '&copy; 2025 JB Detection System. All rights reserved.',
+                'download-title': 'Download Output Files',
+                'download-excel': 'Download Excel File',
+                'download-pdf': 'Download PDF #',
+                'download-all-pdfs': 'Download All PDFs',
+                'no-pdf-selected': 'Please select at least one PDF file',
+                'no-excel-selected': 'Please select an Excel file'
             }
         };
 
@@ -303,15 +314,14 @@
             // Update all text elements
             document.querySelector('.main-title').textContent = translations[lang]['title'];
             document.getElementById('subtitle').innerHTML = translations[lang]['subtitle'];
+            document.getElementById('project-name-label').innerHTML = translations[lang]['project-name-label'];
+            document.getElementById('projectName').placeholder = translations[lang]['project-name-placeholder'];
+            document.getElementById('project-name-hint').innerHTML = translations[lang]['project-name-hint'];
             document.getElementById('upload-title').innerHTML = translations[lang]['upload-title'];
             document.getElementById('pdf-title').innerHTML = translations[lang]['pdf-title'];
             document.getElementById('select-pdf').innerHTML = translations[lang]['select-pdf'];
             document.getElementById('excel-title').innerHTML = translations[lang]['excel-title'];
             document.getElementById('select-excel').innerHTML = translations[lang]['select-excel'];
-            document.getElementById('settings-title').innerHTML = translations[lang]['settings-title'];
-            document.getElementById('output-folder-title').innerHTML = translations[lang]['output-folder-title'];
-            document.getElementById('outputPath').placeholder = translations[lang]['output-path-placeholder'];
-            document.getElementById('path-examples-title').innerHTML = translations[lang]['path-examples-title'];
             document.getElementById('pattern-title').innerHTML = translations[lang]['pattern-title'];
             document.getElementById('pattern-desc').innerHTML = translations[lang]['pattern-desc'];
             document.getElementById('jb-examples-label').innerHTML = translations[lang]['jb-examples-label'];
@@ -338,6 +348,11 @@
             document.getElementById('logOutput').textContent = translations[lang]['log-ready'];
             document.getElementById('footer-text').innerHTML = translations[lang]['footer-text'];
             
+            // بخش دانلود
+            if (document.getElementById('download-title')) {
+                document.getElementById('download-title').innerHTML = translations[lang]['download-title'];
+            }
+            
             localStorage.setItem('lang', lang);
         }
 
@@ -357,6 +372,27 @@
         // Initialize theme and language
         setTheme(currentTheme);
         setLang(currentLang);
+
+        // Notification system
+        function showNotification(message, type = 'info') {
+            // Create notification element if it doesn't exist
+            let notification = document.getElementById('notification');
+            if (!notification) {
+                notification = document.createElement('div');
+                notification.id = 'notification';
+                notification.className = 'notification';
+                document.body.appendChild(notification);
+            }
+
+            // Set message and type
+            notification.textContent = message;
+            notification.className = `notification ${type} show`;
+
+            // Auto hide after 3 seconds
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 3000);
+        }
 
         // PDF file input handler
         document.getElementById('pdfInput').addEventListener('change', (e) => {
@@ -444,19 +480,42 @@
             }
         });
 
-        // Existing form and file handlers
+        // Form submission handler
         document.getElementById('processForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const formData = new FormData();
-            // Add PDF files
+            
+            // Validation
+            const projectName = document.getElementById('projectName').value.trim();
+            if (!projectName) {
+                showNotification(translations[currentLang]['no-project-name'], 'error');
+                return;
+            }
+            
+            // اعتبارسنجی فایل‌های PDF
             const pdfFiles = document.getElementById('pdfInput').files;
+            if (pdfFiles.length === 0) {
+                showNotification(translations[currentLang]['no-pdf-selected'], 'error');
+                return;
+            }
+            
+            // اعتبارسنجی فایل Excel
+            const excelFile = document.getElementById('excelInput').files[0];
+            if (!excelFile) {
+                showNotification(translations[currentLang]['no-excel-selected'], 'error');
+                return;
+            }
+            
+            const formData = new FormData();
+            // Add project name
+            formData.append('project_name', projectName);
+            
+            // Add PDF files
             for (let i = 0; i < pdfFiles.length; i++) {
                 formData.append('pdf_files', pdfFiles[i]);
             }
             // Add Excel file
-            formData.append('excel_file', document.getElementById('excelInput').files[0]);
-            // Add output path
-            formData.append('output_path', document.getElementById('outputPath').value);
+            formData.append('excel_file', excelFile);
+            
             // الگوها
             formData.append('jb_examples', document.getElementById('jbExamples').value);
             formData.append('mc_examples', document.getElementById('mcExamples').value);
@@ -464,11 +523,17 @@
             formData.append('cable_examples', document.getElementById('cableExamples').value);
             formData.append('wire_color_rule', document.getElementById('wireColorRule').value);
             formData.append('scr_number_rule', document.getElementById('scrNumberRule').value);
+            
             // Update UI to show processing state
             document.getElementById('processButton').disabled = true;
             document.getElementById('processButton').innerHTML = translations[currentLang]['processing'];
             document.getElementById('logOutput').textContent = translations[currentLang]['processing-started'];
             document.getElementById('progressBar').style.width = '10%';
+            
+            // پنهان کردن بخش دانلود قبلی (اگر وجود داشته باشد)
+            document.getElementById('downloadBox').style.display = 'none';
+            document.getElementById('downloadLinks').innerHTML = '';
+            
             try {
                 const response = await fetch('/process', {
                     method: 'POST',
@@ -477,13 +542,14 @@
                 document.getElementById('progressBar').style.width = '70%';
                 const result = await response.json();
                 document.getElementById('progressBar').style.width = '100%';
+                
                 if (result.status === 'success') {
                     document.getElementById('totalTags').textContent = (result.details?.results?.unmatched_pdf_tags?.length || 0) + (result.details?.results?.unmatched_excel_tags?.length || 0);
                     document.getElementById('pagesProcessed').textContent = result.details?.output_files?.annotated_pdfs?.length || 0;
-                    let logContent = translations[currentLang]['processing-success'];
-                    const excelPath = standardizeWindowsPath(result.details.output_files.excel_path);
-                    logContent += translations[currentLang]['output-excel'] + `${excelPath}\n\n`;
                     
+                    let logContent = translations[currentLang]['processing-success'];
+                    
+                    // نمایش اطلاعات تگ‌های بدون تطابق
                     logContent += translations[currentLang]['unmatched-excel-tags'];
                     const unmatchedExcelTags = result.details.results.unmatched_excel_tags || [];
                     if (unmatchedExcelTags.length === 0) {
@@ -503,13 +569,21 @@
                         });
                     }
                     document.getElementById('logOutput').textContent = logContent;
+                    
+                    // نمایش لینک‌های دانلود
+                    showDownloadLinks(result.details.output_files);
+                    
+                    showNotification(translations[currentLang]['processing-success'], 'success');
                 } else {
                     document.getElementById('logOutput').textContent = translations[currentLang]['error'] + 
                         `${result.message}\n\n${JSON.stringify(result.details || {}, null, 2)}`;
+                    showNotification(translations[currentLang]['error'] + result.message, 'error');
                 }
             } catch (error) {
                 document.getElementById('progressBar').style.width = '100%';
                 document.getElementById('logOutput').textContent = translations[currentLang]['error'] + `${error.message}\n`;
+                showNotification(translations[currentLang]['error'] + error.message, 'error');
+                console.error('Error during form submission:', error);
             } finally {
                 document.getElementById('processButton').disabled = false;
                 document.getElementById('processButton').innerHTML = '<i class="fas fa-play"></i> <span id="process-btn-text">' + 
@@ -517,18 +591,56 @@
             }
         });
         
-        // تابع تبدیل همه مسیرها به فرمت ویندوزی استاندارد
-        function standardizeWindowsPath(path) {
-            if (!path) return '';
-            // ابتدا همه / ها را به \ تبدیل می‌کنیم
-            let windowsPath = path.replace(/\//g, '\\');
+        // نمایش لینک‌های دانلود
+        function showDownloadLinks(outputFiles) {
+            const downloadBox = document.getElementById('downloadBox');
+            const downloadLinks = document.getElementById('downloadLinks');
             
-            // حذف \ های اضافی
-            while (windowsPath.includes('\\\\')) {
-                windowsPath = windowsPath.replace(/\\\\/g, '\\');
+            // پاک کردن لینک‌های قبلی
+            downloadLinks.innerHTML = '';
+            
+            // اضافه کردن لینک دانلود فایل Excel
+            if (outputFiles.excel_path) {
+                const excelLink = document.createElement('a');
+                excelLink.href = `/download?file=${encodeURIComponent(outputFiles.excel_path)}`;
+                excelLink.className = 'download-link excel-link';
+                excelLink.innerHTML = `<i class="fas fa-file-excel"></i> ${translations[currentLang]['download-excel']}`;
+                downloadLinks.appendChild(excelLink);
             }
             
-            return windowsPath;
+            // اضافه کردن لینک دانلود فایل‌های PDF
+            if (outputFiles.annotated_pdfs && outputFiles.annotated_pdfs.length > 0) {
+                // لینک دانلود همه PDF ها به صورت یکجا
+                if (outputFiles.annotated_pdfs.length > 1) {
+                    const allPdfsLink = document.createElement('a');
+                    allPdfsLink.href = `/download-all-pdfs?project=${encodeURIComponent(document.getElementById('projectName').value.trim())}`;
+                    allPdfsLink.className = 'download-link all-pdfs-link';
+                    allPdfsLink.innerHTML = `<i class="fas fa-file-archive"></i> ${translations[currentLang]['download-all-pdfs']}`;
+                    downloadLinks.appendChild(allPdfsLink);
+                }
+                
+                // لینک دانلود تک تک PDF ها
+                outputFiles.annotated_pdfs.forEach((pdfPath, index) => {
+                    const pdfLink = document.createElement('a');
+                    pdfLink.href = `/download?file=${encodeURIComponent(pdfPath)}`;
+                    pdfLink.className = 'download-link pdf-link';
+                    pdfLink.innerHTML = `<i class="fas fa-file-pdf"></i> ${translations[currentLang]['download-pdf']} ${index + 1}`;
+                    downloadLinks.appendChild(pdfLink);
+                });
+            }
+            
+            // نمایش بخش دانلود
+            downloadBox.style.display = 'block';
+            
+            // اضافه کردن انیمیشن برای نشان دادن لینک‌های دانلود
+            const links = downloadLinks.querySelectorAll('.download-link');
+            links.forEach((link, index) => {
+                link.style.animation = 'none';
+                setTimeout(() => {
+                    link.style.animation = 'fileSelected 0.5s ease';
+                    link.style.animationDelay = `${index * 0.1}s`;
+                }, 10);
+            });
         }
 
         // Add ripple effect to buttons and clickable elements
@@ -562,6 +674,7 @@
                 createRipple(e, this);
             });
         });
+
         // Add smooth transition when page loads
         document.addEventListener('DOMContentLoaded', () => {
             document.body.style.transition = 'background-color 0.5s ease, color 0.5s ease';
@@ -581,9 +694,18 @@
             
             // تنظیم عنوان صفحه با آیکون
             document.title = currentLang === 'fa' ? 'سیستم تشخیص JB' : 'JB Detection System';
+            
+            // اضافه کردن انیمیشن چرخش به لوگو در هنگام بارگذاری صفحه
+            const logoIcon = document.querySelector('.logo-icon');
+            logoIcon.classList.add('initial-load');
+            
+            // حذف کلاس انیمیشن پس از اتمام آن
+            setTimeout(() => {
+                logoIcon.classList.remove('initial-load');
+            }, 1500);
         });
 
-        // اضافه کردن CSS برای انیمیشن انتخاب فایل
+        // اضافه کردن CSS برای انیمیشن انتخاب فایل و بخش پروژه
         const style = document.createElement('style');
         style.textContent = `
             @keyframes fileSelected {
@@ -867,8 +989,8 @@
                 border-radius: 50px; /* گرد کردن کامل دکمه پردازش */
             }
             
-            /* استایل برای فیلد ورودی مسیر پوشه */
-            .folder-path-input {
+            /* استایل برای فیلدهای ورودی */
+            .pattern-group input {
                 width: 100%;
                 padding: 12px 15px;
                 border: 1px solid var(--border-color);
@@ -877,51 +999,136 @@
                 color: var(--text-color);
                 font-size: 1rem;
                 transition: border-color 0.3s ease, box-shadow 0.3s ease;
-                margin-bottom: 10px;
+                margin-bottom: 5px;
             }
             
-            .folder-path-input:focus {
+            .pattern-group input:focus {
                 border-color: var(--accent-color);
                 box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
                 outline: none;
             }
             
-            /* استایل برای مثال‌های مسیر */
-            .folder-path-examples {
-                margin-top: 5px;
-                padding: 10px;
+            /* استایل برای بخش دانلود */
+            .download-box {
+                margin-top: 20px;
+                padding: 15px;
                 background-color: var(--card-bg);
                 border-radius: 8px;
-                border: 1px dashed var(--border-color);
+                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                animation: fileSelected 0.5s ease;
             }
             
-            .folder-path-examples p {
-                margin: 5px 0;
+            .download-links {
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                margin-top: 10px;
+            }
+            
+            .download-link {
+                display: flex;
+                align-items: center;
+                padding: 12px 15px;
+                background-color: var(--input-bg);
+                color: var(--text-color);
+                text-decoration: none;
+                border-radius: 50px;
+                transition: background-color 0.3s ease, transform 0.2s ease;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            
+            .download-link i {
+                margin-right: 10px;
+                font-size: 1.2rem;
+            }
+            
+            .excel-link i {
+                color: #1D6F42; /* رنگ Excel */
+            }
+            
+            .pdf-link i {
+                color: #FF0000; /* رنگ PDF */
+            }
+            
+            .all-pdfs-link i {
+                color: #6200EA; /* رنگ آرشیو */
+            }
+            
+            .download-link:hover {
+                background-color: var(--hover-color);
+                transform: translateY(-2px);
+            }
+            
+            /* استایل RTL برای لینک‌های دانلود */
+            html[dir="rtl"] .download-link i {
+                margin-right: 0;
+                margin-left: 10px;
+            }
+            
+            /* استایل برای راهنماهای فیلدها */
+            .hint {
                 font-size: 0.9rem;
                 color: var(--text-muted);
+                margin: 0 0 15px 0;
             }
             
-            .path-example {
-                padding: 5px 10px;
-                background-color: var(--input-bg);
-                border-radius: 4px;
-                margin: 5px 0;
-                font-family: monospace;
-                word-break: break-all;
+            /* استایل برای گروه‌های الگو */
+            .pattern-group {
+                margin-bottom: 15px;
+            }
+            
+            .pattern-group label {
+                display: block;
+                margin-bottom: 5px;
+                font-weight: 500;
+            }
+            
+            .pattern-divider {
+                height: 1px;
+                background-color: var(--border-color);
+                margin: 20px 0;
+            }
+            
+            /* استایل برای نوتیفیکیشن */
+            .notification {
+                position: fixed;
+                bottom: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                padding: 12px 20px;
+                background-color: #333;
+                color: white;
+                border-radius: 50px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                z-index: 1000;
+                opacity: 0;
+                transition: opacity 0.3s ease, bottom 0.3s ease;
+                max-width: 80%;
+                text-align: center;
+            }
+            
+            .notification.show {
+                opacity: 1;
+                bottom: 30px;
+            }
+            
+            .notification.success {
+                background-color: #2ecc71;
+            }
+            
+            .notification.error {
+                background-color: #e74c3c;
+            }
+            
+            .notification.warning {
+                background-color: #f39c12;
+            }
+            
+            .notification.info {
+                background-color: #3498db;
             }
         `;
         document.head.appendChild(style);
-        
-        // اضافه کردن انیمیشن چرخش به لوگو در هنگام بارگذاری صفحه
-        document.addEventListener('DOMContentLoaded', () => {
-            const logoIcon = document.querySelector('.logo-icon');
-            logoIcon.classList.add('initial-load');
-            
-            // حذف کلاس انیمیشن پس از اتمام آن
-            setTimeout(() => {
-                logoIcon.classList.remove('initial-load');
-            }, 1500);
-        });
     </script>
 </body>
 </html>

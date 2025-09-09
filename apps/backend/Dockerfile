@@ -5,6 +5,8 @@ FROM nvidia/cuda:11.4.3-cudnn8-devel-ubuntu20.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+RUN sed -i '/mirror.kernel.org/d' /etc/apt/sources.list
+
 RUN apt-get update && apt-get install -y \
     build-essential cmake git g++ curl \
     libgtk2.0-dev libavcodec-dev libavformat-dev libswscale-dev libv4l-dev \
@@ -87,6 +89,7 @@ RUN apt-get update && apt-get install -y \
     libtesseract-dev libleptonica-dev \
     zenity \
     kdialog \
+    cifs-utils \
     python3.8 python3-pip python3-tk tzdata && \
     ln -sf /usr/bin/python3.8 /usr/bin/python && ln -sf /usr/bin/pip3 /usr/bin/pip && \
     rm -rf /var/lib/apt/lists/*
@@ -98,13 +101,22 @@ COPY --from=builder /usr/local /usr/local
 ENV PATH="/usr/local/bin:${PATH}"
 ENV TESSDATA_PREFIX=/usr/local/share/tessdata
 
+# ایجاد دایرکتوری‌های مورد نیاز
+RUN mkdir -p /home/devio/JB-outputs /home/devio/JB-logs && \
+    chmod -R 777 /home/devio/JB-outputs /home/devio/JB-logs
+
 # نصب پکیج‌های پایتونی
 WORKDIR /app
 COPY requirements-linux.txt .
 RUN pip install --upgrade pip \
     && pip install --ignore-installed --prefer-binary --no-cache-dir -r requirements-linux.txt
 
+    
+RUN echo "refresh" > /tmp/refresh.txt
 # کد برنامه
 COPY . .
+
+# تنظیم حجم‌ها (volumes)
+VOLUME ["/home/devio/JB-outputs", "/home/devio/JB-logs"]
 
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]

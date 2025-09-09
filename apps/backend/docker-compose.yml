@@ -1,0 +1,64 @@
+version: '3'
+
+services:
+  jbdetection_v1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: jbdetection-image:${IMAGE_TAG:-latest}
+    ports:
+      - "5000:5000"
+    volumes:
+      - jb_outputs_v1:/home/devio/JB-outputs
+      - jb_logs_v1:/home/devio/JB-logs
+    environment:
+      - PYTHONPATH=/app
+    cap_add:
+      - SYS_ADMIN
+      - DAC_READ_SEARCH
+    security_opt:
+      - apparmor:unconfined
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  jbdetection_v2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: jbdetection-image:${IMAGE_TAG_V2:-test}
+    ports:
+      - "5001:5000"
+    volumes:
+      - jb_outputs_v2:/home/devio/JB-outputs
+      - jb_logs_v2:/home/devio/JB-logs
+    environment:
+      - PYTHONPATH=/app
+    cap_add:
+      - SYS_ADMIN
+      - DAC_READ_SEARCH
+    security_opt:
+      - apparmor:unconfined
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  jb_outputs_v1:
+    driver: local
+  jb_logs_v1:
+    driver: local
+  jb_outputs_v2:
+    driver: local
+  jb_logs_v2:
+    driver: local

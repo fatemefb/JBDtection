@@ -4,7 +4,10 @@ import cv2
 import numpy as np
 import logging
 import traceback
+import sys
 from typing import List, Dict, Set, Tuple, Any, Optional, Union
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from file_utils import standardize_path, copy_to_output_paths
 
 
 # Check for GPU support
@@ -260,3 +263,31 @@ class LinuxTagJBExtractor(TagJBExtractor):
 
         if scr_number_rule:
             self.set_scr_number_rule(scr_number_rule)
+
+    def run_with_annotated_pdf(self, pdf_paths, excel_path, output_excel_path, output_pdf_dir):
+        self.logger.info(f"شروع پردازش با PDF های حاشیه‌نویسی شده")
+        self.logger.info(f"تعداد فایل‌های PDF: {len(pdf_paths)}")
+        
+        # استاندارد کردن مسیرها
+        output_excel_path = standardize_path(output_excel_path)
+        output_pdf_dir = standardize_path(output_pdf_dir)
+        
+        self.logger.info(f"مسیر خروجی اکسل: {output_excel_path}")
+        self.logger.info(f"مسیر خروجی PDF: {output_pdf_dir}")
+        
+        # اجرای متد اصلی
+        result = super().run_with_annotated_pdf(pdf_paths, excel_path, output_excel_path, output_pdf_dir)
+        
+        # ثبت نتایج کپی
+        if result['copy_result']['server_success']:
+            self.logger.info("فایل‌ها با موفقیت در سرور ذخیره شدند")
+        else:
+            self.logger.error("خطا در ذخیره فایل‌ها در سرور")
+            
+        if result['copy_result']['user_path_success']:
+            self.logger.info(f"فایل‌ها با موفقیت در مسیر کاربر ذخیره شدند")
+            self.logger.info(f"روش استفاده شده: {result['copy_result'].get('method_used', 'local')}")
+        else:
+            self.logger.warning(f"خطا در ذخیره فایل‌ها در مسیر کاربر: {result.get('error', 'خطای نامشخص')}")
+        
+        return result
