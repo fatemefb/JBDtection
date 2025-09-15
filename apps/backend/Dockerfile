@@ -5,8 +5,6 @@ FROM nvidia/cuda:11.4.3-cudnn8-devel-ubuntu20.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN sed -i '/mirror.kernel.org/d' /etc/apt/sources.list
-
 RUN apt-get update && apt-get install -y \
     build-essential cmake git g++ curl \
     libgtk2.0-dev libavcodec-dev libavformat-dev libswscale-dev libv4l-dev \
@@ -87,10 +85,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
     libgl1 libglib2.0-0 libsm6 libxext6 libxrender-dev \
     libtesseract-dev libleptonica-dev \
-    zenity \
-    kdialog \
-    cifs-utils \
-    python3.8 python3-pip python3-tk tzdata && \
+    python3.8 python3-pip python3-tk tzdata \
+    nano vim tree && \
     ln -sf /usr/bin/python3.8 /usr/bin/python && ln -sf /usr/bin/pip3 /usr/bin/pip && \
     rm -rf /var/lib/apt/lists/*
 
@@ -107,16 +103,17 @@ RUN mkdir -p /home/devio/JB-outputs /home/devio/JB-logs && \
 
 # نصب پکیج‌های پایتونی
 WORKDIR /app
-COPY requirements-linux.txt .
+COPY apps/backend/requirements-linux.txt /app/
 RUN pip install --upgrade pip \
-    && pip install --ignore-installed --prefer-binary --no-cache-dir -r requirements-linux.txt
+    && pip install --ignore-installed --prefer-binary --no-cache-dir -r requirements-linux.txt \
+    && pip install gunicorn
 
-    
-RUN echo "refresh" > /tmp/refresh.txt
-# کد برنامه
-COPY . .
+# کپی سورس‌ها
+COPY apps /app/apps
 
 # تنظیم حجم‌ها (volumes)
 VOLUME ["/home/devio/JB-outputs", "/home/devio/JB-logs"]
 
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
+# نقطه شروع اپلیکیشن
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "apps.backend.app:app"]
+

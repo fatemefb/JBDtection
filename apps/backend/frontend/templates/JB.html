@@ -595,17 +595,36 @@
         function showDownloadLinks(outputFiles) {
             const downloadBox = document.getElementById('downloadBox');
             const downloadLinks = document.getElementById('downloadLinks');
+            const projectName = document.getElementById('projectName').value.trim();
             
             // پاک کردن لینک‌های قبلی
             downloadLinks.innerHTML = '';
             
+            // تشخیص پورت فعلی برای تعیین نسخه API
+            const currentPort = window.location.port || '5000';
+            const apiPort = currentPort === '5001' ? '5001' : '5000';
+            const apiBase = `${window.location.protocol}//${window.location.hostname}:${apiPort}`;
+            
+            console.log("API Base URL:", apiBase);
+            console.log("Output Files:", outputFiles);
+            
             // اضافه کردن لینک دانلود فایل Excel
             if (outputFiles.excel_path) {
                 const excelLink = document.createElement('a');
-                excelLink.href = `/download?file=${encodeURIComponent(outputFiles.excel_path)}`;
+                
+                // تبدیل مسیر داخل کانتینر به مسیر نسبی
+                let excelPath = outputFiles.excel_path;
+                if (excelPath.startsWith('/home/devio/JB-outputs/')) {
+                    excelPath = excelPath.replace('/home/devio/JB-outputs/', '');
+                }
+                
+                excelLink.href = `${apiBase}/download?file=${encodeURIComponent(excelPath)}`;
                 excelLink.className = 'download-link excel-link';
                 excelLink.innerHTML = `<i class="fas fa-file-excel"></i> ${translations[currentLang]['download-excel']}`;
+                excelLink.target = '_blank'; // باز کردن در تب جدید
                 downloadLinks.appendChild(excelLink);
+                
+                console.log("Excel download link:", excelLink.href);
             }
             
             // اضافه کردن لینک دانلود فایل‌های PDF
@@ -613,19 +632,32 @@
                 // لینک دانلود همه PDF ها به صورت یکجا
                 if (outputFiles.annotated_pdfs.length > 1) {
                     const allPdfsLink = document.createElement('a');
-                    allPdfsLink.href = `/download-all-pdfs?project=${encodeURIComponent(document.getElementById('projectName').value.trim())}`;
+                    allPdfsLink.href = `${apiBase}/download-all-pdfs?project=${encodeURIComponent(projectName)}`;
                     allPdfsLink.className = 'download-link all-pdfs-link';
                     allPdfsLink.innerHTML = `<i class="fas fa-file-archive"></i> ${translations[currentLang]['download-all-pdfs']}`;
+                    allPdfsLink.target = '_blank'; // باز کردن در تب جدید
                     downloadLinks.appendChild(allPdfsLink);
+                    
+                    console.log("All PDFs download link:", allPdfsLink.href);
                 }
                 
                 // لینک دانلود تک تک PDF ها
                 outputFiles.annotated_pdfs.forEach((pdfPath, index) => {
                     const pdfLink = document.createElement('a');
-                    pdfLink.href = `/download?file=${encodeURIComponent(pdfPath)}`;
+                    
+                    // تبدیل مسیر داخل کانتینر به مسیر نسبی
+                    let relativePdfPath = pdfPath;
+                    if (pdfPath.startsWith('/home/devio/JB-outputs/')) {
+                        relativePdfPath = pdfPath.replace('/home/devio/JB-outputs/', '');
+                    }
+                    
+                    pdfLink.href = `${apiBase}/download?file=${encodeURIComponent(relativePdfPath)}`;
                     pdfLink.className = 'download-link pdf-link';
                     pdfLink.innerHTML = `<i class="fas fa-file-pdf"></i> ${translations[currentLang]['download-pdf']} ${index + 1}`;
+                    pdfLink.target = '_blank'; // باز کردن در تب جدید
                     downloadLinks.appendChild(pdfLink);
+                    
+                    console.log(`PDF ${index + 1} download link:`, pdfLink.href);
                 });
             }
             
@@ -703,6 +735,57 @@
             setTimeout(() => {
                 logoIcon.classList.remove('initial-load');
             }, 1500);
+        });
+
+        // افزودن گوش‌دهنده برای کلیک روی لینک‌های دانلود
+        document.addEventListener('click', function(event) {
+            const target = event.target.closest('.download-link');
+            if (!target) return;
+            
+            // افزودن کد برای نمایش وضعیت دانلود
+            const originalText = target.innerHTML;
+            const loadingText = `<i class="fas fa-spinner fa-spin"></i> ${currentLang === 'fa' ? 'در حال دانلود...' : 'Downloading...'}`;
+            
+            // نمایش وضعیت دانلود
+            target.innerHTML = loadingText;
+            
+            // بررسی وضعیت دانلود پس از مدتی
+            setTimeout(() => {
+                // بازگرداندن متن اصلی
+                target.innerHTML = originalText;
+            }, 3000);
+        });
+
+        // تابع برای بررسی دسترسی به API
+        async function checkApiAccess() {
+            try {
+                const currentPort = window.location.port || '5000';
+                const apiPort = currentPort === '5001' ? '5001' : '5000';
+                const apiBase = `${window.location.protocol}//${window.location.hostname}:${apiPort}`;
+                
+                const response = await fetch(`${apiBase}/api/status`);
+                const data = await response.json();
+                
+                console.log("API Status:", data);
+                return true;
+            } catch (error) {
+                console.error("API access error:", error);
+                showNotification(
+                    currentLang === 'fa' ? 
+                    'خطا در دسترسی به API. لطفاً از اتصال سرور اطمینان حاصل کنید.' : 
+                    'Error accessing API. Please ensure the server is connected.', 
+                    'error'
+                );
+                return false;
+            }
+        }
+
+        // بررسی دسترسی به API هنگام بارگذاری صفحه
+        document.addEventListener('DOMContentLoaded', () => {
+            // کدهای قبلی DOMContentLoaded
+            
+            // بررسی دسترسی به API
+            checkApiAccess();
         });
 
         // اضافه کردن CSS برای انیمیشن انتخاب فایل و بخش پروژه

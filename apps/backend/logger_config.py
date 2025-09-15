@@ -5,8 +5,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 import sys
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from file_naming import get_log_dir, generate_log_filename, BASE_OUTPUT_DIR
+
+# اصلاح مسیرهای import
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(os.path.dirname(current_dir))
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+
+from apps.backend.utils.file_naming import get_log_dir, generate_log_filename, BASE_OUTPUT_DIR
 
 # تنظیم مسیر پایه لاگ‌ها
 BASE_LOG_DIR = os.path.join(BASE_OUTPUT_DIR, "logs")

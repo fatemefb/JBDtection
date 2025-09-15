@@ -4,10 +4,15 @@ import zipfile
 import datetime
 import logging
 import sys
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from typing import List, Dict, Any, Optional, Tuple
 
-# تنظیم لاگر
+# اصلاح مسیرهای import
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(os.path.dirname(current_dir))
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
 logger = logging.getLogger(__name__)
 
 # مسیر پایه برای ذخیره فایل‌ها

@@ -1,0 +1,17 @@
+{
+  "timestamp": "2025-09-15T13:50:19.942829",
+  "stats": {
+    "total_tags": 0,
+    "matched_tags": 0,
+    "exact_matches": 0,
+    "similar_matches": 0,
+    "total_jbs": 0,
+    "processing_time": "0.27 seconds",
+    "match_rate": "0%",
+    "exact_match_rate": "0%",
+    "unmatched_tags": 0
+  },
+  "unmatched_excel_tags": [],
+  "unmatched_pdf_tags": [],
+  "tag_numbers": {}
+}

@@ -6,9 +6,16 @@ import os
 import re
 import sys
 import traceback
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# اصلاح مسیرهای import
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(os.path.dirname(current_dir))
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+    
 from typing import List, Dict, Set, Tuple, Any, Optional, Union
-from file_utils import standardize_path, copy_to_output_paths
+from apps.backend.utils.file_utils import standardize_path, copy_to_output_paths
 
 # تنظیم لاگر
 logger = logging.getLogger(__name__)

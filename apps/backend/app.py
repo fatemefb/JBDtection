@@ -21,14 +21,22 @@ from multiprocessing import Pool, cpu_count
 import subprocess  
 import tkinter as tk
 import sys
-sys.path.append(os.path.dirname(os.path.abspath(__file__))) 
+
+# اصلاح مسیرهای import
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(os.path.dirname(current_dir))
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+
 from tkinter import filedialog 
 from logger_config import get_logger, LoggerMixin
 from TagJBExtractorLogger import LoggedTagJBExtractor
 from LinuxTagJBExtractorLogger import LoggedLinuxTagJBExtractor
 from DataAnalysisModule import TagJBExtractor
 from werkzeug.utils import secure_filename
-from file_naming import (
+from apps.backend.utils.file_naming import (
     BASE_OUTPUT_DIR,
     get_project_output_dir,
     get_log_dir,
@@ -37,6 +45,7 @@ from file_naming import (
     create_zip_archive,
     get_download_url
 )
+
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -501,23 +510,21 @@ def api_process():
         # ایجاد URL دانلود
         download_url = get_download_url(zip_path)
         
-        # آماده‌سازی پاسخ
+        # مثالی از پاسخ API پردازش
         response = {
-            'status': 'success',
-            'message': 'پردازش با موفقیت انجام شد',
-            'details': {
-                'project_name': project_name,
-                'output_files': {
-                    'excel_path': output_excel_path,
-                    'unmatched_excel_path': unmatched_excel_path,
-                    'zip_path': zip_path,
-                    'download_url': download_url
+            "status": "success",
+            "message": "Processing completed successfully",
+            "details": {
+                "output_files": {
+                    "excel_path": "/home/devio/JB-outputs/project_name/output.xlsx",
+                    "annotated_pdfs": [
+                        "/home/devio/JB-outputs/project_name/annotated_1.pdf",
+                        "/home/devio/JB-outputs/project_name/annotated_2.pdf"
+                    ]
                 },
-                'results': {
-                    'unmatched_excel_tags': unmatched_excel_tags,
-                    'unmatched_pdf_tags': unmatched_pdf_tags,
-                    'unmatched_excel_count': len(unmatched_excel_tags),
-                    'unmatched_pdf_count': len(unmatched_pdf_tags)
+                "results": {
+                    "unmatched_pdf_tags": ["tag1", "tag2"],
+                    "unmatched_excel_tags": ["tag3", "tag4"]
                 }
             }
         }
@@ -532,28 +539,117 @@ def api_process():
             'message': str(e)
         }), 500
 
-@app.route('/downloads/<path:filename>')
-def download_file(filename):
+# تعریف مسیر پایه برای فایل‌های خروجی
+OUTPUT_DIR_CONTAINER  = {
+    "v1": "/home/devio/projects/JBDtection/apps/backend/outputs_v1",
+    "v2": "/home/devio/projects/JBDtection/apps/backend/outputs_v2"
+}
+
+@app.route('/download', methods=['GET'])
+def download_file():
     """
-    دانلود فایل از مسیر خروجی
+    دانلود فایل با مسیر نسبی مشخص شده
+    
+    پارامترها:
+        file: مسیر نسبی فایل برای دانلود (نسبت به دایرکتوری خروجی)
+        
+    Returns:
+        فایل برای دانلود
     """
-    if 'username' not in session:
-        return jsonify({
-            'status': 'error',
-            'message': 'لطفاً ابتدا وارد سیستم شوید'
-        }), 401
+    try:
+        file_path = request.args.get('file')
+        
+        if not file_path:
+            return jsonify({"error": "No file path provided"}), 400
+        
+        # حذف اسلش اضافی از ابتدای مسیر
+        if file_path.startswith('/'):
+            file_path = file_path[1:]
+        
+        # تعیین نسخه سرویس (v1 یا v2) بر اساس پورت درخواست
+        version = "v1"
+        if request.host.endswith(':5001'):
+            version = "v2"
+        
+        # مسیر کامل فایل در سیستم میزبان
+        base_dir = OUTPUT_DIRS[version]
+        full_path = os.path.join(base_dir, file_path)
+        
+        # بررسی امنیتی: اطمینان از اینکه فایل درخواستی در مسیر مجاز قرار دارد
+        abs_path = os.path.abspath(full_path)
+        if not abs_path.startswith(base_dir):
+            return jsonify({"error": "Access denied"}), 403
+        
+        if not os.path.exists(abs_path) or not os.path.isfile(abs_path):
+            return jsonify({"error": f"File not found: {abs_path}"}), 404
+        
+        # تعیین نام فایل برای دانلود
+        filename = os.path.basename(abs_path)
+        directory = os.path.dirname(abs_path)
+        
+        # ارسال فایل برای دانلود
+        return send_from_directory(directory, filename, as_attachment=True)
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/download-all-pdfs', methods=['GET'])
+def download_all_pdfs():
+    """
+    دانلود همه فایل‌های PDF یک پروژه به صورت فشرده
+    
+    پارامترها:
+        project: نام پروژه
+        
+    Returns:
+        فایل ZIP حاوی همه PDF‌ها
+    """
+    try:
+        project_name = request.args.get('project')
+        
+        if not project_name:
+            return jsonify({"error": "No project name provided"}), 400
+        
+        # تعیین نسخه سرویس (v1 یا v2) بر اساس پورت درخواست
+        version = "v1"
+        if request.host.endswith(':5001'):
+            version = "v2"
+        
+        # مسیر دایرکتوری پروژه
+        base_dir = OUTPUT_DIRS[version]
+        project_dir = os.path.join(base_dir, project_name)
+        
+        if not os.path.exists(project_dir) or not os.path.isdir(project_dir):
+            return jsonify({"error": f"Project directory not found: {project_dir}"}), 404
+        
+        # یافتن همه فایل‌های PDF در دایرکتوری پروژه
+        pdf_files = []
+        for root, _, files in os.walk(project_dir):
+            for file in files:
+                if file.lower().endswith('.pdf'):
+                    pdf_files.append(os.path.join(root, file))
+        
+        if not pdf_files:
+            return jsonify({"error": "No PDF files found for this project"}), 404
+        
+        # ایجاد فایل ZIP موقت
+        zip_filename = f"{project_name}_PDFs.zip"
+        zip_path = os.path.join(base_dir, zip_filename)
+        
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for pdf_file in pdf_files:
+                # افزودن فایل با نام نسبی (بدون مسیر کامل)
+                arcname = os.path.basename(pdf_file)
+                zipf.write(pdf_file, arcname)
+        
+        # ارسال فایل ZIP برای دانلود
+        return send_from_directory(base_dir, zip_filename, as_attachment=True)
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
     
     username = session.get('username')
     logger.info(f"کاربر {username} درخواست دانلود فایل {filename} را ارسال کرد")
-    
-    # بررسی امنیتی مسیر فایل
-    safe_path = os.path.normpath(os.path.join(BASE_OUTPUT_DIR, filename))
-    if not safe_path.startswith(BASE_OUTPUT_DIR):
-        logger.warning(f"تلاش برای دسترسی به فایل خارج از مسیر مجاز: {filename}")
-        return jsonify({
-            'status': 'error',
-            'message': 'دسترسی غیرمجاز'
-        }), 403
     
     # بررسی وجود فایل
     if not os.path.exists(safe_path):

@@ -5,9 +5,13 @@ import platform
 import subprocess
 from typing import List, Dict, Any, Optional, Union
 import sys
-sys.path.append(os.path.dirname(os.path.abspath(__file__))) 
-
-# تنظیم لاگر
+# اصلاح مسیرهای import
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(os.path.dirname(current_dir))
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
 logger = logging.getLogger(__name__)
 
 def standardize_path(path: str) -> str:
@@ -58,19 +62,27 @@ def copy_to_output_paths(files_to_copy: List[str], server_output_dir: str = None
     # کپی به مسیر سرور
     if server_output_dir:
         try:
+            # اطمینان از وجود دایرکتوری مقصد
             os.makedirs(server_output_dir, exist_ok=True)
             server_files = []
             
             for file_path in files_to_copy:
                 if os.path.exists(file_path):
                     dest_path = os.path.join(server_output_dir, os.path.basename(file_path))
-                    shutil.copy2(file_path, dest_path)
-                    server_files.append(dest_path)
-                    logger.info(f"Copied to server: {file_path} -> {dest_path}")
+                    
+                    # بررسی یکسان نبودن مسیر مبدأ و مقصد
+                    if os.path.normpath(file_path) != os.path.normpath(dest_path):
+                        shutil.copy2(file_path, dest_path)
+                        server_files.append(dest_path)
+                        logger.info(f"Copied to server: {file_path} -> {dest_path}")
+                    else:
+                        # اگر مسیرها یکسان هستند، فقط به لیست اضافه کن بدون کپی
+                        server_files.append(file_path)
+                        logger.info(f"Source and destination are the same, skipping copy: {file_path}")
                 else:
                     logger.warning(f"File not found for server copy: {file_path}")
             
-            result['server_success'] = True
+            result['server_success'] = len(server_files) > 0
             result['server_files'] = server_files
             
         except Exception as e:
@@ -78,8 +90,9 @@ def copy_to_output_paths(files_to_copy: List[str], server_output_dir: str = None
             result['error'] = str(e)
     
     # کپی به مسیر کاربر
-    if user_output_dir:
+    if user_output_dir and user_output_dir != server_output_dir:
         try:
+            # اطمینان از وجود دایرکتوری مقصد
             os.makedirs(user_output_dir, exist_ok=True)
             user_files = []
             
@@ -87,19 +100,32 @@ def copy_to_output_paths(files_to_copy: List[str], server_output_dir: str = None
             for file_path in files_to_copy:
                 if os.path.exists(file_path):
                     dest_path = os.path.join(user_output_dir, os.path.basename(file_path))
-                    shutil.copy2(file_path, dest_path)
-                    user_files.append(dest_path)
-                    logger.info(f"Copied to user path: {file_path} -> {dest_path}")
+                    
+                    # بررسی یکسان نبودن مسیر مبدأ و مقصد
+                    if os.path.normpath(file_path) != os.path.normpath(dest_path):
+                        shutil.copy2(file_path, dest_path)
+                        user_files.append(dest_path)
+                        logger.info(f"Copied to user path: {file_path} -> {dest_path}")
+                    else:
+                        # اگر مسیرها یکسان هستند، فقط به لیست اضافه کن بدون کپی
+                        user_files.append(file_path)
+                        logger.info(f"Source and destination are the same, skipping copy: {file_path}")
                 else:
                     logger.warning(f"File not found for user path copy: {file_path}")
             
-            result['user_path_success'] = True
+            result['user_path_success'] = len(user_files) > 0
             result['user_files'] = user_files
             result['method_used'] = 'local'
             
         except Exception as e:
             logger.error(f"Error copying to user directory: {e}")
             result['error'] = str(e)
+    elif user_output_dir == server_output_dir:
+        # اگر مسیرهای سرور و کاربر یکسان هستند، نتایج سرور را برای کاربر هم استفاده کن
+        result['user_path_success'] = result['server_success']
+        result['user_files'] = result['server_files']
+        result['method_used'] = 'same_as_server'
+        logger.info("User output directory is the same as server directory, using server results")
     
     return result
 
@@ -187,3 +213,29 @@ def delete_file(file_path: str) -> bool:
     except Exception as e:
         logger.error(f"Error deleting file {file_path}: {e}")
         return False
+
+def verify_file_exists_with_retries(file_path: str, max_retries: int = 3, retry_delay: int = 1) -> bool:
+    """
+    تأیید وجود فایل با چند بار تلاش
+    
+    Args:
+        file_path: مسیر فایل
+        max_retries: حداکثر تعداد تلاش‌ها
+        retry_delay: تأخیر بین تلاش‌ها (ثانیه)
+        
+    Returns:
+        آیا فایل وجود دارد
+    """
+    import time
+    
+    for attempt in range(max_retries):
+        if os.path.exists(file_path) and os.path.isfile(file_path):
+            logger.info(f"File exists after {attempt+1} attempts: {file_path}")
+            return True
+        
+        if attempt < max_retries - 1:
+            logger.warning(f"File not found (attempt {attempt+1}/{max_retries}), retrying in {retry_delay} seconds: {file_path}")
+            time.sleep(retry_delay)
+    
+    logger.error(f"File not found after {max_retries} attempts: {file_path}")
+    return False

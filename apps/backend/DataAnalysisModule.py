@@ -22,8 +22,15 @@ import string
 import shutil
 import random
 import sys
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from file_utils import standardize_path, copy_to_output_paths
+# اصلاح مسیرهای import
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(os.path.dirname(current_dir))
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+    
+from apps.backend.utils.file_utils import standardize_path, copy_to_output_paths
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -1710,125 +1717,101 @@ class TagJBExtractor:
         return df
 
 
-    def create_annotated_pdf(self, pdf_path: str, output_pdf_path: str) -> 'Dict[str, int]':
+    def create_annotated_pdf(self, pdf_path, output_pdf_path):
         """
-        Create a new PDF with bounding boxes for tags and JBs using vector matching.
-        Also returns a mapping of tags to their assigned numbers.
-
+        ایجاد PDF حاشیه‌نویسی شده با شماره‌گذاری تگ‌ها
+        
         Args:
-            pdf_path: Input PDF file path
-            output_pdf_path: Output PDF file path
+            pdf_path: مسیر فایل PDF ورودی
+            output_pdf_path: مسیر فایل PDF خروجی
             
         Returns:
-            Dictionary mapping tags to their assigned numbers
+            دیکشنری شماره‌گذاری تگ‌ها
         """
-        # Master Dictionary to store all tag-to-number mappings across all pages
-        all_tag_numbers = {}
-        
         try:
-            # Open PDF document
-            pdf_document = fitz.open(pdf_path)
-
-            # Create a new PDF to store processed pages
-            new_pdf = fitz.open()
-
-            # Create temporary directory for storing page images
-            with tempfile.TemporaryDirectory() as temp_dir:
-                # Process each page
-                for page_num in range(len(pdf_document)):
-                    logger.info(f"Annotating page {page_num + 1}/{len(pdf_document)}")
-
-                    # Get page
-                    page = pdf_document[page_num]
-
-                    # Convert page to image with higher resolution
-                    pix = page.get_pixmap(matrix=fitz.Matrix(300/72, 300/72))
-                    image_path = os.path.join(temp_dir, f"page_{page_num + 1}.png")
-                    pix.save(image_path)
-
-                    # Load image
-                    image = cv2.imread(image_path)
-                    if image is None:
-                        logger.warning(f"Failed to load image for page {page_num + 1}")
-                        continue
-
-                    # Process image to extract text
-                    processed_image = self.preprocess_image(image)
-
-                    # Extract tags and JB identifiers with vector matching
-                    # بررسی تعداد مقادیر برگشتی از تابع extract_from_image
-                    result = self.extract_from_image(image)
-                    
-                    # اگر تابع 5 مقدار برمی‌گرداند
-                    if len(result) == 5:
-                        tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers = result
-                        tag_to_number = {}  # مقدار پیش‌فرض خالی
-                    # اگر تابع 6 مقدار برمی‌گرداند
-                    elif len(result) == 6:
-                        tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number = result
-                    else:
-                        # اگر تعداد مقادیر متفاوت است، خطا را ثبت کن و مقادیر پیش‌فرض را استفاده کن
-                        logger.error(f"Unexpected number of values returned from extract_from_image: {len(result)}")
-                        tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers = set(), set(), set(), [], []
-                        tag_to_number = {}
-
-                    # Draw bounding boxes on the image and get tag-to-number mapping
-                    annotated_image, page_tag_numbers = self.draw_bounding_boxes(
-                        image, tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number
-                    )
-                    
-                    # Update the master Dictionary with this page's tag numbers
-                    all_tag_numbers.update(page_tag_numbers)
-
-                    # Add information overlay with stats
-                    stats = self.get_processing_stats()
-                    info_text = [
-                        f"Page {page_num + 1}/{len(pdf_document)}",
-                        f"Tags: {len(tags)}, JBs: {len(jb_identifiers)}, MCs: {len(mc_identifiers)}",
-                        f"Vector match rate: {stats['match_rate']}"
-                    ]
-
-                    # Add overlay box
-                    overlay = annotated_image.copy()
-                    overlay_h = len(info_text) * 30 + 20
-                    x, y, w, h = 10, 10, 390, overlay_h
-                    cv2.rectangle(overlay, (x, y), (x + w, y + h), (0, 0, 0), -1)
-
-                    # Blend the overlay region only
-                    blended_region = cv2.addWeighted(overlay[y:y+h, x:x+w], 0.7,
-                                                    annotated_image[y:y+h, x:x+w], 0.3, 0)
-                    annotated_image[y:y+h, x:x+w] = blended_region
-
-                    # Add text info on top
-                    for i, text in enumerate(info_text):
-                        y_pos = y + 30 + i * 30
-                        cv2.putText(annotated_image, text, (x + 10, y_pos),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-
-                    # Save annotated image
-                    annotated_image_path = os.path.join(temp_dir, f"annotated_page_{page_num + 1}.png")
-                    cv2.imwrite(annotated_image_path, annotated_image)
-
-                    # Add processed image to new PDF
-                    new_page = new_pdf.new_page(width=pix.width, height=pix.height)
-                    new_page.insert_image(new_page.rect, filename=annotated_image_path)
-
-                    # Clean up memory after processing each page
-                    del pix, image, processed_image, annotated_image
-                    gc.collect()
-
-            # Save new PDF
-            new_pdf.save(output_pdf_path)
-            new_pdf.close()
-            logger.info(f"Annotated PDF saved to: {output_pdf_path}")
-            logger.info(f"Total tags numbered: {len(all_tag_numbers)}")
+            # اطمینان از وجود دایرکتوری خروجی
+            ensure_directory_exists(os.path.dirname(output_pdf_path))
             
-            return all_tag_numbers
-
+            # حاشیه‌نویسی PDF
+            logger.info(f"Annotating PDF: {pdf_path} -> {output_pdf_path}")
+            
+            # باز کردن PDF ورودی
+            doc = fitz.open(pdf_path)
+            
+            # ایجاد دیکشنری نگاشت تگ به شماره
+            tag_to_number = {}
+            current_number = 1
+            
+            # پردازش هر صفحه
+            for page_num in range(len(doc)):
+                logger.info(f"Annotating page {page_num+1}/{len(doc)}")
+                
+                # دریافت صفحه
+                page = doc[page_num]
+                
+                # تبدیل صفحه به تصویر
+                pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
+                image = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.h, pix.w, pix.n)
+                
+                # ذخیره ابعاد تصویر برای استفاده در متد draw_bounding_boxes_on_pdf
+                self.image_width = pix.w
+                self.image_height = pix.h
+                
+                # پیش‌پردازش تصویر
+                processed_image = self.preprocess_image(image)
+                
+                # استخراج اطلاعات از تصویر
+                result = self.extract_from_image(processed_image)
+                
+                # بررسی نوع نتیجه
+                if isinstance(result, tuple):
+                    if len(result) >= 5:
+                        tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers = result[:5]
+                        
+                        # اگر نتیجه شامل tag_to_number است
+                        if len(result) >= 6:
+                            page_tag_to_number = result[5]
+                            # ادغام با دیکشنری اصلی
+                            for tag, number in page_tag_to_number.items():
+                                tag_to_number[tag] = number
+                        else:
+                            # شماره‌گذاری تگ‌ها
+                            page_tag_to_number = {}
+                            for tag in tags:
+                                if tag not in tag_to_number:
+                                    tag_to_number[tag] = current_number
+                                    page_tag_to_number[tag] = current_number
+                                    current_number += 1
+                                else:
+                                    page_tag_to_number[tag] = tag_to_number[tag]
+                            
+                            # شماره‌گذاری SPARE ها
+                            for i, spare in enumerate(spare_identifiers):
+                                spare_id = f"SPARE_{i+1}"
+                                if spare_id not in tag_to_number:
+                                    tag_to_number[spare_id] = current_number
+                                    page_tag_to_number[spare_id] = current_number
+                                    current_number += 1
+                                else:
+                                    page_tag_to_number[spare_id] = tag_to_number[spare_id]
+                        
+                        # ایجاد صفحه جدید
+                        new_page = page
+                        
+                        # رسم کادر اطراف تگ‌ها
+                        self.draw_bounding_boxes_on_pdf(new_page, tags, jb_identifiers, mc_identifiers, spare_identifiers, page_tag_to_number)
+                
+            # ذخیره PDF حاشیه‌نویسی شده
+            doc.save(output_pdf_path)
+            doc.close()
+            
+            return tag_to_number
+            
         except Exception as e:
             logger.error(f"Error creating annotated PDF: {e}")
+            logger.error(traceback.format_exc())
             return {}
-
+            
     def _create_unmatched_tags_excel(self, unmatched_excel_tags: 'List[str]', unmatched_pdf_tags: 'List[str]', output_path: str) -> None:
         """
         ایجاد فایل اکسل دو ستونه برای نمایش تگ‌های تطبیق نیافته

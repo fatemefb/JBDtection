@@ -6,9 +6,20 @@ import logging
 import traceback
 import sys
 from typing import List, Dict, Set, Tuple, Any, Optional, Union
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from file_utils import standardize_path, copy_to_output_paths
+import shutil
+import pandas as pd
+import json
+from datetime import datetime
 
+
+# اصلاح مسیرهای import
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(os.path.dirname(current_dir))
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+from apps.backend.utils.file_utils import standardize_path, copy_to_output_paths, ensure_directory_exists, verify_file_exists_with_retries
 
 # Check for GPU support
 try:
@@ -265,6 +276,18 @@ class LinuxTagJBExtractor(TagJBExtractor):
             self.set_scr_number_rule(scr_number_rule)
 
     def run_with_annotated_pdf(self, pdf_paths, excel_path, output_excel_path, output_pdf_dir):
+        """
+        اجرای پردازش کامل با PDF های حاشیه‌نویسی شده با بهبود مدیریت فایل‌ها
+
+        Args:
+            pdf_paths: لیست مسیرهای فایل PDF
+            excel_path: مسیر فایل Excel ورودی
+            output_excel_path: مسیر فایل Excel خروجی
+            output_pdf_dir: مسیر دایرکتوری PDF های خروجی
+
+        Returns:
+            تاپل شامل (unmatched_excel_tags, unmatched_pdf_tags)
+        """
         self.logger.info(f"شروع پردازش با PDF های حاشیه‌نویسی شده")
         self.logger.info(f"تعداد فایل‌های PDF: {len(pdf_paths)}")
         
@@ -272,22 +295,197 @@ class LinuxTagJBExtractor(TagJBExtractor):
         output_excel_path = standardize_path(output_excel_path)
         output_pdf_dir = standardize_path(output_pdf_dir)
         
+        # اطمینان از وجود دایرکتوری‌های خروجی
+        ensure_directory_exists(output_pdf_dir)
+        ensure_directory_exists(os.path.dirname(output_excel_path))
+        
         self.logger.info(f"مسیر خروجی اکسل: {output_excel_path}")
         self.logger.info(f"مسیر خروجی PDF: {output_pdf_dir}")
         
-        # اجرای متد اصلی
-        result = super().run_with_annotated_pdf(pdf_paths, excel_path, output_excel_path, output_pdf_dir)
-        
-        # ثبت نتایج کپی
-        if result['copy_result']['server_success']:
-            self.logger.info("فایل‌ها با موفقیت در سرور ذخیره شدند")
-        else:
-            self.logger.error("خطا در ذخیره فایل‌ها در سرور")
+        try:
+            # اجرای متد اصلی
+            result = super().run_with_annotated_pdf(pdf_paths, excel_path, output_excel_path, output_pdf_dir)
             
-        if result['copy_result']['user_path_success']:
-            self.logger.info(f"فایل‌ها با موفقیت در مسیر کاربر ذخیره شدند")
-            self.logger.info(f"روش استفاده شده: {result['copy_result'].get('method_used', 'local')}")
-        else:
-            self.logger.warning(f"خطا در ذخیره فایل‌ها در مسیر کاربر: {result.get('error', 'خطای نامشخص')}")
+            # بررسی نوع خروجی
+            if isinstance(result, tuple) and len(result) == 2:
+                unmatched_excel_tags, unmatched_pdf_tags = result
+            else:
+                self.logger.warning(f"Unexpected return type from parent method: {type(result)}")
+                unmatched_excel_tags, unmatched_pdf_tags = [], []
+            
+            # بررسی وجود فایل‌های خروجی
+            excel_exists = os.path.exists(output_excel_path)
+            if not excel_exists:
+                self.logger.warning(f"Excel output file not found at {output_excel_path}, creating empty file")
+                self._create_empty_excel(output_excel_path)
+            
+            # ایجاد فایل گزارش
+            report_path = os.path.join(output_pdf_dir, "processing_reports.json")
+            self._create_report_file(report_path, unmatched_excel_tags, unmatched_pdf_tags)
+            
+            # ایجاد فایل Excel تگ‌های تطبیق نیافته
+            unmatched_excel_path = os.path.join(os.path.dirname(output_excel_path), 
+                                               f"Aryavakav-NGL-UnmatchedTags-{datetime.now().strftime('%Y-%m-%d')}-v1.0.xlsx")
+            self._create_unmatched_tags_excel(unmatched_excel_path, unmatched_excel_tags, unmatched_pdf_tags)
+            self.logger.info(f"فایل Excel تگ‌های تطبیق نیافته ذخیره شد: {unmatched_excel_path}")
+            
+            # کپی فایل‌های خروجی به مسیر سرور
+            server_output_dir = "/home/devio/JB-outputs"
+            files_to_copy = []
+            
+            # اضافه کردن فایل‌های موجود به لیست کپی
+            if os.path.exists(output_excel_path):
+                files_to_copy.append(output_excel_path)
+            if os.path.exists(unmatched_excel_path):
+                files_to_copy.append(unmatched_excel_path)
+            if os.path.exists(report_path):
+                files_to_copy.append(report_path)
+                
+            # اضافه کردن فایل‌های PDF حاشیه‌نویسی شده به لیست کپی
+            for pdf_path in pdf_paths:
+                pdf_name = os.path.basename(pdf_path)
+                annotated_pdf_path = os.path.join(output_pdf_dir, f"annotated_{pdf_name}")
+                if os.path.exists(annotated_pdf_path):
+                    files_to_copy.append(annotated_pdf_path)
+            
+            # کپی فایل‌ها به مسیر سرور
+            copy_result = copy_to_output_paths(files_to_copy, server_output_dir)
+            if copy_result['server_success']:
+                self.logger.info(f"Output files successfully copied to server directory: {server_output_dir}")
+                self.logger.info(f"Server files: {copy_result['server_files']}")
+            else:
+                self.logger.warning(f"Failed to copy output files to server directory: {copy_result.get('error', 'Unknown error')}")
+            
+            # ایجاد فایل ZIP از همه خروجی‌ها
+            zip_path = os.path.join(os.path.dirname(output_excel_path), 
+                                   f"Aryavakav-NGL-Results-{datetime.now().strftime('%Y-%m-%d')}-v1.0.zip")
+            self._create_zip_archive(zip_path, files_to_copy)
+            self.logger.info(f"Created ZIP archive: {zip_path}")
+            
+            # ثبت اطلاعات تکمیلی
+            self.logger.info(f"پردازش با موفقیت انجام شد")
+            self.logger.info(f"تعداد تگ‌های یافت نشده در Excel: {len(unmatched_excel_tags)}")
+            self.logger.info(f"تعداد تگ‌های یافت نشده در PDF: {len(unmatched_pdf_tags)}")
+            
+            return unmatched_excel_tags, unmatched_pdf_tags
+            
+        except Exception as e:
+            self.logger.error(f"خطا در اجرای پردازش: {e}")
+            self.logger.error(traceback.format_exc())
+            # برگرداندن مقادیر خالی در صورت بروز خطا
+            return [], []
+    
+    def _create_empty_excel(self, file_path):
+        """
+        ایجاد فایل Excel خالی
         
-        return result
+        Args:
+            file_path: مسیر فایل Excel
+        """
+        try:
+            # ایجاد دیتافریم خالی با ستون‌های پیش‌فرض
+            columns = ['PDF_Name', 'Page', 'JB', 'MC', 'Tag/SPARE', 'Tag_Number', 
+                      'Wire_Code_1', 'Wire_Code_2', 'Terminal_First_Number', 
+                      'Terminal_Second_Number', 'SCR_Terminal_Number', 'Cable_Code',
+                      'Cable_Description', 'Type', 'Tag_Number_Status']
+            df = pd.DataFrame(columns=columns)
+            
+            # ذخیره فایل
+            ensure_directory_exists(os.path.dirname(file_path))
+            df.to_excel(file_path, index=False)
+            self.logger.info(f"Created empty Excel file: {file_path}")
+            
+            return True
+        except Exception as e:
+            self.logger.error(f"Error creating empty Excel file: {e}")
+            self.logger.error(traceback.format_exc())
+            return False
+    
+    def _create_report_file(self, file_path, unmatched_excel_tags, unmatched_pdf_tags):
+        """
+        ایجاد فایل گزارش JSON
+        
+        Args:
+            file_path: مسیر فایل گزارش
+            unmatched_excel_tags: تگ‌های تطبیق نیافته در Excel
+            unmatched_pdf_tags: تگ‌های تطبیق نیافته در PDF
+        """
+        try:
+            # ایجاد دیکشنری گزارش
+            report = {
+                'timestamp': datetime.now().isoformat(),
+                'stats': self.get_processing_stats(),
+                'unmatched_excel_tags': list(unmatched_excel_tags) if unmatched_excel_tags else [],
+                'unmatched_pdf_tags': list(unmatched_pdf_tags) if unmatched_pdf_tags else [],
+                'tag_numbers': getattr(self, 'tag_to_number', {})
+            }
+            
+            # ذخیره فایل
+            ensure_directory_exists(os.path.dirname(file_path))
+            with open(file_path, 'w') as f:
+                json.dump(report, f, indent=2)
+            self.logger.info(f"Reports and tag numbers saved to: {file_path}")
+            
+            return True
+        except Exception as e:
+            self.logger.error(f"Error creating report file: {e}")
+            self.logger.error(traceback.format_exc())
+            return False
+    
+    def _create_unmatched_tags_excel(self, file_path, unmatched_excel_tags, unmatched_pdf_tags):
+        """
+        ایجاد فایل Excel تگ‌های تطبیق نیافته
+        
+        Args:
+            file_path: مسیر فایل Excel
+            unmatched_excel_tags: تگ‌های تطبیق نیافته در Excel
+            unmatched_pdf_tags: تگ‌های تطبیق نیافته در PDF
+        """
+        try:
+            # تبدیل به لیست
+            excel_tags = list(unmatched_excel_tags) if unmatched_excel_tags else []
+            pdf_tags = list(unmatched_pdf_tags) if unmatched_pdf_tags else []
+            
+            # ایجاد دیتافریم
+            df_excel = pd.DataFrame({'IO_List_Tags': excel_tags + [''] * (len(pdf_tags) - len(excel_tags) if len(pdf_tags) > len(excel_tags) else 0)})
+            df_pdf = pd.DataFrame({'PDF_Tags': pdf_tags + [''] * (len(excel_tags) - len(pdf_tags) if len(excel_tags) > len(pdf_tags) else 0)})
+            
+            # ترکیب دیتافریم‌ها
+            df = pd.concat([df_excel, df_pdf], axis=1)
+            
+            # ذخیره فایل
+            ensure_directory_exists(os.path.dirname(file_path))
+            df.to_excel(file_path, index=False)
+            self.logger.info(f"Created unmatched tags Excel file with {len(excel_tags)} IO List tags and {len(pdf_tags)} PDF tags")
+            
+            return True
+        except Exception as e:
+            self.logger.error(f"Error creating unmatched tags Excel file: {e}")
+            self.logger.error(traceback.format_exc())
+            return False
+    
+    def _create_zip_archive(self, zip_path, files_to_zip):
+        """
+        ایجاد فایل ZIP از فایل‌های خروجی
+        
+        Args:
+            zip_path: مسیر فایل ZIP
+            files_to_zip: لیست فایل‌های مورد نظر برای فشرده‌سازی
+        """
+        try:
+            import zipfile
+            
+            # ایجاد فایل ZIP
+            with zipfile.ZipFile(zip_path, 'w') as zipf:
+                for file_path in files_to_zip:
+                    if os.path.exists(file_path):
+                        zipf.write(file_path, os.path.basename(file_path))
+                        self.logger.info(f"Added file to ZIP: {file_path}")
+                    else:
+                        self.logger.warning(f"File not found for ZIP: {file_path}")
+            
+            return True
+        except Exception as e:
+            self.logger.error(f"Error creating ZIP archive: {e}")
+            self.logger.error(traceback.format_exc())
+            return False
