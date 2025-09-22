@@ -141,6 +141,11 @@ def create_zip_archive(project_name: str, files_to_zip: List[str], doc_type: str
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for file_path in files_to_zip:
                 if os.path.exists(file_path):
+                    # فیلتر کردن فایل‌های JSON
+                    if file_path.lower().endswith('.json'):
+                        logger.info(f"Skipping JSON file: {file_path}")
+                        continue
+                        
                     # افزودن فایل با نام نسبی (بدون مسیر کامل)
                     arcname = os.path.basename(file_path)
                     zipf.write(file_path, arcname)

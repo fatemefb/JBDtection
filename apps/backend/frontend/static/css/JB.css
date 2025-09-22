@@ -71,6 +71,7 @@ header p {
     margin-right: auto;
 }
 
+
 /* Main content styles */
 main {
     display: flex;
@@ -309,6 +310,8 @@ section h2 i {
     background-color: #ffffff;
     border-radius: var(--border-radius);
     box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08);
+    /* اضافه کردن box-sizing برای حل مشکل باکس‌های ورودی */
+    box-sizing: border-box;
 }
 
 .pattern-group {
@@ -320,6 +323,8 @@ section h2 i {
     border-radius: var(--border-radius);
     border: 1px solid #e9ecef;
     transition: var(--transition);
+    /* اضافه کردن box-sizing برای حل مشکل باکس‌های ورودی */
+    box-sizing: border-box;
 }
 
 .pattern-group:hover {
@@ -342,6 +347,9 @@ section h2 i {
     font-size: 1rem;
     transition: var(--transition);
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+    /* اضافه کردن box-sizing برای حل مشکل باکس‌های ورودی */
+    box-sizing: border-box;
+    width: 100%;
 }
 
 .pattern-group input:focus {
@@ -597,6 +605,8 @@ footer {
     font-size: 1rem;
     transition: var(--transition);
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+    /* اضافه کردن box-sizing برای حل مشکل باکس‌های ورودی */
+    box-sizing: border-box;
 }
 
 .input-with-icon input[type="text"]:focus {
@@ -1500,4 +1510,163 @@ html[dir="rtl"] .menu-item.active a::after {
 
 .menu-item.active a:hover {
     transform: translateY(-2px) scale(1.05);
+}
+
+/* اضافه کردن استایل‌های جدید برای رفع مشکل باکس‌های ورودی */
+/* اعمال box-sizing به همه المان‌ها */
+* {
+    box-sizing: border-box;
+}
+
+/* بهبود استایل فرم و المان‌های ورودی */
+form {
+    width: 100%;
+}
+
+/* اصلاح پدینگ برای باکس‌های الگو */
+.pattern-section {
+    padding: 25px 20px;
+}
+
+.pattern-inputs {
+    padding: 15px;
+    width: 100%;
+}
+
+.pattern-group {
+    padding: 15px;
+    width: 100%;
+}
+
+/* اصلاح استایل برای حالت RTL */
+html[dir="rtl"] .pattern-group input {
+    width: 100%;
+    padding-right: 15px;
+}
+
+/* اطمینان از عدم سرریز محتوا */
+.pattern-group, .pattern-inputs, section, .upload-box {
+    overflow: hidden;
+}
+
+/* استایل برای دانلود فایل‌ها */
+.download-box {
+    margin-top: 20px;
+    padding: 20px;
+    background-color: #f8fafc;
+    border-radius: var(--border-radius);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08);
+    box-sizing: border-box;
+}
+
+.download-links {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.download-link, .zip-download-link {
+    display: flex;
+    align-items: center;
+    padding: 12px 20px;
+    background-color: #fff;
+    color: var(--dark-color);
+    text-decoration: none;
+    border-radius: 50px;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
+    border: 1px solid #eaeaea;
+    font-weight: 500;
+}
+
+.download-link i, .zip-download-link i {
+    margin-right: 10px;
+    font-size: 1.2rem;
+}
+
+.excel-link i {
+    color: #1D6F42;
+}
+
+.pdf-link i {
+    color: #FF0000;
+}
+
+.all-pdfs-link i, .zip-download-link i {
+    color: #6200EA;
+}
+
+.download-link:hover, .zip-download-link:hover {
+    background-color: #f0f7ff;
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+.direct-download-link {
+    margin-top: 20px;
+    padding: 15px;
+    background-color: #e8f4fc;
+    border-radius: var(--border-radius);
+    border-left: 4px solid var(--primary-color);
+    box-sizing: border-box;
+}
+
+.direct-download-link p {
+    margin-top: 0;
+    margin-bottom: 10px;
+    color: #2980b9;
+}
+
+.zip-download-link {
+    display: inline-flex;
+    background-color: var(--primary-color);
+    color: white;
+    padding: 10px 25px;
+}
+
+.zip-download-link:hover {
+    background-color: #2980b9;
+    color: white;
+}
+
+/* RTL support for download links */
+html[dir="rtl"] .download-link i, 
+html[dir="rtl"] .zip-download-link i {
+    margin-right: 0;
+    margin-left: 10px;
+}
+
+/* Dark theme for download section */
+body.dark .download-box {
+    background-color: #1a1a2e;
+}
+
+body.dark .download-link {
+    background-color: #16213e;
+    color: #e3e6f0;
+    border-color: #2c2c44;
+}
+
+body.dark .download-link:hover {
+    background-color: #1e2a38;
+}
+
+body.dark .direct-download-link {
+    background-color: #16213e;
+    border-color: #2c2c44;
+    border-left-color: var(--primary-color);
+}
+
+body.dark .direct-download-link p {
+    color: var(--primary-color);
+}
+
+body.dark .zip-download-link {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+body.dark .zip-download-link:hover {
+    background-color: #2980b9;
 }

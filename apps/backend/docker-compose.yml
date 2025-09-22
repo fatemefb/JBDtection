@@ -18,6 +18,14 @@ services:
     security_opt:
       - apparmor:unconfined
     restart: unless-stopped
+    command: >
+      gunicorn apps.backend.app:app
+        -b 0.0.0.0:5000
+        --workers=2
+        --threads=4
+        --timeout=2700
+        --max-requests=500
+        --max-requests-jitter=50
     deploy:
       resources:
         reservations:
@@ -45,6 +53,14 @@ services:
     security_opt:
       - apparmor:unconfined
     restart: unless-stopped
+    command: >
+      gunicorn apps.backend.app:app
+        -b 0.0.0.0:5001
+        --workers=2
+        --threads=4
+        --timeout=2700
+        --max-requests=500
+        --max-requests-jitter=50
     deploy:
       resources:
         reservations:

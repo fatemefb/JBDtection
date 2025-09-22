@@ -239,3 +239,78 @@ def verify_file_exists_with_retries(file_path: str, max_retries: int = 3, retry_
     
     logger.error(f"File not found after {max_retries} attempts: {file_path}")
     return False
+
+def filter_files_for_zip(files_list: List[str], exclude_extensions: List[str] = None) -> List[str]:
+    """
+    فیلتر کردن فایل‌ها برای اضافه کردن به ZIP
+    
+    Args:
+        files_list: لیست فایل‌های ورودی
+        exclude_extensions: لیست پسوندهایی که باید حذف شوند (مثلاً ['.json', '.tmp'])
+        
+    Returns:
+        لیست فایل‌های فیلتر شده
+    """
+    if exclude_extensions is None:
+        exclude_extensions = ['.json']  # به صورت پیش‌فرض، فایل‌های JSON را حذف می‌کنیم
+    
+    filtered_files = []
+    
+    for file_path in files_list:
+        # بررسی وجود فایل
+        if not os.path.exists(file_path):
+            logger.warning(f"File not found for filtering: {file_path}")
+            continue
+            
+        # بررسی پسوند فایل
+        _, extension = os.path.splitext(file_path.lower())
+        if extension in exclude_extensions:
+            logger.info(f"Excluding file with extension {extension}: {file_path}")
+            continue
+            
+        # اضافه کردن فایل به لیست فیلتر شده
+        filtered_files.append(file_path)
+        logger.debug(f"File passed filtering: {file_path}")
+    
+    logger.info(f"Filtered {len(files_list) - len(filtered_files)} files out of {len(files_list)}")
+    return filtered_files
+
+def create_zip_with_filtered_files(zip_path: str, files_to_zip: List[str], exclude_extensions: List[str] = None) -> bool:
+    """
+    ایجاد فایل ZIP با فیلتر کردن فایل‌های خاص
+    
+    Args:
+        zip_path: مسیر فایل ZIP خروجی
+        files_to_zip: لیست فایل‌های مورد نظر برای فشرده‌سازی
+        exclude_extensions: لیست پسوندهایی که باید حذف شوند
+        
+    Returns:
+        نتیجه عملیات (True در صورت موفقیت)
+    """
+    try:
+        # فیلتر کردن فایل‌ها
+        filtered_files = filter_files_for_zip(files_to_zip, exclude_extensions)
+        
+        if not filtered_files:
+            logger.warning("No files left after filtering for ZIP creation")
+            return False
+            
+        # اطمینان از وجود دایرکتوری مقصد
+        zip_dir = os.path.dirname(zip_path)
+        ensure_directory_exists(zip_dir)
+        
+        # ایجاد فایل ZIP
+        import zipfile
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for file_path in filtered_files:
+                # افزودن فایل با نام نسبی (بدون مسیر کامل)
+                arcname = os.path.basename(file_path)
+                zipf.write(file_path, arcname)
+                logger.info(f"Added file to ZIP: {file_path}")
+        
+        logger.info(f"Created ZIP archive with {len(filtered_files)} files: {zip_path}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error creating ZIP with filtered files: {e}")
+        return False

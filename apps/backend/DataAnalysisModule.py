@@ -431,24 +431,24 @@ class TagJBExtractor:
         """
         Extract tags, JB identifiers, MC identifiers, cable descriptions, SPAREs, and raw cable descriptions from the image.
         Also assigns and returns sequential numbers to tags and spares.
-            
+        
         Args:
             image: Input image as numpy array
-                
+            
         Returns:
             Tuple of (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions)
         """
         # اطمینان از وجود الگوها
-        if not self.jb_examples:
-            logger.warning("JB examples not Set, using default 'JB'")
+        if not hasattr(self, 'jb_examples') or not self.jb_examples:
+            logger.warning("JB examples not set, using default 'JB'")
             self.jb_examples = "JB"
-        if not self.mc_examples:
-            logger.warning("MC examples not Set, using default 'MC'")
+        if not hasattr(self, 'mc_examples') or not self.mc_examples:
+            logger.warning("MC examples not set, using default 'MC'")
             self.mc_examples = "MC"
-        if not self.spare_examples:
-            logger.warning("SPARE examples not Set, using default 'SPARE'")
+        if not hasattr(self, 'spare_examples') or not self.spare_examples:
+            logger.warning("SPARE examples not set, using default 'SPARE'")
             self.spare_examples = "SPARE"
-            
+        
         logger.info(f"Using patterns - JB: '{self.jb_examples}', MC: '{self.mc_examples}', SPARE: '{self.spare_examples}'")
         
         # اگر تصویر grayscale است، به RGB تبدیل کن
@@ -457,7 +457,7 @@ class TagJBExtractor:
         
         # تطبیق کامل config با draw_bounding_boxes
         custom_config = r'--oem 3 --psm 11 -c tessedit_char_whiteList=ABCDEFGHIJKLMNOPQRSTUVWXYZsparetcoilpr0123456789-.'
-
+        
         # OCR output with position data
         logger.info("Starting OCR extraction...")
         ocr_data = pytesseract.image_to_data(image, config=custom_config, output_type=pytesseract.Output.DICT)
@@ -467,12 +467,12 @@ class TagJBExtractor:
         mc_identifiers = set()
         cable_descriptions = []
         spare_identifiers = []
-        raw_cable_descriptions = []  # متغیر جدید برای ذخیره متن اصلی تشخیص داده شده
-        tag_to_number = {}  # Dictionary to store tag/spare to number mapping
+        raw_cable_descriptions = []
+        tag_to_number = {}
         processed_identifiers = set()
-
+        
         # استفاده از الگوی کامپایل شده برای SPARE
-        if not self.spare_regex:
+        if not hasattr(self, 'spare_regex') or not self.spare_regex:
             self._compile_regex_patterns()
         
         # بهبود regex pattern برای cable descriptions
@@ -493,7 +493,7 @@ class TagJBExtractor:
         
         # Initialize sequence number for tags and spares
         sequence_number = 1
-            
+        
         # Step 1: پردازش اولیه تمام کلمات
         logger.info("Processing all words from OCR...")
         spare_found_count = 0
@@ -502,7 +502,7 @@ class TagJBExtractor:
             word_clean = word.strip().upper()
             if not word_clean:
                 continue
-
+            
             # DEBUG: چاپ همه کلمات برای یافتن SPARE
             if self.spare_examples in word_clean:
                 logger.debug(f"Potential {self.spare_examples} word found: '{word_clean}' at index {i}")
@@ -520,7 +520,7 @@ class TagJBExtractor:
                 sequence_number += 1
                 continue
             
-            # جستجوی manual برای کلمات مشابه SPARE
+            # جستجوی manual برای کلمات مشابه SPARE (بدون تغییر)
             spare_match = False
             spare_variations = [self.spare_examples, self.spare_examples.replace('A', 'E'), self.spare_examples.replace('A', 'I')]
             for variation in spare_variations:
@@ -539,8 +539,8 @@ class TagJBExtractor:
             
             if spare_match:
                 continue
-                    
-            # تشخیص MC identifiers
+            
+            # تشخیص MC identifiers (بدون تغییر)
             if len(word_clean) >= len(self.mc_examples) + 1 and self.mc_examples in word_clean and 'AS' not in word_clean:
                 x, y = ocr_data['left'][i], ocr_data['top'][i]
                 mc_positions.append((x, y))
@@ -684,14 +684,22 @@ class TagJBExtractor:
         logger.info(f'Final spare_identifiers: {spare_identifiers}')
         logger.info(f'Final tag_to_number mapping: {tag_to_number}')
         logger.info(f'Final tags found: {tags}')
-
-        # Update final Sets
-        self.all_tags.update(tags)
-        self.all_jbs.update(jb_identifiers)
-        self.all_mcs.update(mc_identifiers)
-        self.all_spares = spare_identifiers
-
-        return tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions
+        
+        # Update final sets
+        if hasattr(self, 'all_tags'):
+            self.all_tags.update(tags)
+        if hasattr(self, 'all_jbs'):
+            self.all_jbs.update(jb_identifiers)
+        if hasattr(self, 'all_mcs'):
+            self.all_mcs.update(mc_identifiers)
+        if hasattr(self, 'all_spares'):
+            self.all_spares = spare_identifiers
+        if hasattr(self, 'matched_tags_set'):
+            self.matched_tags_set.update(tags)
+        
+        # اطمینان از برگرداندن 7 مقدار
+        logger.info(f"Returning 7 values from extract_from_image")
+        return tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions   
         
     def get_similarity_reports(self) -> 'List[Dict[str, Any]]':
         """
@@ -747,93 +755,217 @@ class TagJBExtractor:
         gray = cv2.dilate(gray, kernel_dilate, iterations=1)
         
         return gray
-        
-    def _calculate_similarity(self, text1: str, text2: str) -> float:
+
+    def find_candidate_tags(self, ocr_text: str, io_list_tags: 'List[str]', similarity_threshold: float = 0.8) -> 'List[Tuple[str, float]]':
         """
-        Calculate similarity between two strings with enhanced focus on alphabetic characters.
+        یافتن تگ‌های کاندیدا از لیست IO که به متن OCR شباهت دارند
         
         Args:
-            text1: First string
-            text2: Second string
+            ocr_text: متن استخراج شده از OCR
+            io_list_tags: لیست تگ‌های IO
+            similarity_threshold: آستانه شباهت برای انتخاب کاندیدا
             
         Returns:
-            Similarity score between 0 and 1
+            لیست تاپل‌های (تگ IO، امتیاز شباهت) که امتیاز آن‌ها بالاتر از آستانه است
         """
-        # Clean and normalize texts
-        text1 = str(text1).upper().strip()
-        text2 = str(text2).upper().strip()
-        
-        # If texts are identical, return 1
-        if text1 == text2:
-            return 1.0
+        try:
+            # پیش‌پردازش متن OCR
+            ocr_text = str(ocr_text).strip().upper()
+            if not ocr_text:
+                return []
             
-        # If one text is empty, return 0
-        if not text1 or not text2:
-            return 0.0
+            # محاسبه شباهت با همه تگ‌های IO
+            candidates = []
+            for io_tag in io_list_tags:
+                io_tag_str = str(io_tag).strip().upper()
+                if not io_tag_str:
+                    continue
+                
+                # محاسبه امتیاز شباهت
+                similarity = self.calculate_similarity(ocr_text, io_tag_str)
+                
+                # اگر امتیاز بالاتر از آستانه است، به عنوان کاندیدا اضافه کن
+                if similarity >= similarity_threshold:
+                    candidates.append((io_tag, similarity))
+            
+            # مرتب‌سازی کاندیداها بر اساس امتیاز شباهت (نزولی)
+            candidates.sort(key=lambda x: x[1], reverse=True)
+            
+            return candidates
+            
+        except Exception as e:
+            logger.error(f"Error finding candidate tags: {e}")
+            return []
+            
+    def validate_tag_candidates(self, ocr_text: str, candidates: 'List[Tuple[str, float]]', 
+                               exact_match_required: bool = True) -> 'Tuple[List[str], List[Tuple[str, float]]]':
+        """
+        اعتبارسنجی تگ‌های کاندیدا و تقسیم آن‌ها به تگ‌های تأیید شده و ناشناخته
         
-        # Calculate length similarity
-        len_ratio = min(len(text1), len(text2)) / max(len(text1), len(text2))
-        
-        # Calculate character-based similarity with focus on alphabetic chars
-        chars1 = set(text1)
-        chars2 = set(text2)
-        common_chars = len(chars1.intersection(chars2))
-        char_ratio = common_chars / max(len(chars1), len(chars2))
-        
-        # Extract alphabetic parts
-        alpha1 = ''.join(c for c in text1 if c.isalpha())
-        alpha2 = ''.join(c for c in text2 if c.isalpha())
-        
-        # Calculate alphabetic similarity using Levenshtein distance if both have alphabetic chars
-        if alpha1 and alpha2:
-            # Normalize the distance to get a similarity score between 0 and 1
-            alpha_distance = Levenshtein.distance(alpha1, alpha2)
-            alpha_max_len = max(len(alpha1), len(alpha2))
-            alpha_similarity = 1 - (alpha_distance / alpha_max_len) if alpha_max_len > 0 else 0
-        else:
-            # If one or both strings have no alphabetic chars, use a lower similarity
-            alpha_similarity = 0.5 if (not alpha1 and not alpha2) else 0
-        
-        # Calculate pattern similarity
-        pattern1 = [1 if c.isdigit() else 2 if c.isalpha() else 3 for c in text1]
-        pattern2 = [1 if c.isdigit() else 2 if c.isalpha() else 3 for c in text2]
-        pattern_ratio = sum(a == b for a, b in zip(pattern1[:min(len(pattern1), len(pattern2))]))
-        pattern_ratio /= max(len(pattern1), len(pattern2))
-        
-        # Calculate position-weighted similarity with higher weight for alphabetic chars
-        pos_weight = 0
-        min_len = min(len(text1), len(text2))
-        for i in range(min_len):
-            if text1[i] == text2[i]:
-                # Give higher weight to matching alphabetic characters
-                if text1[i].isalpha():
-                    pos_weight += 1.5 / (i + 1)  # 50% more weight for alphabetic matches
+        Args:
+            ocr_text: متن اصلی OCR
+            candidates: لیست تاپل‌های (تگ IO، امتیاز شباهت)
+            exact_match_required: آیا تطابق دقیق برای تأیید نهایی لازم است
+            
+        Returns:
+            تاپلی از (لیست تگ‌های تأیید شده، لیست تگ‌های ناشناخته با امتیاز شباهت)
+        """
+        try:
+            # پیش‌پردازش متن OCR
+            ocr_text = str(ocr_text).strip().upper()
+            if not ocr_text or not candidates:
+                return [], []
+            
+            validated_tags = []
+            unknown_signals = []
+            
+            for io_tag, similarity in candidates:
+                io_tag_str = str(io_tag).strip().upper()
+                
+                # بررسی تطابق دقیق اگر لازم است
+                if exact_match_required:
+                    # اگر متن OCR دقیقاً با تگ IO مطابقت دارد، آن را تأیید کن
+                    if ocr_text == io_tag_str:
+                        validated_tags.append(io_tag)
+                    else:
+                        # در غیر این صورت به عنوان ناشناخته اضافه کن
+                        unknown_signals.append((io_tag, similarity))
                 else:
-                    pos_weight += 1 / (i + 1)
+                    # اگر تطابق دقیق لازم نیست، همه کاندیداها را تأیید کن
+                    validated_tags.append(io_tag)
+            
+            return validated_tags, unknown_signals
+            
+        except Exception as e:
+            logger.error(f"Error validating tag candidates: {e}")
+            return [], []
+
+    def calculate_similarity(self, text1: str, text2: str) -> float:
+        """
+        محاسبه امتیاز شباهت بین دو رشته متنی
         
-        # Calculate the denominator for normalization
-        pos_denominator = sum(1.5 / (i + 1) if i < min_len and text1[i].isalpha() else 1 / (i + 1) for i in range(max(len(text1), len(text2))))
-        pos_ratio = pos_weight / pos_denominator if pos_denominator > 0 else 0
+        Args:
+            text1: متن اول
+            text2: متن دوم
+            
+        Returns:
+            امتیاز شباهت بین 0 تا 1
+        """
+        try:
+            # تبدیل به رشته و حذف فضاهای خالی
+            text1 = str(text1).strip().upper()
+            text2 = str(text2).strip().upper()
+            
+            # اگر هر دو متن خالی هستند، شباهت 1 است
+            if not text1 and not text2:
+                return 1.0
+                
+            # اگر یکی از متن‌ها خالی است، شباهت 0 است
+            if not text1 or not text2:
+                return 0.0
+                
+            # اگر متن‌ها یکسان هستند، شباهت 1 است
+            if text1 == text2:
+                return 1.0
+            
+            # محاسبه فاصله لونشتاین
+            distance = Levenshtein.distance(text1, text2)
+            max_len = max(len(text1), len(text2))
+            
+            # تبدیل فاصله به امتیاز شباهت
+            similarity = 1.0 - (distance / max_len)
+            
+            return similarity
+            
+        except Exception as e:
+            logger.error(f"Error calculating similarity: {e}")
+            return 0.0
+
+    def match_tags(self, extracted_tags, io_list_tags, similarity_threshold=0.8):
+        """
+        تطبیق تگ‌های استخراج شده با لیست IO
         
-        # Calculate prefix similarity (first few chars are often more important)
-        prefix_len = min(3, min(len(text1), len(text2)))
-        if prefix_len > 0:
-            prefix_matches = sum(text1[i] == text2[i] for i in range(prefix_len))
-            prefix_ratio = prefix_matches / prefix_len
-        else:
-            prefix_ratio = 0
+        این متد برای حفظ سازگاری با کد قبلی حفظ شده است، اما از متد جدید match_tags_with_io_list استفاده می‌کند.
         
-        # Combine all metrics with adjusted weights to emphasize alphabetic similarity
-        similarity = (
-            0.15 * len_ratio +       # Length similarity weight (reduced)
-            0.30 * char_ratio +      # Character similarity weight (increased)
-            0.25 * alpha_similarity + # Alphabetic similarity (new component)
-            0.15 * pattern_ratio +   # Pattern similarity weight (reduced)
-            0.10 * pos_ratio +       # Position similarity weight (reduced)
-            0.05 * prefix_ratio      # Prefix similarity (new component)
+        Args:
+            extracted_tags: لیست تگ‌های استخراج شده
+            io_list_tags: لیست تگ‌های IO
+            similarity_threshold: آستانه شباهت
+            
+        Returns:
+            دیکشنری تگ‌های تطبیق داده شده
+        """
+        # استفاده از متد جدید
+        matched_tags_dict, unmatched_io_tags, unknown_signals = self.match_tags_with_io_list(
+            extracted_tags, io_list_tags, similarity_threshold
         )
         
-        return min(1.0, similarity)  # Ensure result is at most 1.0
+        # برای حفظ سازگاری با کد قبلی، فقط دیکشنری تطبیق را برگردان
+        return matched_tags_dict
+
+    def match_tags_with_io_list(self, extracted_tags: 'List[str]', io_list_tags: 'List[str]', 
+                              similarity_threshold: float = 0.8) -> 'Tuple[Dict[str, str], List[str], List[Tuple[str, float]]]':
+        """
+        تطبیق تگ‌های استخراج شده با لیست IO با استفاده از فرآیند دو مرحله‌ای
+        
+        Args:
+            extracted_tags: لیست تگ‌های استخراج شده از OCR
+            io_list_tags: لیست تگ‌های IO
+            similarity_threshold: آستانه شباهت برای انتخاب کاندیدا
+            
+        Returns:
+            تاپلی از (دیکشنری تگ‌های تطبیق داده شده، لیست تگ‌های IO بدون تطبیق، لیست سیگنال‌های ناشناخته)
+        """
+        try:
+            # پیش‌پردازش تگ‌های IO
+            io_list_tags = [str(tag).strip().upper() for tag in io_list_tags if pd.notna(tag)]
+            
+            # دیکشنری برای نگهداری تگ‌های تطبیق داده شده
+            matched_tags_dict = {}
+            
+            # لیست برای نگهداری سیگنال‌های ناشناخته
+            unknown_signals = []
+            
+            # شمارنده‌های آماری
+            self.exact_matches = 0
+            self.similar_matches = 0
+            
+            # پردازش هر تگ استخراج شده
+            for ocr_tag in extracted_tags:
+                ocr_tag = str(ocr_tag).strip().upper()
+                if not ocr_tag:
+                    continue
+                
+                # مرحله 1: یافتن کاندیداها
+                candidates = self.find_candidate_tags(ocr_tag, io_list_tags, similarity_threshold)
+                
+                # مرحله 2: اعتبارسنجی کاندیداها
+                validated_tags, unvalidated_candidates = self.validate_tag_candidates(ocr_tag, candidates, True)
+                
+                if validated_tags:
+                    # اگر تگ معتبر پیدا شد، اولین مورد را انتخاب کن
+                    matched_tags_dict[ocr_tag] = validated_tags[0]
+                    self.exact_matches += 1
+                    
+                    # تگ تطبیق داده شده را از لیست IO حذف کن تا از تطبیق مجدد جلوگیری شود
+                    if validated_tags[0] in io_list_tags:
+                        io_list_tags.remove(validated_tags[0])
+                else:
+                    # اگر هیچ تگ معتبری پیدا نشد، به عنوان ناشناخته ثبت کن
+                    for candidate, similarity in unvalidated_candidates:
+                        unknown_signals.append((ocr_tag, candidate, similarity))
+            
+            # تگ‌های IO که هنوز تطبیق داده نشده‌اند
+            unmatched_io_tags = io_list_tags.copy()
+            
+            # آمار نهایی
+            self.matched_tags = len(matched_tags_dict)
+            
+            return matched_tags_dict, unmatched_io_tags, unknown_signals
+            
+        except Exception as e:
+            logger.error(f"Error matching tags with IO list: {e}")
+            return {}, io_list_tags, []
     
                 
     def create_tag_jb_mapping(self, pdf_results: 'Dict[int, Tuple[Any, ...]]') -> 'Dict[str, str]':
@@ -1021,168 +1153,260 @@ class TagJBExtractor:
         return new_tags
 
 
-    def process_pdf_page(self, page_info: 'Tuple[fitz.Page, str, int]') ->  'Tuple[int, Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str]]':
+    def process_pdf_page(self, page_info: 'Tuple[fitz.Page, str, int]') -> 'Tuple[int, Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str]]':
         """
-        Process a single PDF page in parallel.
+        Process a single PDF page - اصلاح شده برای بازگرداندن 7 مقدار
         
         Args:
             page_info: Tuple containing (page object, temp_dir path, page number)
             
         Returns:
-            Tuple of (page_number, tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers ,tag_to_number)
+            Tuple of (page_number, tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions)
         """
         page, temp_dir, page_num = page_info
         
-        # Create image path
-        image_path = os.path.join(temp_dir, f"page_{page_num + 1}.png")
-        
-        # Convert page to image
-        pix = page.get_pixmap(matrix=fitz.Matrix(300/72, 300/72))
-        pix.save(image_path)
-        
-        # Load and process image
-        image = cv2.imread(image_path)
-        tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions = self.extract_from_image(image)
-        
-        # Clean up temporary image file
         try:
-            os.remove(image_path)
-        except:
-            pass
+            # Create image path
+            image_path = os.path.join(temp_dir, f"page_{page_num + 1}.png")
             
-        return page_num + 1, tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions
+            # Convert page to image
+            pix = page.get_pixmap(matrix=fitz.Matrix(300/72, 300/72))
+            pix.save(image_path)
+            
+            # Load and process image
+            image = cv2.imread(image_path)
+            if image is None:
+                logger.error(f"Failed to load image for page {page_num + 1}")
+                return page_num + 1, set(), set(), set(), [], [], {}, []
+                
+            result = self.extract_from_image(image)
+            
+            # Handle different return formats
+            if len(result) >= 7:
+                tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions = result[:7]
+            elif len(result) >= 6:
+                tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number = result[:6]
+                raw_cable_descriptions = []
+            else:
+                logger.error(f"Unexpected result format: {len(result)} values")
+                tags, jb_identifiers, mc_identifiers = set(), set(), set()
+                cable_descriptions, spare_identifiers = [], []
+                tag_to_number, raw_cable_descriptions = {}, []
+            
+            # Clean up temporary image file
+            try:
+                os.remove(image_path)
+            except:
+                pass
+                
+            return page_num + 1, tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions
+            
+        except Exception as e:
+            logger.error(f"Error processing page {page_num + 1}: {e}")
+            logger.error(traceback.format_exc())
+            return page_num + 1, set(), set(), set(), [], [], {}, []
 
-    def process_pdf(self, pdf_path: str) ->'Dict[int, Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str]]]':
+    def process_pdf(self, pdf_path, io_list_path=None, output_excel_path=None, similarity_threshold=0.8):
         """
-        Process all pages in a PDF file.
+        پردازش کامل یک فایل PDF و تطبیق با لیست IO
         
         Args:
-            pdf_path: Path to the PDF file
+            pdf_path: مسیر فایل PDF
+            io_list_path: مسیر فایل اکسل لیست IO (اختیاری)
+            output_excel_path: مسیر فایل اکسل خروجی (اختیاری)
+            similarity_threshold: آستانه شباهت برای تطبیق تگ‌ها
             
         Returns:
-            Dictionary mapping page numbers to Tuples of (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers ,tag_to_number)
+            دیکشنری نتایج پردازش
         """
-        results = {}
-        
-        # Reinitialize Tesseract for this process
         try:
-            # Try to find Tesseract in common locations
-            common_locations = [
-                r'C:\Program Files\Tesseract-OCR\tesseract.exe',
-                r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
-                '/usr/bin/tesseract',
-                '/usr/local/bin/tesseract'
-            ]
+            start_time = time.time()
             
-            tesseract_found = False
-            for location in common_locations:
-                if os.path.exists(location):
-                    pytesseract.pytesseract.tesseract_cmd = location
-                    tesseract_found = True
-                    break
+            # تنظیم مسیرهای پیش‌فرض اگر مشخص نشده باشند
+            if not output_excel_path:
+                output_excel_path = os.path.splitext(pdf_path)[0] + "_results.xlsx"
+            
+            # پردازش PDF و استخراج تگ‌ها
+            logger.info(f"Processing PDF: {pdf_path}")
+            
+            # استخراج نام فایل PDF
+            pdf_name = os.path.basename(pdf_path)
+            
+            # پردازش PDF و استخراج اطلاعات
+            page_results = self.extract_information_from_pdf(pdf_path)
+            
+            # جمع‌آوری همه تگ‌ها از تمام صفحات
+            all_tags = set()
+            all_jbs = set()
+            all_mcs = set()
+            tag_to_number = {}
+            
+            # پردازش نتایج هر صفحه
+            for page_num, page_data in page_results.items():
+                if isinstance(page_data, tuple) and len(page_data) >= 6:
+                    tags = page_data[0]
+                    jbs = page_data[1]
+                    mcs = page_data[2]
+                    page_tag_to_number = page_data[5] if len(page_data) > 5 else {}
                     
-            if not tesseract_found:
-                raise RuntimeError("Tesseract not found in common locations")
+                    # اضافه کردن به مجموعه‌های کلی
+                    all_tags.update(tags)
+                    all_jbs.update(jbs)
+                    all_mcs.update(mcs)
+                    
+                    # اضافه کردن به دیکشنری tag_to_number
+                    tag_to_number.update(page_tag_to_number)
+            
+            # تنظیم متغیرهای آماری
+            self.all_tags = all_tags
+            self.all_jbs = all_jbs
+            self.total_tags = len(all_tags)
+            
+            # اگر لیست IO مشخص شده، تطبیق تگ‌ها انجام شود
+            if io_list_path and os.path.exists(io_list_path):
+                # خواندن لیست IO
+                io_list_df = pd.read_excel(io_list_path)
+                
+                # استخراج تگ‌های IO
+                io_list_tag_col = 'Tag No'  # نام ستون تگ در IO List
+                io_list_tags = [str(tag).strip().upper() for tag in io_list_df[io_list_tag_col] if pd.notna(tag)]
+                
+                # تطبیق تگ‌ها با استفاده از متد جدید
+                matched_tags_dict, unmatched_io_tags, unknown_signals = self.match_tags_with_io_list(
+                    list(all_tags), io_list_tags, similarity_threshold
+                )
+                
+                # تنظیم متغیرهای آماری
+                self.matched_tags_set = set(matched_tags_dict.keys())
+                self.matched_tags = len(matched_tags_dict)
+                
+                logger.info(f"Tag matching results: {self.matched_tags} matched out of {self.total_tags} tags")
+                logger.info(f"Exact matches: {self.exact_matches}, Similar matches: {self.similar_matches}")
+                logger.info(f"Unmatched IO tags: {len(unmatched_io_tags)}")
+                logger.info(f"Unknown signals: {len(unknown_signals)}")
+                
+                # ایجاد فایل اکسل میانی
+                intermediate_excel_path = os.path.splitext(output_excel_path)[0] + "_intermediate.xlsx"
+                df = self._process_page_results(page_results, tag_to_number, intermediate_excel_path)
+                
+                # ترکیب با لیست IO
+                final_df, unmatched_io_tags, unmatched_tags = self.process_excel_with_io_list(
+                    intermediate_excel_path, io_list_path, output_excel_path
+                )
+                
+                # بررسی تطابق شماره تگ با توضیحات کابل
+                is_consistent, max_tag_number, extracted_pair_number = self.check_tag_number_consistency(tag_to_number)
+                
+                # زمان پردازش
+                self.processing_time = time.time() - start_time
+                
+                # نتایج نهایی
+                return {
+                    'pdf_name': pdf_name,
+                    'total_pages': len(page_results),
+                    'total_tags': self.total_tags,
+                    'matched_tags': self.matched_tags,
+                    'exact_matches': self.exact_matches,
+                    'similar_matches': self.similar_matches,
+                    'unmatched_io_tags': len(unmatched_io_tags),
+                    'unmatched_tags': len(unmatched_tags),
+                    'unknown_signals': len(unknown_signals),
+                    'output_excel_path': output_excel_path,
+                    'processing_time': self.processing_time,
+                    'is_tag_number_consistent': is_consistent,
+                    'max_tag_number': max_tag_number,
+                    'extracted_pair_number': extracted_pair_number
+                }
+            else:
+                # اگر لیست IO مشخص نشده، فقط فایل اکسل میانی ایجاد شود
+                df = self.add_wire_colors_and_scr_to_dataframe(
+                    pd.DataFrame(), tag_to_number, output_excel_path, {pdf_name: page_results}, pdf_name
+                )
+                
+                # بررسی تطابق شماره تگ با توضیحات کابل
+                is_consistent, max_tag_number, extracted_pair_number = self.check_tag_number_consistency(tag_to_number)
+                
+                # زمان پردازش
+                self.processing_time = time.time() - start_time
+                
+                # نتایج نهایی
+                return {
+                    'pdf_name': pdf_name,
+                    'total_pages': len(page_results),
+                    'total_tags': self.total_tags,
+                    'matched_tags': 0,
+                    'exact_matches': 0,
+                    'similar_matches': 0,
+                    'unmatched_io_tags': 0,
+                    'unmatched_tags': self.total_tags,
+                    'unknown_signals': 0,
+                    'output_excel_path': output_excel_path,
+                    'processing_time': self.processing_time,
+                    'is_tag_number_consistent': is_consistent,
+                    'max_tag_number': max_tag_number,
+                    'extracted_pair_number': extracted_pair_number
+                }
                 
         except Exception as e:
-            logger.error(f"Error initializing Tesseract in process: {e}")
-            return {}
-        
-        logger.info(f"Opening PDF: {pdf_path}")
-        pdf_document = fitz.open(pdf_path)
-        pdf_filename = os.path.basename(pdf_path)
-        print(f"\nProcessing PDF: {pdf_filename}")
-        print("-" * 50)
-        
-        # Create temporary directory for image processing
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Process pages sequentially within each PDF
-            for page_num in range(len(pdf_document)):
-                try:
-                    logger.info(f"Processing page {page_num + 1}/{len(pdf_document)}")
-                    
-                    # Get page
-                    page = pdf_document[page_num]
-                    
-                    # Convert page to image with higher resolution
-                    pix = page.get_pixmap(matrix=fitz.Matrix(300/72, 300/72))
-                    image_path = os.path.join(temp_dir, f"page_{page_num + 1}.png")
-                    pix.save(image_path)
-                    
-                    # Load image
-                    image = cv2.imread(image_path)
-                    if image is None:
-                        logger.error(f"Failed to load image for page {page_num + 1}")
-                        continue
-                    
-                    # Extract tags and JB identifiers
-                    tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers , tag_to_number , raw_cable_descriptions = self.extract_from_image(image)
-                    
-                    # Store results
-                    results[page_num + 1] = (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers,tag_to_number , raw_cable_descriptions )
-                    
-                    # Print results immediately for this page
-                    print(f"Page {page_num + 1}:")
-                    print(f"  Tags found ({len(tags)}): {', '.join(sorted(tags))}")
-                    print(f"  JB identifiers found ({len(jb_identifiers)}): {', '.join(sorted(jb_identifiers))}")
-                    print(f"  MC identifiers found ({len(mc_identifiers)}): {', '.join(sorted(mc_identifiers))}")
-                    print(f"  Cable descriptions found ({len(cable_descriptions)}): {', '.join(sorted(cable_descriptions))}")
-                    print(f"  Raw cable descriptions found ({len(raw_cable_descriptions)}): {', '.join(raw_cable_descriptions)}")
-                    print(f"  Spare identifiers found ({len(spare_identifiers)}): {', '.join(sorted(spare_identifiers))}")
-                    print(f"  Spare identifiers found ({len(tag_to_number)}): {', '.join(sorted(tag_to_number))}")
-                    # Clean up temporary image file
-                    try:
-                        os.remove(image_path)
-                    except:
-                        pass
-                        
-                except Exception as e:
-                    logger.error(f"Error processing page {page_num + 1}: {e}")
-                    continue
-        
-        return results
+            logger.error(f"Error processing PDF: {e}")
+            logger.error(traceback.format_exc())
+            return {
+                'error': str(e),
+                'pdf_name': os.path.basename(pdf_path),
+                'total_pages': 0,
+                'total_tags': 0,
+                'matched_tags': 0,
+                'exact_matches': 0,
+                'similar_matches': 0,
+                'unmatched_io_tags': 0,
+                'unmatched_tags': 0,
+                'unknown_signals': 0,
+                'output_excel_path': output_excel_path,
+                'processing_time': time.time() - start_time,
+                'is_tag_number_consistent': False,
+                'max_tag_number': 0,
+                'extracted_pair_number': 0
+            }
 
-    def process_multiple_pdfs(self, pdf_paths: 'List[str]') -> 'Dict[int, Tuple[Set[str], Set[str], Set[str], List[str], List[str]]]':
+    def process_multiple_pdfs(self, pdf_paths: 'List[str]') -> 'Dict[int, Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str]]]':
         """
-        Process multiple PDF files in parallel with improved resource management.
-        
-        Args:
-            pdf_paths: List of paths to PDF files
-            
-        Returns:
-            Dictionary mapping page numbers to Tuples of (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers,tag_to_number ,raw_cable_descriptions)
+        Process multiple PDF files with improved memory management and page numbering
         """
         combined_results = {}
-        page_offset = 0
+        global_page_number = 1
         
-        # Calculate optimal number of processes
-        num_processes = min(cpu_count(), len(pdf_paths), 4)  
-        logger.info(f"Processing {len(pdf_paths)} PDF files using {num_processes} processes")
+        logger.info(f"Processing {len(pdf_paths)} PDF files")
         
-        try:
-            # Use context manager for better resource management
-            with Pool(processes=num_processes) as pool:
-                # Use imap instead of map for better memory management with large files
-                for pdf_result in pool.imap_unordered(self.process_pdf, pdf_paths):
-                    if pdf_result:
-                        for page_num, (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers ,tag_to_number ,raw_cable_descriptions) in pdf_result.items():
-                            combined_results[page_num + page_offset] = (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers ,tag_to_number,raw_cable_descriptions)
-                        page_offset += max(pdf_result.keys()) if pdf_result else 0
+        for pdf_idx, pdf_path in enumerate(pdf_paths):
+            try:
+                logger.info(f"Processing PDF {pdf_idx + 1}/{len(pdf_paths)}: {os.path.basename(pdf_path)}")
+                
+                # Process individual PDF
+                pdf_result = self.process_pdf(pdf_path)
+                
+                if pdf_result:
+                    # Add results with global page numbering
+                    for local_page_num, page_data in pdf_result.items():
+                        combined_results[global_page_number] = page_data
+                        global_page_number += 1
                         
-        except Exception as e:
-            logger.error(f"Error in parallel processing: {e}")
-            logger.info("Falling back to sequential processing")
-            for pdf_path in pdf_paths:
-                try:
-                    pdf_result = self.process_pdf(pdf_path)
-                    for page_num, (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers ,tag_to_number) in pdf_result.items():
-                        combined_results[page_num + page_offset] = (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers ,tag_to_number,raw_cable_descriptions)
-                    page_offset += max(pdf_result.keys()) if pdf_result else 0
-                except Exception as e:
-                    logger.error(f"Error processing PDF {pdf_path}: {e}")
-                    continue
+                    logger.info(f"Added {len(pdf_result)} pages from {os.path.basename(pdf_path)}")
+                    
+                    # Force memory cleanup between PDFs
+                    gc.collect()
+                    
+                else:
+                    logger.warning(f"No results from PDF: {pdf_path}")
+                    
+            except Exception as e:
+                logger.error(f"Error processing PDF {pdf_path}: {e}")
+                logger.error(traceback.format_exc())
+                # Continue with next PDF
+                continue
         
+        logger.info(f"Combined results: {len(combined_results)} total pages from {len(pdf_paths)} PDFs")
         return combined_results
+
 
     def process_excel_with_io_list(self, intermediate_excel_path: str, excel_path: str ,output_path: str) -> 'Tuple[pd.DataFrame, List[str], List[str]]':
         """
@@ -1408,256 +1632,250 @@ class TagJBExtractor:
     def draw_bounding_boxes(self, image: np.ndarray, tags: 'Set[str]', jb_identifiers: 'Set[str]', 
                     mc_identifiers: 'Set[str]', cable_descriptions: 'List[str]', spare_identifiers: 'List[str]',
                     tag_to_number: 'Dict[str, int]') -> 'Tuple[np.ndarray, Dict[str, int]]':
-    
-        jb_examples = self.jb_examples
-        mc_examples = self.mc_examples
-        spare_examples = self.spare_examples
-        cable_examples = self.cable_examples
-    
+
+        # اطمینان از وجود متغیرها
+        if tags is None:
+            tags = set()
+        if jb_identifiers is None:
+            jb_identifiers = set()
+        if mc_identifiers is None:
+            mc_identifiers = set()
+        if cable_descriptions is None:
+            cable_descriptions = []
+        if spare_identifiers is None:
+            spare_identifiers = []
+        if tag_to_number is None:
+            tag_to_number = {}
+        
+        # اطمینان از اینکه متغیرهای کلاس تنظیم شده‌اند
+        if not hasattr(self, 'jb_examples') or self.jb_examples is None:
+            self.jb_examples = "JB"
+        if not hasattr(self, 'mc_examples') or self.mc_examples is None:
+            self.mc_examples = "MC"
+        if not hasattr(self, 'spare_examples') or self.spare_examples is None:
+            self.spare_examples = "SPARE"
+        
+        # Debug logging
+        logger.info(f"Drawing bounding boxes for:")
+        logger.info(f"  Tags ({len(tags)}): {list(tags)[:5]}...")
+        logger.info(f"  JBs ({len(jb_identifiers)}): {list(jb_identifiers)}")
+        logger.info(f"  MCs ({len(mc_identifiers)}): {list(mc_identifiers)}")
+        logger.info(f"  Spares ({len(spare_identifiers)}): {spare_identifiers}")
+        logger.info(f"  Cables ({len(cable_descriptions)}): {cable_descriptions}")
+        
         if len(image.shape) == 2:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
 
+        # همان config که در extract_from_image استفاده شده
         custom_config = r'--oem 3 --psm 11 -c tessedit_char_whiteList=ABCDEFGHIJKLMNOPQRSTUVWXYZsparetcoilpr0123456789-.'
         ocr_data = pytesseract.image_to_data(image, config=custom_config, output_type=pytesseract.Output.DICT)
 
+        # دیکشنری برای ذخیره مختصات هر نوع شناسه
+        found_items = {
+            'tags': [],
+            'jbs': [],
+            'mcs': [],
+            'spares': [],
+            'cables': []
+        }
+        
         processed_regions = set()
-        processed_identifiers = set()
-        all_components = []
-        tag_to_number = {}
+        all_tag_numbers = dict(tag_to_number)  # کپی از tag_to_number ورودی
+        sequence_number = max(all_tag_numbers.values()) + 1 if all_tag_numbers else 1
 
-        # پردازش Tags
+        # مرحله 1: جستجوی دقیق برای تگ‌ها
+        logger.info("Searching for exact tag matches...")
         for tag in tags:
+            tag_found = False
             for i, text in enumerate(ocr_data['text']):
                 text_clean = text.strip().upper()
-                if text_clean == tag:
+                if text_clean == tag.upper():
                     region_key = (ocr_data['left'][i], ocr_data['top'][i],
                                 ocr_data['width'][i], ocr_data['height'][i])
-                    if region_key in processed_regions:
-                        continue
-                    processed_regions.add(region_key)
-                    processed_identifiers.add(text_clean)
-                    x, y, w, h = region_key
-                    all_components.append({
-                        'type': 'Tag',
-                        'text': tag,
-                        'position': (x, y, w, h),
-                        'color': (255, 0, 0)
-                    })
-        
-        # پردازش Spare identifiers
-        spare_count = 0
-        spare_pattern = re.compile(rf'\b{spare_examples}\b', re.IGNORECASE)
-        for i, text in enumerate(ocr_data['text']):
-            text_clean = text.strip().upper()
-            if spare_pattern.search(text_clean):
-                region_key = (ocr_data['left'][i], ocr_data['top'][i],
-                            ocr_data['width'][i], ocr_data['height'][i])
-                if region_key in processed_regions:
-                    continue
-                processed_regions.add(region_key)
-                processed_identifiers.add(text_clean)
-                x, y, w, h = region_key
-                spare_count += 1
-                spare_id = f"{spare_examples}_{spare_count}"
-                all_components.append({
-                    'type': 'Spare',
-                    'text': text_clean,
-                    'id': spare_id,
-                    'position': (x, y, w, h),
-                    'color': (128, 0, 128)
-                })
-
-        # پردازش Cable descriptions با استفاده از جستجوی مکانی
-        if mc_identifiers and cable_descriptions:
-            # ابتدا موقعیت MC ها را پیدا کن
-            mc_positions = {}
-            for mc in mc_identifiers:
-                for i, text in enumerate(ocr_data['text']):
-                    text_clean = text.strip().upper()
-                    if text_clean == mc:
-                        mc_x, mc_y = ocr_data['left'][i], ocr_data['top'][i]
-                        mc_positions[mc] = (mc_x, mc_y)
+                    if region_key not in processed_regions:
+                        found_items['tags'].append({
+                            'text': tag,
+                            'position': region_key,
+                            'match_type': 'exact'
+                        })
+                        processed_regions.add(region_key)
+                        tag_found = True
+                        logger.info(f"Found exact tag: {tag}")
                         break
             
-            # برای هر cable description، نزدیک‌ترین MC را پیدا کن و متن مربوطه را علامت‌گذاری کن
-            for cd in cable_descriptions:
-                print(f"Processing cable description: {cd}")
-                
-                # اگر cable description یک pattern خاص مثل FRT-01P1.5RM2 باشد
-                if re.match(r'[A-Z]+-\d+P\d*\.?\d*MM\d*', cd, re.IGNORECASE):
-                    # جستجو برای این pattern خاص در OCR data
-                    for i, text in enumerate(ocr_data['text']):
-                        text_clean = text.strip().upper()
-                        if text_clean == cd.upper() or cd.upper() in text_clean:
-                            region_key = (ocr_data['left'][i], ocr_data['top'][i],
-                                        ocr_data['width'][i], ocr_data['height'][i])
-                            if region_key in processed_regions:
-                                continue
-                            processed_regions.add(region_key)
-                            processed_identifiers.add(text_clean)
-                            x, y, w, h = region_key
-                            all_components.append({
-                                'type': 'Cable',
-                                'text': cd,
-                                'position': (x, y, w, h),
-                                'color': (0, 200, 200)
-                            })
-                            print(f"Found cable description pattern: {cd} at ({x}, {y})")
-                            break
-                else:
-                    # برای cable descriptions عادی (مثل "12 pair")
-                    cd_parts = cd.split()
-                    if len(cd_parts) != 2:
-                        continue
-                        
-                    number, cable_type = cd_parts
-                    
-                    # جستجوی مکانی برای number نزدیک MC ها
-                    for mc, (mc_x, mc_y) in mc_positions.items():
-                        search_radius_x = 300
-                        search_radius_y = 100
-                        
-                        for i, text in enumerate(ocr_data['text']):
-                            text_clean = text.strip().upper()
-                            if number in text_clean:
-                                word_x, word_y = ocr_data['left'][i], ocr_data['top'][i]
-                                distance_x = abs(word_x - mc_x)
-                                distance_y = abs(word_y - mc_y)
-                                
-                                # اگر در محدوده مکانی MC باشد
-                                if distance_x <= search_radius_x and distance_y <= search_radius_y:
-                                    # بررسی وجود cable type در نزدیکی
-                                    found_cable_type = False
-                                    for j in range(max(0, i - 3), min(len(ocr_data['text']), i + 4)):
-                                        neighbor_text = ocr_data['text'][j].strip().upper()
-                                        cable_type_terms = ['PAIR', 'P', 'PR', 'TRIPLE', 'T', 'TR', 'CORE', 'C', 'CR']
-                                        if any(term in neighbor_text for term in cable_type_terms):
-                                            found_cable_type = True
-                                            break
-                                    
-                                    if found_cable_type:
-                                        region_key = (ocr_data['left'][i], ocr_data['top'][i],
-                                                    ocr_data['width'][i], ocr_data['height'][i])
-                                        if region_key in processed_regions:
-                                            continue
-                                        processed_regions.add(region_key)
-                                        processed_identifiers.add(text_clean)
-                                        x, y, w, h = region_key
-                                        all_components.append({
-                                            'type': 'Cable',
-                                            'text': cd,
-                                            'position': (x, y, w, h),
-                                            'color': (0, 200, 200)
-                                        })
-                                        print(f"Found cable description: {cd} at ({x}, {y}) near MC {mc}")
-                                        break
+            if not tag_found:
+                logger.warning(f"Tag not found in OCR: {tag}")
 
-        # پردازش MC identifiers
-        for mc in mc_identifiers:
-            for i, text in enumerate(ocr_data['text']):
-                text_clean = text.strip().upper()
-                if text_clean == mc:
-                    region_key = (ocr_data['left'][i], ocr_data['top'][i],
-                                ocr_data['width'][i], ocr_data['height'][i])
-                    if region_key in processed_regions:
-                        continue
-                    processed_regions.add(region_key)
-                    processed_identifiers.add(text_clean)
-                    x, y, w, h = region_key
-                    all_components.append({
-                        'type': 'MC',
-                        'text': mc,
-                        'position': (x, y, w, h),
-                        'color': (0, 255, 0)
-                    })
-
-        # پردازش JB identifiers
-        for jb in jb_identifiers:
-            for i, text in enumerate(ocr_data['text']):
-                text_clean = text.strip().upper()
-                if text_clean == jb:
-                    region_key = (ocr_data['left'][i], ocr_data['top'][i],
-                                ocr_data['width'][i], ocr_data['height'][i])
-                    if region_key in processed_regions:
-                        continue
-                    processed_regions.add(region_key)
-                    processed_identifiers.add(text_clean)
-                    x, y, w, h = region_key
-                    all_components.append({
-                        'type': 'JB',
-                        'text': jb,
-                        'position': (x, y, w, h),
-                        'color': (0, 0, 255)
-                    })
-
-        # پردازش Tags با vector matching
+        # مرحله 2: جستجوی تطبیقی برای تگ‌ها با vector matcher
         if hasattr(self, 'vector_matcher'):
+            logger.info("Searching for similar tags using vector matcher...")
             for i, text in enumerate(ocr_data['text']):
                 text_clean = text.strip().upper()
                 if not text_clean or len(text_clean) < 4:
                     continue
+                    
                 region_key = (ocr_data['left'][i], ocr_data['top'][i],
                             ocr_data['width'][i], ocr_data['height'][i])
                 if region_key in processed_regions:
                     continue
-                # بررسی کن که آیا این متن قبلاً به عنوان JB، MC یا SPARE شناسایی شده است
-                if text_clean in processed_identifiers:
+                
+                # بررسی که این متن JB، MC یا SPARE نباشد
+                if (self.jb_examples in text_clean or 
+                    self.mc_examples in text_clean or 
+                    self.spare_examples in text_clean):
                     continue
+                    
                 similar_tags = self.vector_matcher.find_similar_tags(text_clean)
                 if similar_tags:
                     best_match, similarity = similar_tags[0]
-                    # بررسی کن که آیا بهترین تطابق قبلاً به عنوان JB، MC یا SPARE شناسایی شده است
-                    if best_match not in processed_identifiers and best_match not in tags and similarity >= self.vector_matcher.similarity_threshold:
-                        processed_regions.add(region_key)
-                        processed_identifiers.add(text_clean)  # اضافه کردن متن به لیست شناسایی‌شده‌ها
-                        processed_identifiers.add(best_match)  # اضافه کردن بهترین تطابق به لیست شناسایی‌شده‌ها
-                        x, y, w, h = region_key
-                        color = (255, 0, 0) if similarity == 1.0 else (0, 165, 255)
-                        all_components.append({
-                            'type': 'Tag',
+                    if similarity >= self.vector_matcher.similarity_threshold:
+                        found_items['tags'].append({
                             'text': best_match,
-                            'position': (x, y, w, h),
-                            'color': color,
-                            'similarity': similarity
+                            'position': region_key,
+                            'match_type': 'similar',
+                            'similarity': similarity,
+                            'original_text': text_clean
                         })
+                        processed_regions.add(region_key)
+                        logger.info(f"Found similar tag: {text_clean} -> {best_match} (similarity: {similarity:.2f})")
 
-        # مرتب‌سازی و نمایش components
-        all_components.sort(key=lambda comp: comp['position'][1])
-        sequence_number = 1
-        
-        for component in all_components:
-            if component['type'] == 'Tag':
-                x, y, w, h = component['position']
-                color = component['color']
-                text = component['text']
-                if text not in tag_to_number:
-                    tag_to_number[text] = sequence_number
-                    sequence_number += 1
-                assigned_number = tag_to_number[text]
-                cv2.rectangle(image, (x, y), (x + w, y + h), color, 2)
-                label = f"#{assigned_number} {text}" if 'similarity' not in component else f"#{assigned_number} {text} ({component['similarity']:.2f})"
-                cv2.putText(image, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+        # مرحله 3: جستجو برای JB identifiers
+        logger.info("Searching for JB identifiers...")
+        for jb in jb_identifiers:
+            for i, text in enumerate(ocr_data['text']):
+                text_clean = text.strip().upper()
+                if text_clean == jb.upper():
+                    region_key = (ocr_data['left'][i], ocr_data['top'][i],
+                                ocr_data['width'][i], ocr_data['height'][i])
+                    if region_key not in processed_regions:
+                        found_items['jbs'].append({
+                            'text': jb,
+                            'position': region_key
+                        })
+                        processed_regions.add(region_key)
+                        logger.info(f"Found JB: {jb}")
+                        break
 
-            elif component['type'] == 'Spare':
-                x, y, w, h = component['position']
-                color = component['color']
-                text = component['text']
-                spare_id = component['id']
-                assigned_number = sequence_number
+        # مرحله 4: جستجو برای MC identifiers  
+        logger.info("Searching for MC identifiers...")
+        for mc in mc_identifiers:
+            for i, text in enumerate(ocr_data['text']):
+                text_clean = text.strip().upper()
+                if text_clean == mc.upper():
+                    region_key = (ocr_data['left'][i], ocr_data['top'][i],
+                                ocr_data['width'][i], ocr_data['height'][i])
+                    if region_key not in processed_regions:
+                        found_items['mcs'].append({
+                            'text': mc,
+                            'position': region_key
+                        })
+                        processed_regions.add(region_key)
+                        logger.info(f"Found MC: {mc}")
+                        break
+
+        # مرحله 5: جستجو برای SPARE identifiers
+        logger.info("Searching for SPARE identifiers...")
+        spare_count = 0
+        for spare in spare_identifiers:
+            for i, text in enumerate(ocr_data['text']):
+                text_clean = text.strip().upper()
+                if self.spare_examples.upper() in text_clean:
+                    region_key = (ocr_data['left'][i], ocr_data['top'][i],
+                                ocr_data['width'][i], ocr_data['height'][i])
+                    if region_key not in processed_regions:
+                        spare_count += 1
+                        spare_id = f"{self.spare_examples}_{spare_count}"
+                        found_items['spares'].append({
+                            'text': spare,
+                            'position': region_key,
+                            'id': spare_id
+                        })
+                        processed_regions.add(region_key)
+                        logger.info(f"Found SPARE: {spare}")
+                        break
+
+        # مرحله 6: جستجو برای Cable descriptions (ساده‌تر)
+        logger.info("Searching for cable descriptions...")
+        for cable_desc in cable_descriptions:
+            # جستجو برای اعداد در cable description
+            cable_parts = cable_desc.split()
+            if len(cable_parts) >= 1:
+                number_part = cable_parts[0]  # فرض می‌کنیم عدد اول است
+                
+                for i, text in enumerate(ocr_data['text']):
+                    text_clean = text.strip().upper()
+                    if number_part in text_clean:
+                        region_key = (ocr_data['left'][i], ocr_data['top'][i],
+                                    ocr_data['width'][i], ocr_data['height'][i])
+                        if region_key not in processed_regions:
+                            found_items['cables'].append({
+                                'text': cable_desc,
+                                'position': region_key
+                            })
+                            processed_regions.add(region_key)
+                            logger.info(f"Found cable: {cable_desc}")
+                            break
+
+        # رسم bounding boxes
+        logger.info(f"Drawing {len(found_items['tags'])} tags, {len(found_items['jbs'])} JBs, {len(found_items['mcs'])} MCs, {len(found_items['spares'])} spares, {len(found_items['cables'])} cables")
+
+        # رسم تگ‌ها
+        for item in found_items['tags']:
+            x, y, w, h = item['position']
+            text = item['text']
+            
+            # تعیین شماره برای تگ
+            if text not in all_tag_numbers:
+                all_tag_numbers[text] = sequence_number
                 sequence_number += 1
-                tag_to_number[spare_id] = assigned_number
-                cv2.rectangle(image, (x, y), (x + w, y + h), color, 2)
-                label = f"#{assigned_number} {text}"
-                cv2.putText(image, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+            
+            tag_number = all_tag_numbers[text]
+            
+            # رنگ بر اساس نوع تطبیق
+            if item['match_type'] == 'exact':
+                color = (255, 0, 0)  # قرمز برای تطبیق دقیق
+            else:
+                color = (0, 165, 255)  # نارنجی برای تطبیق تشابهی
+            
+            cv2.rectangle(image, (x, y), (x + w, y + h), color, 2)
+            
+            # برچسب
+            if 'similarity' in item:
+                label = f"#{tag_number} {text} ({item['similarity']:.2f})"
+            else:
+                label = f"#{tag_number} {text}"
+                
+            cv2.putText(image, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
 
-        # نمایش سایر components (JB, MC, Cable)
-        for component in all_components:
-            if component['type'] in ['JB', 'MC', 'Cable']:
-                x, y, w, h = component['position']
-                color = component['color']
-                cv2.rectangle(image, (x, y), (x + w, y + h), color, 2)
-                label = f"{component['type']}: {component['text']}"
-                cv2.putText(image, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+        # رسم JBها
+        for item in found_items['jbs']:
+            x, y, w, h = item['position']
+            cv2.rectangle(image, (x, y), (x + w, y + h), (0, 0, 255), 2)
+            cv2.putText(image, f"JB: {item['text']}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+
+        # رسم MCها
+        for item in found_items['mcs']:
+            x, y, w, h = item['position']
+            cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            cv2.putText(image, f"MC: {item['text']}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
+        # رسم SPAREها
+        for item in found_items['spares']:
+            x, y, w, h = item['position']
+            spare_id = item['id']
+            if spare_id not in all_tag_numbers:
+                all_tag_numbers[spare_id] = sequence_number
+                sequence_number += 1
+            spare_number = all_tag_numbers[spare_id]
+            
+            cv2.rectangle(image, (x, y), (x + w, y + h), (128, 0, 128), 2)
+            cv2.putText(image, f"#{spare_number} {item['text']}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (128, 0, 128), 2)
+
+        # رسم کابل‌ها
+        for item in found_items['cables']:
+            x, y, w, h = item['position']
+            cv2.rectangle(image, (x, y), (x + w, y + h), (0, 200, 200), 2)
+            cv2.putText(image, f"Cable: {item['text']}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 200, 200), 2)
 
         # افزودن legend
         legend_y_pos = image.shape[0] - 60
@@ -1667,32 +1885,14 @@ class TagJBExtractor:
         cv2.putText(image, "MC", (legend_x_pos + 200, legend_y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
         cv2.putText(image, "Cable", (legend_x_pos + 300, legend_y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 200), 2)
         cv2.putText(image, "Spare", (legend_x_pos + 400, legend_y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (128, 0, 128), 2)
-        cv2.putText(image, "Numbering:Tags are unique by name, {spare_examples}s have individual numbers", 
-                    (legend_x_pos, legend_y_pos + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
-        
-        # بررسی تطابق شماره تگ با شماره زوج
-        is_consistent, max_tag_number, extracted_pair_number = self.check_tag_number_consistency(tag_to_number)
-        
-        # افزودن وضعیت تطابق به تصویر
-        status_y_pos = image.shape[0] - 90
-        status_x_pos = 10
-        
-        if is_consistent:
-            status_message = f"Tag numbering OK: Max #{max_tag_number} matches pair number {extracted_pair_number}"
-            status_color = (0, 255, 0)  # سبز برای موفقیت
-        else:
-            status_message = f"WARNING: Max tag #{max_tag_number}doesn't match pair number {extracted_pair_number} - CHECK NUMBERING!"
-            status_color = (0, 0, 255)  # قرمز برای هشدار
-        
-        # افزودن پیام وضعیت با پس‌زمینه برای وضوح بیشتر
-        text_size = cv2.getTextSize(status_message, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)[0]
-        cv2.rectangle(image, (status_x_pos - 5, status_y_pos - 20), 
-                    (status_x_pos + text_size[0] + 5, status_y_pos + 5), 
-                    (255, 255, 255), -1)  # پس‌زمینه سفید
-        cv2.putText(image, status_message, (status_x_pos, status_y_pos), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
 
-        return image, tag_to_number
+        # اضافه کردن آمار
+        total_found = len(found_items['tags']) + len(found_items['jbs']) + len(found_items['mcs']) + len(found_items['spares']) + len(found_items['cables'])
+        stats_text = f"Found: {len(found_items['tags'])} tags, {len(found_items['jbs'])} JBs, {len(found_items['mcs'])} MCs, {len(found_items['spares'])} spares, {len(found_items['cables'])} cables"
+        cv2.putText(image, stats_text, (legend_x_pos, legend_y_pos + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+
+        logger.info(f"Bounding boxes drawn successfully. Total items found: {total_found}")
+        return image, all_tag_numbers
     
     def add_tag_numbers_to_dataframe(self, df: pd.DataFrame, tag_to_number: 'Dict[str, int]') -> pd.DataFrame:
         """
@@ -1717,155 +1917,220 @@ class TagJBExtractor:
         return df
 
 
-    def create_annotated_pdf(self, pdf_path, output_pdf_path):
+    def create_annotated_pdf(self, pdf_path: str, output_pdf_path: str) -> 'Dict[str, int]':
         """
-        ایجاد PDF حاشیه‌نویسی شده با شماره‌گذاری تگ‌ها
+        Create annotated PDF with memory-efficient processing for multi-page documents
+        """
+        all_tag_numbers = {}
+        pdf_document = None
+        new_pdf = None
         
-        Args:
-            pdf_path: مسیر فایل PDF ورودی
-            output_pdf_path: مسیر فایل PDF خروجی
-            
-        Returns:
-            دیکشنری شماره‌گذاری تگ‌ها
-        """
         try:
-            # اطمینان از وجود دایرکتوری خروجی
-            ensure_directory_exists(os.path.dirname(output_pdf_path))
+            logger.info(f"Creating annotated PDF from: {pdf_path}")
+            pdf_document = fitz.open(pdf_path)
+            new_pdf = fitz.open()
+            total_pages = len(pdf_document)
             
-            # حاشیه‌نویسی PDF
-            logger.info(f"Annotating PDF: {pdf_path} -> {output_pdf_path}")
+            # Use lower DPI for multi-page PDFs to conserve memory
+            dpi_factor = 200/72 if total_pages > 10 else 300/72
             
-            # باز کردن PDF ورودی
-            doc = fitz.open(pdf_path)
-            
-            # ایجاد دیکشنری نگاشت تگ به شماره
-            tag_to_number = {}
-            current_number = 1
-            
-            # پردازش هر صفحه
-            for page_num in range(len(doc)):
-                logger.info(f"Annotating page {page_num+1}/{len(doc)}")
-                
-                # دریافت صفحه
-                page = doc[page_num]
-                
-                # تبدیل صفحه به تصویر
-                pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
-                image = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.h, pix.w, pix.n)
-                
-                # ذخیره ابعاد تصویر برای استفاده در متد draw_bounding_boxes_on_pdf
-                self.image_width = pix.w
-                self.image_height = pix.h
-                
-                # پیش‌پردازش تصویر
-                processed_image = self.preprocess_image(image)
-                
-                # استخراج اطلاعات از تصویر
-                result = self.extract_from_image(processed_image)
-                
-                # بررسی نوع نتیجه
-                if isinstance(result, tuple):
-                    if len(result) >= 5:
-                        tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers = result[:5]
+            with tempfile.TemporaryDirectory() as temp_dir:
+                for page_num in range(total_pages):
+                    try:
+                        logger.info(f"Annotating page {page_num + 1}/{total_pages}")
                         
-                        # اگر نتیجه شامل tag_to_number است
-                        if len(result) >= 6:
-                            page_tag_to_number = result[5]
-                            # ادغام با دیکشنری اصلی
-                            for tag, number in page_tag_to_number.items():
-                                tag_to_number[tag] = number
+                        page = pdf_document[page_num]
+                        pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor))
+                        
+                        image_path = os.path.join(temp_dir, f"page_{page_num + 1}.png")
+                        pix.save(image_path)
+                        
+                        # Load and process image
+                        image = cv2.imread(image_path)
+                        if image is None:
+                            logger.warning(f"Failed to load image for page {page_num + 1}")
+                            # Add blank page and continue
+                            new_page = new_pdf.new_page(width=pix.width, height=pix.height)
+                            pix = None
+                            continue
+                        
+                        # Extract information
+                        result = self.extract_from_image(image)
+                        
+                        # Handle return format
+                        if len(result) >= 7:
+                            tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions = result[:7]
+                        elif len(result) >= 6:
+                            tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number = result[:6]
+                            raw_cable_descriptions = []
                         else:
-                            # شماره‌گذاری تگ‌ها
-                            page_tag_to_number = {}
-                            for tag in tags:
-                                if tag not in tag_to_number:
-                                    tag_to_number[tag] = current_number
-                                    page_tag_to_number[tag] = current_number
-                                    current_number += 1
-                                else:
-                                    page_tag_to_number[tag] = tag_to_number[tag]
+                            tags, jb_identifiers, mc_identifiers = set(), set(), set()
+                            cable_descriptions, spare_identifiers = [], []
+                            tag_to_number, raw_cable_descriptions = {}, []
+                        
+                        # Draw bounding boxes
+                        try:
+                            annotated_image, page_tag_numbers = self.draw_bounding_boxes(
+                                image, tags, jb_identifiers, mc_identifiers,
+                                cable_descriptions, spare_identifiers, tag_to_number
+                            )
+                            all_tag_numbers.update(page_tag_numbers)
+                        except Exception as e:
+                            logger.error(f"Error drawing bounding boxes on page {page_num + 1}: {e}")
+                            annotated_image = image.copy()
+                            page_tag_numbers = tag_to_number
+                        
+                        # Add info overlay
+                        try:
+                            stats = self.get_processing_stats() if hasattr(self, 'get_processing_stats') else {}
+                            info_text = [
+                                f"Page {page_num + 1}/{total_pages}",
+                                f"Tags: {len(tags)}, JBs: {len(jb_identifiers)}, MCs: {len(mc_identifiers)}",
+                                f"Memory: {page_num + 1} pages processed"
+                            ]
                             
-                            # شماره‌گذاری SPARE ها
-                            for i, spare in enumerate(spare_identifiers):
-                                spare_id = f"SPARE_{i+1}"
-                                if spare_id not in tag_to_number:
-                                    tag_to_number[spare_id] = current_number
-                                    page_tag_to_number[spare_id] = current_number
-                                    current_number += 1
-                                else:
-                                    page_tag_to_number[spare_id] = tag_to_number[spare_id]
+                            # Add semi-transparent overlay
+                            overlay = annotated_image.copy()
+                            overlay_h = len(info_text) * 25 + 15
+                            x, y, w, h = 5, 5, 350, overlay_h
+                            
+                            if y + h <= annotated_image.shape[0] and x + w <= annotated_image.shape[1]:
+                                cv2.rectangle(overlay, (x, y), (x + w, y + h), (0, 0, 0), -1)
+                                blended = cv2.addWeighted(overlay[y:y+h, x:x+w], 0.6,
+                                                        annotated_image[y:y+h, x:x+w], 0.4, 0)
+                                annotated_image[y:y+h, x:x+w] = blended
+                                
+                                for i, text in enumerate(info_text):
+                                    cv2.putText(annotated_image, text, (x + 5, y + 20 + i * 25),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+                                            
+                        except Exception as e:
+                            logger.error(f"Error adding overlay to page {page_num + 1}: {e}")
                         
-                        # ایجاد صفحه جدید
-                        new_page = page
+                        # Save annotated image and add to PDF
+                        try:
+                            annotated_path = os.path.join(temp_dir, f"annotated_{page_num + 1}.png")
+                            cv2.imwrite(annotated_path, annotated_image)
+                            
+                            new_page = new_pdf.new_page(width=pix.width, height=pix.height)
+                            new_page.insert_image(new_page.rect, filename=annotated_path)
+                            
+                            # Clean up immediately
+                            os.remove(annotated_path)
+                            
+                        except Exception as e:
+                            logger.error(f"Error saving page {page_num + 1}: {e}")
+                            # Add original page if annotation fails
+                            try:
+                                new_page = new_pdf.new_page(width=pix.width, height=pix.height)
+                                new_page.insert_image(new_page.rect, filename=image_path)
+                            except:
+                                pass
                         
-                        # رسم کادر اطراف تگ‌ها
-                        self.draw_bounding_boxes_on_pdf(new_page, tags, jb_identifiers, mc_identifiers, spare_identifiers, page_tag_to_number)
-                
-            # ذخیره PDF حاشیه‌نویسی شده
-            doc.save(output_pdf_path)
-            doc.close()
+                        # Clean up memory for this page
+                        del image, annotated_image
+                        pix = None
+                        
+                        # Clean up temp file
+                        try:
+                            os.remove(image_path)
+                        except:
+                            pass
+                        
+                        # Garbage collect every 3 pages for memory management
+                        if (page_num + 1) % 3 == 0:
+                            gc.collect()
+                            logger.debug(f"Memory cleanup after page {page_num + 1}")
+                            
+                    except Exception as e:
+                        logger.error(f"Error processing page {page_num + 1} for annotation: {e}")
+                        logger.error(traceback.format_exc())
+                        # Continue with next page
+                        continue
             
-            return tag_to_number
+            # Save the annotated PDF
+            try:
+                # Ensure output directory exists
+                os.makedirs(os.path.dirname(output_pdf_path), exist_ok=True)
+                new_pdf.save(output_pdf_path)
+                logger.info(f"Annotated PDF saved: {output_pdf_path}")
+                logger.info(f"Total pages processed: {total_pages}")
+                logger.info(f"Total tags numbered: {len(all_tag_numbers)}")
+            except Exception as e:
+                logger.error(f"Error saving annotated PDF: {e}")
+            
+            return all_tag_numbers
             
         except Exception as e:
             logger.error(f"Error creating annotated PDF: {e}")
             logger.error(traceback.format_exc())
             return {}
             
-    def _create_unmatched_tags_excel(self, unmatched_excel_tags: 'List[str]', unmatched_pdf_tags: 'List[str]', output_path: str) -> None:
+        finally:
+            # Clean up resources
+            if new_pdf:
+                try:
+                    new_pdf.close()
+                except:
+                    pass
+            if pdf_document:
+                try:
+                    pdf_document.close()
+                except:
+                    pass
+
+    def _create_unmatched_tags_excel(self, unmatched_excel_tags: 'List[str]', unmatched_pdf_tags: 'List[str]', output_path: str):
         """
-        ایجاد فایل اکسل دو ستونه برای نمایش تگ‌های تطبیق نیافته
+        ایجاد فایل اکسل برای تگ‌های تطبیق نیافته
         
         Args:
-            unmatched_excel_tags: لیست تگ‌های یافت نشده در فایل intermediate (تگ‌های IO List که در PDF پیدا نشدند)
-            unmatched_pdf_tags: لیست تگ‌های یافت نشده در IO List (تگ‌های PDF که در IO List پیدا نشدند)
-            output_path: مسیر فایل اکسل خروجی
+            unmatched_excel_tags: لیست تگ‌های اکسل که در PDF پیدا نشده‌اند
+            unmatched_pdf_tags: لیست تگ‌های PDF که در اکسل پیدا نشده‌اند
+            output_path: مسیر فایل خروجی
         """
         try:
-            # تعیین تعداد ردیف‌های مورد نیاز
-            max_rows = max(len(unmatched_excel_tags), len(unmatched_pdf_tags))
+            # ایجاد دیتافریم برای تگ‌های تطبیق نیافته
+            excel_tags_df = pd.DataFrame({"Tag": unmatched_excel_tags, "Source": "Excel", "Status": "Not found in PDF"})
+            pdf_tags_df = pd.DataFrame({"Tag": unmatched_pdf_tags, "Source": "PDF", "Status": "Not found in Excel"})
             
-            # اگر هر دو لیست خالی هستند، یک ردیف خالی اضافه کنیم
-            if max_rows == 0:
-                max_rows = 1
+            # ترکیب دو دیتافریم
+            unmatched_df = pd.concat([excel_tags_df, pdf_tags_df], ignore_index=True)
             
-            # ایجاد دیتافریم
-            data = {
-                'Tags in IO List not found in PDFs': pd.Series(unmatched_excel_tags + [''] * (max_rows - len(unmatched_excel_tags))),
-                'Tags in PDFs not found in IO List': pd.Series(unmatched_pdf_tags + [''] * (max_rows - len(unmatched_pdf_tags)))
-            }
-            
-            df = pd.DataFrame(data)
+            # اگر دیتافریم خالی است، ستون‌های مناسب را اضافه کن
+            if unmatched_df.empty:
+                unmatched_df = pd.DataFrame(columns=["Tag", "Source", "Status"])
             
             # ذخیره به فایل اکسل
-            df.to_excel(output_path, index=False)
-            
-            logger.info(f"Created unmatched tags Excel file with {len(unmatched_excel_tags)} IO List tags and {len(unmatched_pdf_tags)} PDF tags")
+            unmatched_df.to_excel(output_path, index=False)
+            logger.info(f"Unmatched tags Excel file created with {len(unmatched_df)} rows")
             
         except Exception as e:
             logger.error(f"Error creating unmatched tags Excel file: {e}")
             logger.error(traceback.format_exc())
-
-    def run_with_annotated_pdf(self, pdf_paths: 'List[str]', excel_path: str, output_excel_path: str, output_pdf_dir: str) -> 'Tuple[List[str], List[str]]':
+            
+            # ایجاد فایل خالی در صورت خطا
+            pd.DataFrame(columns=["Tag", "Source", "Status"]).to_excel(output_path, index=False)
+        
+    def run_with_annotated_pdf(self, pdf_paths: 'List[str]', excel_path: str, output_excel_path: str, output_pdf_dir: str, 
+                            create_zip: bool = True, zip_path: str = None) -> 'Tuple[List[str], List[str]]':
         """
         Run complete process with vector-based matching and generate annotated PDFs.
-        Also adds tag numbers to the output Excel file.
+        Also adds tag numbers to the output Excel file and creates a ZIP archive of all output files.
         
         Args:
             pdf_paths: List of PDF file paths
             excel_path: Input Excel file path
             output_excel_path: Output Excel file path
             output_pdf_dir: Directory path for storing processed PDFs
+            create_zip: Whether to create a ZIP archive of all output files
+            zip_path: Path for the ZIP archive (if None, will use output_pdf_dir + '.zip')
             
         Returns:
             Tuple of (unmatched_excel_tags, unmatched_pdf_tags)
         """
-        # استاندارد کردن مسیرها با استفاده از ماژول file_utils
-        from apps.backend.utils.file_utils import standardize_path, copy_to_output_paths
+        import zipfile
+        import os
         
-        output_excel_path = standardize_path(output_excel_path)
-        output_pdf_dir = standardize_path(output_pdf_dir)
-
         # Build tag vectors from Excel first
         start_time = time.time()
         self.build_tag_vectors_from_excel(excel_path)
@@ -1883,15 +2148,42 @@ class TagJBExtractor:
         # Dictionary to store all PDF processing results
         all_pdf_results = {}
         
-        # Process each PDF file
-        annotated_pdf_files = []
-        for pdf_path in pdf_paths:
-            output_pdf_path = os.path.join(output_pdf_dir, f"annotated_{os.path.basename(pdf_path)}")
-            self.create_annotated_pdf(pdf_path, output_pdf_path)
-            annotated_pdf_files.append(output_pdf_path)
+        # لیست فایل‌های خروجی برای اضافه کردن به ZIP
+        output_files = []
         
-        # Create intermediate Excel file with JB, MC, Tag/SPARE, SCR, Wire Colors, and Cable Description
-        intermediate_excel_path = os.path.join(output_pdf_dir, "intermediate_data.xlsx")
+        # Process each PDF file
+        for pdf_idx, pdf_path in enumerate(pdf_paths):
+            pdf_filename = os.path.basename(pdf_path)
+            logger.info(f"Processing PDF {pdf_idx + 1}/{len(pdf_paths)}: {pdf_filename}")
+            
+            # Process PDF to extract tags and JBs
+            pdf_result = self.process_pdf(pdf_path)
+            
+            # Store PDF results with the PDF filename as key
+            all_pdf_results[pdf_filename] = pdf_result
+            
+            # Create annotated PDF with vector matching results and get tag numbers
+            output_pdf_path = os.path.join(output_pdf_dir, f"annotated_{pdf_filename}")
+            pdf_tag_numbers = self.create_annotated_pdf(pdf_path, output_pdf_path)
+            
+            # اضافه کردن PDF حاشیه‌گذاری شده به لیست فایل‌های خروجی
+            output_files.append(output_pdf_path)
+            
+            # Update master tag numbers Dictionary
+            master_tag_numbers.update(pdf_tag_numbers)
+            
+            # Collect similarity reports from this PDF
+            all_similarity_reports.extend(self.similarity_reports)
+            
+            # Generate per-PDF statistics
+            pdf_stats = self.get_processing_stats()
+            logger.info(f"PDF {pdf_filename} statistics:")
+            for key, value in pdf_stats.items():
+                logger.info(f"  {key}: {value}")
+        
+        # نام‌گذاری مناسب فایل‌های اکسل
+        # فایل اکسل میانی با نام مشخص JB Wiring Diagram
+        intermediate_excel_path = os.path.join(output_pdf_dir, "JB_Wiring_Diagram_Intermediate.xlsx")
         
         # Pass all_pdf_results to add_wire_colors_and_scr_to_dataframe
         self.add_wire_colors_and_scr_to_dataframe(
@@ -1901,8 +2193,19 @@ class TagJBExtractor:
             all_pdf_results
         )
         
+        # اضافه کردن فایل اکسل میانی به لیست فایل‌های خروجی
+        output_files.append(intermediate_excel_path)
+        
         # If IO List is provided, process and combine both Excel files
         if excel_path:
+            # نام‌گذاری فایل اکسل نهایی با پسوند مناسب
+            if not output_excel_path.endswith(".xlsx"):
+                output_excel_path = output_excel_path.replace(".xls", ".xlsx") if output_excel_path.endswith(".xls") else f"{output_excel_path}.xlsx"
+            
+            # اگر نام فایل خروجی مشخص نشده، یک نام پیش‌فرض تعیین کنیم
+            if not os.path.basename(output_excel_path):
+                output_excel_path = os.path.join(output_pdf_dir, "JB_Wiring_Diagram_Final.xlsx")
+            
             final_df, unmatched_io_tags, unmatched_tags = self.process_excel_with_io_list(
                 intermediate_excel_path, 
                 excel_path, 
@@ -1910,62 +2213,51 @@ class TagJBExtractor:
             )
             logger.info(f"Combined Excel file with IO List saved to: {output_excel_path}")
             
+            # اضافه کردن فایل اکسل نهایی به لیست فایل‌های خروجی
+            output_files.append(output_excel_path)
+            
             # For function output
             unmatched_excel_tags = unmatched_io_tags
             unmatched_pdf_tags = unmatched_tags
             
             # ایجاد فایل اکسل برای تگ‌های تطبیق نیافته
-            unmatched_excel_path = os.path.join(output_pdf_dir, "unmatched_tags.xlsx")
+            unmatched_excel_path = os.path.join(output_pdf_dir, "JB_Wiring_Diagram_Unmatched_Tags.xlsx")
             self._create_unmatched_tags_excel(unmatched_excel_tags, unmatched_pdf_tags, unmatched_excel_path)
             logger.info(f"Unmatched tags Excel file saved to: {unmatched_excel_path}")
+            
+            # اضافه کردن فایل اکسل تگ‌های تطبیق نیافته به لیست فایل‌های خروجی
+            output_files.append(unmatched_excel_path)
         else:
             # If no IO List, just copy the intermediate file to the output path
+            # نام‌گذاری فایل اکسل نهایی با پسوند مناسب
+            if not output_excel_path.endswith(".xlsx"):
+                output_excel_path = output_excel_path.replace(".xls", ".xlsx") if output_excel_path.endswith(".xls") else f"{output_excel_path}.xlsx"
+                
+            # اگر نام فایل خروجی مشخص نشده، یک نام پیش‌فرض تعیین کنیم
+            if not os.path.basename(output_excel_path):
+                output_excel_path = os.path.join(output_pdf_dir, "JB_Wiring_Diagram_Final.xlsx")
+                
             shutil.copy2(intermediate_excel_path, output_excel_path)
             logger.info(f"Excel file saved to: {output_excel_path}")
+            
+            # اضافه کردن فایل اکسل نهایی به لیست فایل‌های خروجی
+            output_files.append(output_excel_path)
             
             # For function output
             unmatched_excel_tags = []
             unmatched_pdf_tags = []
+            
+            # ایجاد فایل اکسل خالی برای تگ‌های تطبیق نیافته
+            unmatched_excel_path = os.path.join(output_pdf_dir, "JB_Wiring_Diagram_Unmatched_Tags.xlsx")
+            self._create_unmatched_tags_excel([], [], unmatched_excel_path)
+            logger.info(f"Empty unmatched tags Excel file saved to: {unmatched_excel_path}")
+            
+            # اضافه کردن فایل اکسل تگ‌های تطبیق نیافته به لیست فایل‌های خروجی
+            output_files.append(unmatched_excel_path)
         
         # Generate summary statistics
         self.processing_time = time.time() - start_time
         stats = self.get_processing_stats()
-        
-        # Save similarity reports and tag numbers as JSON
-        reports_path = os.path.join(output_pdf_dir, "processing_reports.json")
-        with open(reports_path, 'w') as f:
-            json.dump({
-                'statistics': stats,
-                'similarity_reports': all_similarity_reports,
-                'tag_numbers': master_tag_numbers,
-                'wire_colors': {tag: self.generate_mc_wire_colors(master_tag_numbers[tag]) for tag in master_tag_numbers},
-                'scr_numbers': {tag: self.generate_scr_number(master_tag_numbers[tag]) for tag in master_tag_numbers}
-            }, f, indent=2)
-        
-        # کپی فایل‌های خروجی به مسیرهای سرور و کاربر
-        server_output_dir = "/home/devio/JB-outputs"
-        output_files = annotated_pdf_files + [output_excel_path, unmatched_excel_path if excel_path else None, reports_path]
-        output_files = [f for f in output_files if f]  # حذف مقادیر None
-        
-        copy_result = copy_to_output_paths(
-            files_to_copy=output_files,
-            server_output_dir=server_output_dir,
-            user_output_dir=output_pdf_dir
-        )
-        
-        # ثبت نتیجه کپی فایل‌ها
-        if copy_result['server_success']:
-            logger.info(f"Output files successfully copied to server directory: {server_output_dir}")
-            logger.info(f"Server files: {copy_result['server_files']}")
-        else:
-            logger.warning(f"Failed to copy output files to server directory: {copy_result.get('error', 'Unknown error')}")
-        
-        if copy_result['user_path_success']:
-            logger.info(f"Output files successfully copied to user directory: {output_pdf_dir}")
-            logger.info(f"User files: {copy_result['user_files']}")
-            logger.info(f"Copy method used: {copy_result.get('method_used', 'local')}")
-        else:
-            logger.warning(f"Failed to copy output files to user directory: {copy_result.get('error', 'Unknown error')}")
         
         logger.info(f"Processing completed in {self.processing_time:.2f} seconds")
         logger.info(f"Summary statistics: {stats}")
@@ -2137,7 +2429,8 @@ class TagJBExtractor:
 
                     # پردازش هر صفحه از این PDF
                     for page_num, page_results in page_results_dict.items():
-                        self._process_page_results(new_df_data, page_num, page_results, pdf_name, tag_to_number)
+                        # فراخوانی متد کمکی برای پردازش هر صفحه
+                        self._process_single_page_data(new_df_data, page_num, page_results, pdf_name, tag_to_number)
                 
                 # ایجاد دیتافریم جدید
                 new_df = pd.DataFrame(new_df_data)
@@ -2157,6 +2450,14 @@ class TagJBExtractor:
                     # فقط ستون‌هایی که وجود دارند را انتخاب کن
                     available_columns = [col for col in column_order if col in new_df.columns]
                     new_df = new_df[available_columns]
+                else:
+                    # اگر دیتافریم خالی است، ایجاد دیتافریم با ستون‌های مناسب
+                    new_df = pd.DataFrame(columns=[
+                        'PDF_Name', 'Page', 'JB', 'MC', 'Tag/SPARE', 'Tag_Number', 
+                        'Wire_Code_1', 'Wire_Code_2', 'Terminal_First_Number', 'Terminal_Second_Number','Cable_Code', 'SCR_Terminal_Number',
+                        'Cable_Description', 'Type', 'Tag_Number_Status'
+                    ])
+                    logger.warning("Created empty DataFrame with proper columns")
                 
                 # ذخیره دیتافریم به عنوان فایل اکسل
                 new_df.to_excel(output_path, index=False)
@@ -2173,13 +2474,21 @@ class TagJBExtractor:
                 logger.info(f"Number of warnings: {warnings_count}")
                 logger.info(f"Output file: {output_path}")
                 
-                return new_df  # دیتافریم اصلی را برمی‌گردانیم
+                return new_df
                 
             except Exception as e:
                 logger.error(f"Error in add_wire_colors_and_scr_to_dataframe: {e}")
-                
                 logger.error(traceback.format_exc())
-                raise
+                
+                # ایجاد دیتافریم خالی در صورت خطا
+                empty_df = pd.DataFrame(columns=[
+                    'PDF_Name', 'Page', 'JB', 'MC', 'Tag/SPARE', 'Tag_Number', 
+                    'Wire_Code_1', 'Wire_Code_2', 'Terminal_First_Number', 'Terminal_Second_Number','Cable_Code', 'SCR_Terminal_Number',
+                    'Cable_Description', 'Type', 'Tag_Number_Status'
+                ])
+                empty_df.to_excel(output_path, index=False)
+                return empty_df
+
 
     def extract_pair_number(self, cable_description):
         """
@@ -2218,249 +2527,423 @@ class TagJBExtractor:
                     
         return None
 
-    def _process_page_results(self, new_df_data: 'List[Dict]', page_num: int, page_results: Any, 
-                pdf_name: str, tag_to_number: 'Dict[str, int]'):
+    def _process_page_results(self, pdf_results: 'Dict[str, Dict[int, Tuple[Any, ...]]]', 
+                            tag_to_number: 'Dict[str, int]', output_path: str) -> pd.DataFrame:
         """
-        پردازش نتایج یک صفحه و افزودن آن‌ها به لیست داده‌های دیتافریم
-        با استفاده از اطلاعات دقیق استخراج شده توسط draw_bounding_boxes
+        پردازش نتایج صفحات PDF و ایجاد دیتافریم intermediate
         
         Args:
-            new_df_data: لیست دیکشنری‌های داده برای دیتافریم
+            pdf_results: نتایج پردازش PDF ها
+            tag_to_number: نگاشت تگ‌ها به شماره‌ها
+            output_path: مسیر فایل خروجی
+            
+        Returns:
+            دیتافریم ایجاد شده
+        """
+        try:
+            intermediate_data = []
+            row_counter = 1
+            
+            logger.info(f"Processing PDF results with {len(pdf_results)} PDFs")
+            
+            for pdf_name, page_results_dict in pdf_results.items():
+                logger.info(f"Processing PDF: {pdf_name}")
+                
+                if not page_results_dict:
+                    logger.warning(f"Empty page results for PDF: {pdf_name}")
+                    continue
+                    
+                for page_num, page_data in page_results_dict.items():
+                    logger.info(f"Processing page {page_num} of PDF {pdf_name}")
+                    
+                    try:
+                        # بررسی نوع و ساختار page_data
+                        if not isinstance(page_data, (tuple, list)):
+                            logger.error(f"Invalid page_data type for page {page_num}: {type(page_data)}")
+                            continue
+                        
+                        if len(page_data) < 5:
+                            logger.error(f"Insufficient data in page_data for page {page_num}: {len(page_data)} items")
+                            continue
+                        
+                        # استخراج داده‌ها با امان
+                        tags = page_data[0] if len(page_data) > 0 else set()
+                        jb_identifiers = page_data[1] if len(page_data) > 1 else set()
+                        mc_identifiers = page_data[2] if len(page_data) > 2 else set()
+                        cable_descriptions = page_data[3] if len(page_data) > 3 else []
+                        spare_identifiers = page_data[4] if len(page_data) > 4 else []
+                        page_tag_to_number = page_data[5] if len(page_data) > 5 else {}
+                        raw_cable_descriptions = page_data[6] if len(page_data) > 6 else []
+                        
+                        # تبدیل به لیست در صورت نیاز
+                        if isinstance(tags, set):
+                            tags = list(tags)
+                        if isinstance(jb_identifiers, set):
+                            jb_identifiers = list(jb_identifiers)
+                        if isinstance(mc_identifiers, set):
+                            mc_identifiers = list(mc_identifiers)
+                        if isinstance(spare_identifiers, set):
+                            spare_identifiers = list(spare_identifiers)
+                        
+                        logger.debug(f"Extracted data - Tags: {len(tags)}, JBs: {len(jb_identifiers)}, MCs: {len(mc_identifiers)}, Spares: {len(spare_identifiers)}")
+                        
+                        # پردازش تگ‌ها
+                        for tag in tags:
+                            tag_number = tag_to_number.get(tag, page_tag_to_number.get(tag, ''))
+                            
+                            # ایجاد ردیف داده
+                            row_data = {
+                                'PDF_Name': pdf_name,
+                                'Page': page_num,
+                                'Tag/SPARE': tag,
+                                'JB': jb_identifiers[0] if jb_identifiers else '',
+                                'MC': mc_identifiers[0] if mc_identifiers else '',
+                                'Tag_Number': tag_number if tag_number else row_counter,
+                                'Wire_Code_1': self.generate_mc_wire_colors(tag_number) if tag_number else '',
+                                'Wire_Code_2': '',
+                                'Terminal_First_Number': str(tag_number) if tag_number else str(row_counter),
+                                'Terminal_Second_Number': str(tag_number + 1) if tag_number else str(row_counter + 1),
+                                'SCR_Terminal_Number': self.generate_scr_number(tag_number) if tag_number else '',
+                                'Cable_code': cable_descriptions[0] if cable_descriptions else '',
+                                'Cable_Description': raw_cable_descriptions[0] if raw_cable_descriptions else (cable_descriptions[0] if cable_descriptions else ''),
+                                'Type': 'Tag',
+                                'Tag_Number_Status': 'Assigned' if tag_number else 'Auto-Assigned'
+                            }
+                            
+                            intermediate_data.append(row_data)
+                            row_counter += 1
+                            logger.debug(f"Added tag row: {tag}")
+                        
+                        # پردازش SPARE ها
+                        for spare_idx, spare in enumerate(spare_identifiers):
+                            spare_id = f"{getattr(self, 'spare_examples', 'SPARE')}_{spare_idx + 1}"
+                            spare_number = tag_to_number.get(spare_id, page_tag_to_number.get(spare_id, ''))
+                            
+                            if not spare_number:
+                                spare_number = row_counter
+                            
+                            row_data = {
+                                'PDF_Name': pdf_name,
+                                'Page': page_num,
+                                'Tag/SPARE': spare,
+                                'JB': jb_identifiers[0] if jb_identifiers else '',
+                                'MC': mc_identifiers[0] if mc_identifiers else '',
+                                'Tag_Number': spare_number,
+                                'Wire_Code_1': self.generate_mc_wire_colors(spare_number),
+                                'Wire_Code_2': '',
+                                'Terminal_First_Number': str(spare_number),
+                                'Terminal_Second_Number': str(spare_number + 1),
+                                'SCR_Terminal_Number': self.generate_scr_number(spare_number),
+                                'Cable_code': cable_descriptions[0] if cable_descriptions else '',
+                                'Cable_Description': raw_cable_descriptions[0] if raw_cable_descriptions else (cable_descriptions[0] if cable_descriptions else ''),
+                                'Type': 'SPARE',
+                                'Tag_Number_Status': 'Assigned' if tag_to_number.get(spare_id) else 'Auto-Assigned'
+                            }
+                            
+                            intermediate_data.append(row_data)
+                            row_counter += 1
+                            logger.debug(f"Added spare row: {spare}")
+                    
+                    except Exception as e:
+                        logger.error(f"Error processing page {page_num} of PDF {pdf_name}: {e}")
+                        logger.error(traceback.format_exc())
+                        continue
+            
+            # ایجاد دیتافریم
+            if intermediate_data:
+                df = pd.DataFrame(intermediate_data)
+                logger.info(f"Created intermediate dataframe with {len(df)} rows")
+                
+                # مرتب‌سازی
+                df = df.sort_values(['PDF_Name', 'Page', 'Tag_Number'], na_position='last')
+                
+                # ذخیره به فایل
+                df.to_excel(output_path, index=False)
+                logger.info(f"Intermediate Excel file saved to: {output_path}")
+                
+                # نمایش نمونه داده‌ها
+                if len(df) > 0:
+                    logger.info(f"Sample data (first 3 rows):")
+                    for i, row in df.head(3).iterrows():
+                        logger.info(f"  Row {i}: Tag={row['Tag/SPARE']}, JB={row['JB']}, MC={row['MC']}, Number={row['Tag_Number']}")
+                
+                return df
+            else:
+                logger.warning("No data to create intermediate DataFrame, creating empty file")
+                # ایجاد دیتافریم خالی با ستون‌های مناسب
+                empty_df = pd.DataFrame(columns=[
+                    'PDF_Name', 'Page', 'Tag/SPARE', 'JB', 'MC', 'Tag_Number',
+                    'Wire_Code_1', 'Wire_Code_2', 'Terminal_First_Number', 'Terminal_Second_Number',
+                    'SCR_Terminal_Number', 'Cable_code', 'Cable_Description', 'Type', 'Tag_Number_Status'
+                ])
+                empty_df.to_excel(output_path, index=False)
+                logger.info(f"Empty intermediate Excel file saved to: {output_path}")
+                return empty_df
+                
+        except Exception as e:
+            logger.error(f"Error in _process_page_results: {e}")
+            logger.error(traceback.format_exc())
+            
+            # ایجاد فایل خالی در صورت خطا
+            empty_df = pd.DataFrame(columns=[
+                'PDF_Name', 'Page', 'Tag/SPARE', 'JB', 'MC', 'Tag_Number',
+                'Wire_Code_1', 'Wire_Code_2', 'Terminal_First_Number', 'Terminal_Second_Number',
+                'SCR_Terminal_Number', 'Cable_code', 'Cable_Description', 'Type', 'Tag_Number_Status'
+            ])
+            empty_df.to_excel(output_path, index=False)
+            return empty_df
+
+    def _get_unique_wire_colors(self, tag: str, wire_colors: 'Dict[str, List[str]]', 
+                                used_wire_colors: 'Dict[str, Dict[str, bool]]', 
+                                tag_to_number: 'Dict[str, int]', as_list: bool = False) -> 'Union[str, List[str]]':
+            """
+            برای هر تگ، رنگ‌های سیم منحصر به فرد را برمی‌گرداند و از تکرار جلوگیری می‌کند.
+            
+            Args:
+                tag: نام تگ
+                wire_colors: دیکشنری رنگ‌های سیم
+                used_wire_colors: دیکشنری رنگ‌های استفاده شده
+                tag_to_number: دیکشنری شماره تگ‌ها
+                as_List: اگر True باشد، لیست رنگ‌ها را برمی‌گرداند، در غیر این صورت رشته
+            
+            Returns:
+                رشته رنگ‌های سیم با کاما جدا شده یا لیست رنگ‌ها
+            """
+            if tag in wire_colors:
+                colors = wire_colors[tag]
+                # حذف تکراری‌ها
+                unique_colors = list(dict.fromkeys(colors))
+                return unique_colors if as_list else ', '.join(unique_colors)
+            
+            # اگر رنگ برای این تگ تعریف نشده، تولید کن
+            if tag not in used_wire_colors:
+                used_wire_colors[tag] = {}
+            
+            # تولید رنگ پیش‌فرض
+            tag_num = tag_to_number.get(tag, 1)
+            tag_num_str = f"{tag_num:02d}"
+            default_colors = [f"BK{tag_num_str}", f"WT{tag_num_str}"]
+            
+            return default_colors if as_list else ', '.join(default_colors)
+
+    def _process_single_page_data(self, new_df_data: list, page_num: int, page_results: tuple, 
+                                pdf_name: str, tag_to_number: dict):
+        """
+        پردازش داده‌های یک صفحه و اضافه کردن به لیست داده‌ها
+        
+        Args:
+            new_df_data: لیست داده‌های دیتافریم جدید
             page_num: شماره صفحه
             page_results: نتایج پردازش صفحه
             pdf_name: نام فایل PDF
-            tag_to_number: دیکشنری نگاشت تگ‌ها به شماره‌های آن‌ها
+            tag_to_number: دیکشنری نگاشت تگ‌ها به شماره‌ها
         """
         try:
-            logger.info(f"Processing page {page_num} of {pdf_name}")
-            
-            # استخراج اطلاعات از ساختار page_results
-            page_tags = set()
-            page_jbs = set()
-            page_mcs = set()
-            page_cable_descriptions = []
-            page_spares = []
-            page_tag_to_number = {}
-            page_raw_cable_descriptions = []  # متغیر جدید
-
-            
-            # استخراج داده‌ها از page_results با توجه به ساختار آن
-            if isinstance(page_results, tuple) and len(page_results) >= 5:
-                page_tags = page_results[0]
-                page_jbs = page_results[1]
-                page_mcs = page_results[2]
-                page_cable_descriptions = page_results[3]
-                page_spares = page_results[4]
-                page_raw_cable_descriptions = page_results[5]
-                if len(page_results) >= 6:
-                    page_tag_to_number = page_results[6]
-            elif isinstance(page_results, dict):
-                page_tags = page_results.get('tags', set())
-                page_jbs = page_results.get('jbs', set())
-                page_mcs = page_results.get('mcs', set())
-                page_cable_descriptions = page_results.get('cable_descriptions', [])
-                page_spares = page_results.get('spares', [])
-                page_raw_cable_descriptions = page_results.get('raw_cable_descriptions', [])
-                page_tag_to_number = page_results.get('tag_to_number', {})
-            else:
-                logger.warning(f"Unexpected type for page_results in PDF {pdf_name}, page {page_num}: {type(page_results)}")
+            # بررسی نوع و ساختار page_results
+            if not isinstance(page_results, (tuple, list)):
+                logger.error(f"Invalid page_results type for page {page_num}: {type(page_results)}")
                 return
             
-            # تبدیل به Set اگر لیست هستند
-            if not isinstance(page_tags, set):
-                page_tags = set(page_tags) if hasattr(page_tags, '__iter__') else set()
-            if not isinstance(page_jbs, set):
-                page_jbs = set(page_jbs) if hasattr(page_jbs, '__iter__') else set()
-            if not isinstance(page_mcs, set):
-                page_mcs = set(page_mcs) if hasattr(page_mcs, '__iter__') else set()
+            if len(page_results) < 5:
+                logger.error(f"Insufficient data in page_results for page {page_num}: {len(page_results)} items")
+                return
             
-            # تعیین JB و MC اصلی برای این صفحه
-            main_jb = list(page_jbs)[0] if page_jbs else ''
-            main_mc = list(page_mcs)[0] if page_mcs else ''
-            main_cable_desc = page_cable_descriptions[0] if page_cable_descriptions else ''
-            main_raw_cable_desc = page_raw_cable_descriptions[0] if page_raw_cable_descriptions else ''
-            logger.info(f"PDF: {pdf_name}, Page {page_num}: JB={main_jb}, MC={main_mc}, Tags={len(page_tags)}, Spares={len(page_spares)}, Cable Desc='{main_cable_desc}', Raw='{main_raw_cable_desc}'")
-            logger.info(f"Tag numbers directly from bounding box: {page_tag_to_number}")
-            # استخراج عدد پشت "Pair" از Cable_Description
-            pair_number = self.extract_pair_number(main_cable_desc)
-            logger.info(f"Extracted pair number from cable description: {pair_number}")
+            # استخراج داده‌ها با امان
+            tags = page_results[0] if len(page_results) > 0 else set()
+            jb_identifiers = page_results[1] if len(page_results) > 1 else set()
+            mc_identifiers = page_results[2] if len(page_results) > 2 else set()
+            cable_descriptions = page_results[3] if len(page_results) > 3 else []
+            spare_identifiers = page_results[4] if len(page_results) > 4 else []
+            page_tag_to_number = page_results[5] if len(page_results) > 5 else {}
+            raw_cable_descriptions = page_results[6] if len(page_results) > 6 else []
             
-            # یافتن بزرگترین شماره تگ برای این JB
-            max_tag_number = 0
-            if page_tag_to_number:
-                max_tag_number = max(page_tag_to_number.values())
+            # تبدیل به لیست در صورت نیاز
+            if isinstance(tags, set):
+                tags = list(tags)
+            if isinstance(jb_identifiers, set):
+                jb_identifiers = list(jb_identifiers)
+            if isinstance(mc_identifiers, set):
+                mc_identifiers = list(mc_identifiers)
+            if isinstance(spare_identifiers, set):
+                spare_identifiers = list(spare_identifiers)
             
-            # مقایسه شماره زوج با بزرگترین شماره تگ
-            tag_number_status = "OK"
-            if pair_number is not None and max_tag_number > 0:
-                if pair_number != max_tag_number:
-                    tag_number_status = f"WARNING: Pair number ({pair_number}) != Max Tag number ({max_tag_number})"
-                    logger.warning(f"Page {page_num}, JB {main_jb}: {tag_number_status}")
-                else:
-                    logger.info(f"Page {page_num}, JB {main_jb}: Pair number ({pair_number}) matches max tag number ({max_tag_number})")
-            else:
-                if pair_number is None:
-                    tag_number_status = "WARNING: Could not extract pair number from cable description"
-                    logger.warning(f"Page {page_num}, JB {main_jb}: {tag_number_status}")
-                elif max_tag_number == 0:
-                    tag_number_status = "WARNING: No tag numbers found"
-                    logger.warning(f"Page {page_num}, JB {main_jb}: {tag_number_status}")
+            logger.debug(f"Page {page_num} - Tags: {len(tags)}, JBs: {len(jb_identifiers)}, MCs: {len(mc_identifiers)}, Spares: {len(spare_identifiers)}")
             
-            # پردازش تگ‌های این صفحه - فقط با استفاده از اطلاعات bounding box
-            for tag in page_tags:
-                try:
-                    # استفاده مستقیم از شماره تگ استخراج شده توسط bounding box
-                    if tag in page_tag_to_number:
-                        tag_num = page_tag_to_number[tag]
-                        
-                        # استفاده از JB و MC همین صفحه
-                        jb = main_jb
-                        mc = main_mc
-                        cable_desc = main_cable_desc
-                        raw_cable_desc = main_raw_cable_desc  # متغیر جدید
-
-                        
-                        # تولید رنگ‌های سیم و شماره‌های SCR بر اساس شماره تگ
-                        tag_num_str = f"{tag_num:02d}"
-                        bk_color = f"BK{tag_num_str}"
-                        wt_color = f"WT{tag_num_str}"
-                        
-                        # تولید شماره SCR بر اساس شماره تگ
-                        first_scr_num = (tag_num * 2) - 1
-                        second_scr_num = tag_num * 2
-                        
-                        # اضافه کردن به لیست داده‌ها
-                        new_df_data.append({
-                            'PDF_Name': pdf_name,
-                            'Page': page_num,
-                            'JB': jb,
-                            'MC': mc,
-                            'Tag/SPARE': tag,
-                            'Tag_Number': tag_num,
-                            'Wire_Code_1': bk_color,
-                            'Wire_Code_2': wt_color,
-                            'Terminal_First_Number': str(first_scr_num),
-                            'Terminal_Second_Number': str(second_scr_num),
-                            'SCR_Terminal_Number': 'SCR',
-                            'Cable_Code': cable_desc,
-                            'Cable_Description': raw_cable_desc,  # ستون جدید                       
-                            'Type': 'Tag',
-                            'Tag_Number_Status': tag_number_status  # ستون برای مقایسه شماره زوج و تگ
-                        })
-                        
-                        logger.info(f"Added Tag from {pdf_name}: {tag} -> JB: {jb}, MC: {mc}, Tag#: {tag_num}")
-                    else:
-                        logger.warning(f"Tag {tag} not found in bounding box tag numbers, skipping")
-                        
-                except Exception as e:
-                    logger.error(f"Error processing tag {tag} in PDF {pdf_name}, page {page_num}: {e}")
-                    
-                    logger.error(traceback.format_exc())
+            # شمارنده برای ردیف‌های بدون شماره تگ
+            row_counter = len(new_df_data) + 1
             
-            # پردازش اسپیرهای این صفحه - فقط با استفاده از اطلاعات bounding box
-            for i, spare in enumerate(page_spares):
-                try:
-                    # ایجاد شناسه‌های مختلف برای اسپیر برای جستجو در دیکشنری
-                    spare_id_options = [
-                        f"SPARE_{i+1}",
-                        spare,
-                        f"SPARE_{page_num}_{i+1}"
-                    ]
-                    
-                    # جستجو برای شناسه اسپیر در page_tag_to_number
-                    spare_number = None
-                    spare_id_used = None
-                    
-                    for spare_id in spare_id_options:
-                        if spare_id in page_tag_to_number:
-                            spare_number = page_tag_to_number[spare_id]
-                            spare_id_used = spare_id
-                            break
-                    
-                    # اگر شناسه اسپیر در page_tag_to_number پیدا نشد، از این اسپیر صرف نظر می‌کنیم
-                    if spare_number is None:
-                        logger.warning(f"Spare {spare} not found in bounding box tag numbers, skipping")
-                        continue
-                    
-                    # استفاده از JB و MC همین صفحه
-                    jb = main_jb
-                    mc = main_mc
-                    cable_desc = main_cable_desc
-                    raw_cable_desc = main_raw_cable_desc 
-                    
-                    # تولید رنگ‌های سیم و شماره‌های SCR بر اساس شماره اسپیر
-                    spare_num_str = f"{spare_number:02d}"
-                    bk_color = f"BK{spare_num_str}"
-                    wt_color = f"WT{spare_num_str}"
-                    
-                    # تولید شماره SCR بر اساس شماره اسپیر
-                    first_scr_num = (spare_number * 2) - 1
-                    second_scr_num = spare_number * 2
-                    
-                    # اضافه کردن به لیست داده‌ها
-                    new_df_data.append({
-                        'PDF_Name': pdf_name,
-                        'Page': page_num,
-                        'JB': jb,
-                        'MC': mc,
-                        'Tag/SPARE': spare,
-                        'Tag_Number': spare_number,
-                        'Wire_Code_1': bk_color,
-                        'Wire_Code_2': wt_color,
-                        'Terminal_First_Number': str(first_scr_num),
-                        'Terminal_Second_Number': str(second_scr_num),
-                        'SRC_Terminal_Number': 'SCR',
-                        'Cable_Code': cable_desc,
-                        'Cable_Description': raw_cable_desc,  
-                        'Type': 'SPARE',
-                        'Tag_Number_Status': tag_number_status  # ستون برای مقایسه شماره زوج و تگ
-                    })
-                    
-                    logger.info(f"Added Spare from {pdf_name}: {spare} (ID: {spare_id_used}) -> JB: {jb}, MC: {mc}, Tag#: {spare_number}")
-                    
-                except Exception as e:
-                    logger.error(f"Error processing spare {spare} in PDF {pdf_name}, page {page_num}: {e}")
-                    
-                    logger.error(traceback.format_exc())
-                    
+            # پردازش تگ‌ها
+            for tag in tags:
+                tag_number = tag_to_number.get(tag, page_tag_to_number.get(tag, ''))
+                
+                if not tag_number:
+                    tag_number = row_counter
+                    row_counter += 1
+                
+                # ایجاد ردیف داده
+                row_data = {
+                    'PDF_Name': pdf_name,
+                    'Page': page_num,
+                    'Tag/SPARE': tag,
+                    'JB': jb_identifiers[0] if jb_identifiers else '',
+                    'MC': mc_identifiers[0] if mc_identifiers else '',
+                    'Tag_Number': tag_number,
+                    'Wire_Code_1': self.generate_mc_wire_colors(tag_number) if hasattr(self, 'generate_mc_wire_colors') else '',
+                    'Wire_Code_2': '',
+                    'Terminal_First_Number': str(tag_number),
+                    'Terminal_Second_Number': str(tag_number + 1) if isinstance(tag_number, int) else str(int(tag_number) + 1) if str(tag_number).isdigit() else '',
+                    'Cable_Code': cable_descriptions[0] if cable_descriptions else '',
+                    'SCR_Terminal_Number': self.generate_scr_number(tag_number) if hasattr(self, 'generate_scr_number') else '',
+                    'Cable_Description': raw_cable_descriptions[0] if raw_cable_descriptions else (cable_descriptions[0] if cable_descriptions else ''),
+                    'Type': 'Tag',
+                    'Tag_Number_Status': 'Assigned' if tag_to_number.get(tag) or page_tag_to_number.get(tag) else 'Auto-Assigned'
+                }
+                
+                new_df_data.append(row_data)
+                logger.debug(f"Added tag row: {tag} with number {tag_number}")
+            
+            # پردازش SPARE ها
+            for spare_idx, spare in enumerate(spare_identifiers):
+                spare_id = f"{getattr(self, 'spare_examples', 'SPARE')}_{spare_idx + 1}"
+                spare_number = tag_to_number.get(spare_id, page_tag_to_number.get(spare_id, ''))
+                
+                if not spare_number:
+                    spare_number = row_counter
+                    row_counter += 1
+                
+                row_data = {
+                    'PDF_Name': pdf_name,
+                    'Page': page_num,
+                    'Tag/SPARE': spare,
+                    'JB': jb_identifiers[0] if jb_identifiers else '',
+                    'MC': mc_identifiers[0] if mc_identifiers else '',
+                    'Tag_Number': spare_number,
+                    'Wire_Code_1': self.generate_mc_wire_colors(spare_number) if hasattr(self, 'generate_mc_wire_colors') else '',
+                    'Wire_Code_2': '',
+                    'Terminal_First_Number': str(spare_number),
+                    'Terminal_Second_Number': str(spare_number + 1) if isinstance(spare_number, int) else str(int(spare_number) + 1) if str(spare_number).isdigit() else '',
+                    'Cable_Code': cable_descriptions[0] if cable_descriptions else '',
+                    'SCR_Terminal_Number': self.generate_scr_number(spare_number) if hasattr(self, 'generate_scr_number') else '',
+                    'Cable_Description': raw_cable_descriptions[0] if raw_cable_descriptions else (cable_descriptions[0] if cable_descriptions else ''),
+                    'Type': 'SPARE',
+                    'Tag_Number_Status': 'Assigned' if tag_to_number.get(spare_id) or page_tag_to_number.get(spare_id) else 'Auto-Assigned'
+                }
+                
+                new_df_data.append(row_data)
+                logger.debug(f"Added spare row: {spare} with number {spare_number}")
+        
         except Exception as e:
-            logger.error(f"Error processing PDF {pdf_name}, page {page_num}: {e}")
-            
+            logger.error(f"Error processing page {page_num} of PDF {pdf_name}: {e}")
             logger.error(traceback.format_exc())
-
-    def _get_unique_wire_colors(self, tag: str, wire_colors: 'Dict[str, List[str]]', 
-                            used_wire_colors: 'Dict[str, Dict[str, bool]]', 
-                            tag_to_number: 'Dict[str, int]', as_list: bool = False) -> 'Union[str, List[str]]':
+        
+    def process_excel_with_io_list(self, intermediate_excel_path: str, excel_path: str, output_path: str) -> 'Tuple[pd.DataFrame, List[str], List[str]]':
         """
-        برای هر تگ، رنگ‌های سیم منحصر به فرد را برمی‌گرداند و از تکرار جلوگیری می‌کند.
+        ترکیب داده‌های فایل intermediate با فایل IO List و ایجاد فایل اکسل نهایی.
+        این تابع تمام ستون‌های IO List را حفظ می‌کند و ستون‌های جدید از فایل intermediate را به آن اضافه می‌کند.
         
         Args:
-            tag: نام تگ
-            wire_colors: دیکشنری رنگ‌های سیم
-            used_wire_colors: دیکشنری رنگ‌های استفاده شده
-            tag_to_number: دیکشنری شماره تگ‌ها
-            as_List: اگر True باشد، لیست رنگ‌ها را برمی‌گرداند، در غیر این صورت رشته
-        
-        Returns:
-            رشته رنگ‌های سیم با کاما جدا شده یا لیست رنگ‌ها
-        """
-        if tag in wire_colors:
-            colors = wire_colors[tag]
-            # حذف تکراری‌ها
-            unique_colors = list(dict.fromkeys(colors))
-            return unique_colors if as_list else ', '.join(unique_colors)
-        
-        # اگر رنگ برای این تگ تعریف نشده، تولید کن
-        if tag not in used_wire_colors:
-            used_wire_colors[tag] = {}
-        
-        # تولید رنگ پیش‌فرض
-        tag_num = tag_to_number.get(tag, 1)
-        tag_num_str = f"{tag_num:02d}"
-        default_colors = [f"BK{tag_num_str}", f"WT{tag_num_str}"]
-        
-        return default_colors if as_list else ', '.join(default_colors)
+            intermediate_excel_path: مسیر فایل اکسل intermediate
+            excel_path: مسیر فایل اکسل IO List
+            output_path: مسیر فایل اکسل خروجی
             
+        Returns:
+            Tuple of (final_df, unmatched_io_tags, unmatched_tags)
+        """
+        try:
+            # خواندن فایل‌های اکسل
+            intermediate_df = pd.read_excel(intermediate_excel_path)
+            io_list_df = pd.read_excel(excel_path)
+            
+            logger.info(f"Loaded intermediate Excel with {len(intermediate_df)} rows and {len(intermediate_df.columns)} columns")
+            logger.info(f"Loaded IO List Excel with {len(io_list_df)} rows and {len(io_list_df.columns)} columns")
+            
+            # نام ستون تگ در هر دو فایل
+            intermediate_tag_col = 'Tag/SPARE'
+            io_list_tag_col = 'Tag No'  # نام ستون تگ در IO List
+            
+            # استخراج لیست تگ‌ها از هر دو فایل
+            intermediate_tags = set(str(tag).strip().upper() for tag in intermediate_df[intermediate_tag_col] if pd.notna(tag))
+            io_list_tags = set(str(tag).strip().upper() for tag in io_list_df[io_list_tag_col] if pd.notna(tag))
+            
+            # یافتن تگ‌های تطبیق نیافته
+            unmatched_io_tags = list(io_list_tags - intermediate_tags)  # تگ‌های IO List که در intermediate نیستند
+            unmatched_tags = list(intermediate_tags - io_list_tags)  # تگ‌های intermediate که در IO List نیستند
+            
+            logger.info(f"Unmatched IO List tags: {len(unmatched_io_tags)}")
+            logger.info(f"Unmatched intermediate tags: {len(unmatched_tags)}")
+            
+            # ایجاد کپی از IO List برای حفظ تمام ستون‌های آن
+            final_df = io_list_df.copy()
+            
+            # ستون‌های intermediate که می‌خواهیم اضافه کنیم
+            intermediate_columns_to_add = [
+                'PDF_Name', 'Page', 'JB', 'MC', 'Tag_Number', 
+                'Wire_Code_1', 'Wire_Code_2', 'Terminal_First_Number', 'Terminal_Second_Number', 'SCR_Terminal_Number', 'Cable_code',
+                'Cable_Description', 'Type', 'Tag_Number_Status'
+            ]
+            
+            # فقط ستون‌هایی که در intermediate وجود دارند را اضافه کنیم
+            intermediate_columns_to_add = [col for col in intermediate_columns_to_add if col in intermediate_df.columns]
+            
+            # اضافه کردن ستون‌های جدید به final_df
+            for col in intermediate_columns_to_add:
+                if col not in final_df.columns:
+                    final_df[col] = None
+            
+            # تطبیق داده‌ها بر اساس تگ
+            for idx, row in final_df.iterrows():
+                io_tag = str(row[io_list_tag_col]).strip().upper() if pd.notna(row[io_list_tag_col]) else ""
+                
+                # جستجوی تگ در intermediate_df
+                matching_rows = intermediate_df[intermediate_df[intermediate_tag_col].apply(
+                    lambda x: str(x).strip().upper() == io_tag if pd.notna(x) else False
+                )]
+                
+                if not matching_rows.empty:
+                    # اگر تگ در intermediate پیدا شد، اطلاعات را به final_df اضافه کن
+                    for col in intermediate_columns_to_add:
+                        final_df.at[idx, col] = matching_rows.iloc[0][col]
+            
+            # اضافه کردن تگ‌های intermediate که در IO List نیستند به final_df
+            if unmatched_tags:
+                # فیلتر کردن ردیف‌های intermediate_df که تگ‌های آن‌ها در IO List نیستند
+                unmatched_rows = intermediate_df[intermediate_df[intermediate_tag_col].apply(
+                    lambda x: str(x).strip().upper() in unmatched_tags if pd.notna(x) else False
+                )]
+                
+                # ایجاد دیتافریم جدید با ستون‌های final_df
+                new_rows = pd.DataFrame(columns=final_df.columns)
+                
+                # اضافه کردن ردیف‌های جدید
+                for _, row in unmatched_rows.iterrows():
+                    new_row = pd.Series(index=final_df.columns)
+                    
+                    # کپی مقادیر از ستون‌های intermediate
+                    for col in intermediate_columns_to_add:
+                        new_row[col] = row[col]
+                    
+                    # تنظیم مقدار ستون تگ در IO List
+                    new_row[io_list_tag_col] = row[intermediate_tag_col]
+                    
+                    # اضافه کردن ردیف جدید به new_rows
+                    new_rows = pd.concat([new_rows, pd.DataFrame([new_row])], ignore_index=True)
+                
+                # اضافه کردن ردیف‌های جدید به final_df
+                final_df = pd.concat([final_df, new_rows], ignore_index=True)
+            
+            # ذخیره دیتافریم نهایی به عنوان فایل اکسل
+            final_df.to_excel(output_path, index=False)
+            
+            logger.info(f"Combined Excel file saved to: {output_path}")
+            logger.info(f"Final Excel has {len(final_df)} rows and {len(final_df.columns)} columns")
+            
+            return final_df, unmatched_io_tags, unmatched_tags
+            
+        except Exception as e:
+            logger.error(f"Error processing Excel files: {e}")
+            logger.error(traceback.format_exc())
+            return pd.DataFrame(), [], []
+
     def check_tag_number_consistency(self, tag_to_number: 'Dict[str, int]') -> 'Tuple[bool, int, int]':
         """
         بررسی می‌کند که آیا بزرگترین شماره تگ با شماره زوج در توضیحات کابل مطابقت دارد یا خیر.
@@ -2600,19 +3083,45 @@ class TagJBExtractor:
         
     def get_processing_stats(self) -> 'Dict[str, Any]':
         """
-        Return detailed statistics about the processing results.
+        بازگرداندن آمار پردازش با پشتیبانی از PDF های چندصفحه‌ای
         """
-        return {
-            'total_tags': len(self.all_tags),
-            'matched_tags': len(self.matched_tags),
-            'exact_matches': self.exact_matches,
-            'similar_matches': self.similar_matches,
-            'total_jbs': len(self.all_jbs),
-            'processing_time': f"{self.processing_time:.2f} seconds",
-            'match_rate': f"{(len(self.matched_tags) / len(self.all_tags) * 100):.1f}%" if self.all_tags else "0%",
-            'exact_match_rate': f"{(self.exact_matches / len(self.matched_tags) * 100):.1f}%" if self.matched_tags else "0%",
-            'unmatched_tags': len(self.all_tags - self.matched_tags),
-        }
+        try:
+            total_tags = getattr(self, 'total_tags', len(getattr(self, 'all_tags', set())))
+            matched_tags = getattr(self, 'matched_tags', len(getattr(self, 'matched_tags_set', set())))
+            exact_matches = getattr(self, 'exact_matches', 0)
+            similar_matches = getattr(self, 'similar_matches', 0)
+            total_jbs = len(getattr(self, 'all_jbs', set()))
+            processing_time = getattr(self, 'processing_time', 0)
+            
+            # محاسبه نرخ تطبیق
+            match_rate = f"{(matched_tags / total_tags * 100):.1f}%" if total_tags > 0 else "0.0%"
+            exact_match_rate = f"{(exact_matches / total_tags * 100):.0f}%" if total_tags > 0 else "0%"
+            
+            return {
+                'total_tags': total_tags,
+                'matched_tags': matched_tags,
+                'exact_matches': exact_matches,
+                'similar_matches': similar_matches,
+                'total_jbs': total_jbs,
+                'processing_time': f"{processing_time:.2f} seconds" if processing_time else "0.00 seconds",
+                'match_rate': match_rate,
+                'exact_match_rate': exact_match_rate,
+                'unmatched_tags': total_tags - matched_tags
+            }
+            
+        except Exception as e:
+            logger.error(f"Error calculating processing stats: {e}")
+            return {
+                'total_tags': 0,
+                'matched_tags': 0,
+                'exact_matches': 0,
+                'similar_matches': 0,
+                'total_jbs': 0,
+                'processing_time': '0.00 seconds',
+                'match_rate': '0.0%',
+                'exact_match_rate': '0%',
+                'unmatched_tags': 0
+            }
     
     def reset_stats(self):
         """

@@ -442,6 +442,11 @@ class LinuxTagJBExtractor(TagJBExtractor):
             unmatched_pdf_tags: تگ‌های تطبیق نیافته در PDF
         """
         try:
+            # اطمینان از اینکه file_path یک رشته است
+            if not isinstance(file_path, str):
+                self.logger.error(f"Invalid file_path type: {type(file_path)}, expected string")
+                file_path = str(file_path) if file_path else "/home/devio/JB-outputs/unmatched_tags.xlsx"
+            
             # تبدیل به لیست
             excel_tags = list(unmatched_excel_tags) if unmatched_excel_tags else []
             pdf_tags = list(unmatched_pdf_tags) if unmatched_pdf_tags else []

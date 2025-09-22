@@ -90,3 +90,14 @@ dist/
 poetry.lock
 Pipfile.lock
 requirements.txt.bak
+
+# Custom output folders (any location)
+**/outputs_v1/
+**/outputs_v2/
+apps/backend/outputs_v1/Aryavakav-NGL-UnmatchedTags-2025-09-15-v1.0.xlsx
+apps/backend/outputs_v1/processing_reports.json
+apps/backend/outputs_v1/NGL/Aryavakav-NGL-Report-2025-09-15-v1.0.json
+apps/backend/outputs_v1/NGL/Aryavakav-NGL-Results-2025-09-15-v1.0.zip
+apps/backend/outputs_v1/NGL/Aryavakav-NGL-UnmatchedTags-2025-09-15-v1.0.xlsx
+apps/backend/outputs_v1/NGL/annotated_pdfs/intermediate_data.xlsx
+apps/backend/outputs_v1/NGL/annotated_pdfs/processing_reports.json

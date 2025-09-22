@@ -169,6 +169,13 @@
                             <div class="download-links" id="downloadLinks">
                                 <!-- لینک‌های دانلود به صورت پویا اینجا اضافه می‌شوند -->
                             </div>
+                            <!-- نمایش لینک مستقیم دانلود فایل ZIP -->
+                            <div class="direct-download-link" id="directDownloadLink" style="display: none;">
+                                <p id="direct-download-text">✅ پردازش تکمیل شد. می‌توانید فایل خود را از اینجا دانلود کنید:</p>
+                                <a href="#" id="zipDownloadLink" class="zip-download-link" target="_blank">
+                                    <i class="fas fa-file-archive"></i> <span id="zip-download-text">دانلود فایل ZIP</span>
+                                </a>
+                            </div>
                         </div>
                     </div>
                 </section>
@@ -234,7 +241,9 @@
                 'download-pdf': 'دانلود PDF شماره',
                 'download-all-pdfs': 'دانلود همه PDF ها',
                 'no-pdf-selected': 'لطفاً حداقل یک فایل PDF انتخاب کنید',
-                'no-excel-selected': 'لطفاً یک فایل Excel انتخاب کنید'
+                'no-excel-selected': 'لطفاً یک فایل Excel انتخاب کنید',
+                'direct-download-text': '✅ پردازش تکمیل شد. می‌توانید فایل خود را از اینجا دانلود کنید:',
+                'zip-download-text': 'دانلود فایل ZIP'
             },
             'en': {
                 'title': 'JB Detection System',
@@ -287,7 +296,9 @@
                 'download-pdf': 'Download PDF #',
                 'download-all-pdfs': 'Download All PDFs',
                 'no-pdf-selected': 'Please select at least one PDF file',
-                'no-excel-selected': 'Please select an Excel file'
+                'no-excel-selected': 'Please select an Excel file',
+                'direct-download-text': '✅ Processing completed. You can download your file here:',
+                'zip-download-text': 'Download ZIP File'
             }
         };
 
@@ -351,6 +362,14 @@
             // بخش دانلود
             if (document.getElementById('download-title')) {
                 document.getElementById('download-title').innerHTML = translations[lang]['download-title'];
+            }
+            
+            // بخش لینک مستقیم دانلود
+            if (document.getElementById('direct-download-text')) {
+                document.getElementById('direct-download-text').innerHTML = translations[lang]['direct-download-text'];
+            }
+            if (document.getElementById('zip-download-text')) {
+                document.getElementById('zip-download-text').innerHTML = translations[lang]['zip-download-text'];
             }
             
             localStorage.setItem('lang', lang);
@@ -533,6 +552,7 @@
             // پنهان کردن بخش دانلود قبلی (اگر وجود داشته باشد)
             document.getElementById('downloadBox').style.display = 'none';
             document.getElementById('downloadLinks').innerHTML = '';
+            document.getElementById('directDownloadLink').style.display = 'none';
             
             try {
                 const response = await fetch('/process', {
@@ -573,6 +593,20 @@
                     // نمایش لینک‌های دانلود
                     showDownloadLinks(result.details.output_files);
                     
+                if (result.details.output_files.download_url) {
+                    // استفاده از آدرس فعلی سرور بدون تغییر پورت
+                    const apiBase = `${window.location.protocol}//${window.location.host}`;
+                    
+                    // استخراج مسیر نسبی از URL کامل
+                    let zipPath = result.details.output_files.zip_path;
+                    if (zipPath.startsWith('/home/devio/JB-outputs/')) {
+                        zipPath = zipPath.replace('/home/devio/JB-outputs/', '');
+                    }
+                    
+                    document.getElementById('zipDownloadLink').href = `${apiBase}/download?file=${encodeURIComponent(zipPath)}`;
+                    document.getElementById('directDownloadLink').style.display = 'block';
+                }
+                    
                     showNotification(translations[currentLang]['processing-success'], 'success');
                 } else {
                     document.getElementById('logOutput').textContent = translations[currentLang]['error'] + 
@@ -600,10 +634,8 @@
             // پاک کردن لینک‌های قبلی
             downloadLinks.innerHTML = '';
             
-            // تشخیص پورت فعلی برای تعیین نسخه API
-            const currentPort = window.location.port || '5000';
-            const apiPort = currentPort === '5001' ? '5001' : '5000';
-            const apiBase = `${window.location.protocol}//${window.location.hostname}:${apiPort}`;
+            // استفاده از آدرس فعلی سرور بدون تغییر پورت
+            const apiBase = `${window.location.protocol}//${window.location.host}`;
             
             console.log("API Base URL:", apiBase);
             console.log("Output Files:", outputFiles);
@@ -739,7 +771,7 @@
 
         // افزودن گوش‌دهنده برای کلیک روی لینک‌های دانلود
         document.addEventListener('click', function(event) {
-            const target = event.target.closest('.download-link');
+            const target = event.target.closest('.download-link, .zip-download-link');
             if (!target) return;
             
             // افزودن کد برای نمایش وضعیت دانلود
@@ -791,58 +823,6 @@
         // اضافه کردن CSS برای انیمیشن انتخاب فایل و بخش پروژه
         const style = document.createElement('style');
         style.textContent = `
-            @keyframes fileSelected {
-                0% { transform: translateY(10px); opacity: 0; }
-                100% { transform: translateY(0); opacity: 1; }
-            }
-            
-            .file-item {
-                display: flex;
-                align-items: center;
-                margin: 5px 0;
-                padding: 8px 12px;
-                background-color: var(--input-bg);
-                border-radius: 4px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                animation: fileSelected 0.5s ease;
-            }
-            
-            .file-item i {
-                margin-right: 8px;
-                color: var(--accent-color);
-            }
-            
-            .preview-item {
-                margin: 10px 0;
-                border: 1px solid var(--border-color);
-                border-radius: 8px;
-                overflow: hidden;
-                background-color: var(--card-bg);
-                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-                animation: fileSelected 0.5s ease;
-            }
-            
-            .preview-header {
-                padding: 8px 12px;
-                background-color: var(--header-bg);
-                border-bottom: 1px solid var(--border-color);
-                font-weight: 500;
-            }
-            
-            .preview-placeholder {
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                padding: 30px;
-                color: var(--text-muted);
-                text-align: center;
-            }
-            
-            .preview-placeholder i {
-                margin-bottom: 10px;
-                color: var(--accent-color);
-            }
             
             .more-files {
                 display: flex;
@@ -1072,25 +1052,6 @@
                 border-radius: 50px; /* گرد کردن کامل دکمه پردازش */
             }
             
-            /* استایل برای فیلدهای ورودی */
-            .pattern-group input {
-                width: 100%;
-                padding: 12px 15px;
-                border: 1px solid var(--border-color);
-                border-radius: 50px;
-                background-color: var(--input-bg);
-                color: var(--text-color);
-                font-size: 1rem;
-                transition: border-color 0.3s ease, box-shadow 0.3s ease;
-                margin-bottom: 5px;
-            }
-            
-            .pattern-group input:focus {
-                border-color: var(--accent-color);
-                box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
-                outline: none;
-            }
-            
             /* استایل برای بخش دانلود */
             .download-box {
                 margin-top: 20px;
@@ -1153,23 +1114,6 @@
                 font-size: 0.9rem;
                 color: var(--text-muted);
                 margin: 0 0 15px 0;
-            }
-            
-            /* استایل برای گروه‌های الگو */
-            .pattern-group {
-                margin-bottom: 15px;
-            }
-            
-            .pattern-group label {
-                display: block;
-                margin-bottom: 5px;
-                font-weight: 500;
-            }
-            
-            .pattern-divider {
-                height: 1px;
-                background-color: var(--border-color);
-                margin: 20px 0;
             }
             
             /* استایل برای نوتیفیکیشن */
