@@ -16,7 +16,8 @@ if current_dir not in sys.path:
 logger = logging.getLogger(__name__)
 
 # مسیر پایه برای ذخیره فایل‌ها
-BASE_OUTPUT_DIR = "/home/devio/JB-outputs"
+# مسیر پایه برای ذخیره فایل‌ها
+BASE_OUTPUT_DIR = "/home/devio/projects/JBDtection/apps/backend/outputs_v1"
 
 def ensure_directory_exists(directory_path: str) -> str:
     """
@@ -66,7 +67,41 @@ def get_log_dir(project_name: str) -> str:
     log_dir = os.path.join(BASE_OUTPUT_DIR, "logs", safe_project_name, today)
     return ensure_directory_exists(log_dir)
 
-def generate_document_filename(project_name: str, doc_type: str, extension: str, version: str = "1.0") -> str:
+def get_unique_filename(directory: str, filename: str) -> str:
+    """
+    تولید نام فایل یکتا برای جلوگیری از بازنویسی فایل‌های تکراری
+    
+    اگر فایل با نام مشابه وجود داشته باشد، یک شماره به انتهای نام فایل اضافه می‌شود
+    
+    Args:
+        directory: مسیر دایرکتوری
+        filename: نام فایل اولیه
+        
+    Returns:
+        نام فایل یکتا
+    """
+    # جداسازی نام فایل و پسوند
+    base_name, extension = os.path.splitext(filename)
+    
+    # بررسی وجود فایل
+    counter = 1
+    new_filename = filename
+    file_path = os.path.join(directory, new_filename)
+    
+    # تا زمانی که فایل با نام مشابه وجود دارد، شماره‌گذاری کن
+    while os.path.exists(file_path):
+        # اگر نسخه قبلی در نام فایل وجود دارد، آن را حذف کن
+        if re.search(r'_v\d+$', base_name):
+            base_name = re.sub(r'_v\d+$', '', base_name)
+        
+        # اضافه کردن شماره نسخه جدید
+        new_filename = f"{base_name}_v{counter}{extension}"
+        file_path = os.path.join(directory, new_filename)
+        counter += 1
+    
+    return new_filename
+
+def generate_document_filename(project_name: str, doc_type: str, extension: str, version: str = "1.0", directory: str = None) -> str:
     """
     تولید نام فایل بر اساس استاندارد ARYAVAKAV برای اسناد
     
@@ -77,6 +112,7 @@ def generate_document_filename(project_name: str, doc_type: str, extension: str,
         doc_type: نوع سند
         extension: پسوند فایل (بدون نقطه)
         version: نسخه سند (پیش‌فرض: 1.0)
+        directory: مسیر دایرکتوری برای بررسی تکراری بودن نام فایل (اختیاری)
         
     Returns:
         نام فایل استاندارد
@@ -90,9 +126,14 @@ def generate_document_filename(project_name: str, doc_type: str, extension: str,
     
     # تولید نام فایل
     filename = f"Aryavakav-{safe_project_name}-{safe_doc_type}-{today}-v{version}.{extension}"
+    
+    # اگر مسیر دایرکتوری مشخص شده باشد، بررسی تکراری بودن نام فایل
+    if directory:
+        filename = get_unique_filename(directory, filename)
+    
     return filename
 
-def generate_log_filename(project_name: str, data_type: str, extension: str) -> str:
+def generate_log_filename(project_name: str, data_type: str, extension: str, directory: str = None) -> str:
     """
     تولید نام فایل بر اساس استاندارد ARYAVAKAV برای لاگ‌ها
     
@@ -102,6 +143,7 @@ def generate_log_filename(project_name: str, data_type: str, extension: str) -> 
         project_name: نام پروژه
         data_type: نوع داده
         extension: پسوند فایل (بدون نقطه)
+        directory: مسیر دایرکتوری برای بررسی تکراری بودن نام فایل (اختیاری)
         
     Returns:
         نام فایل استاندارد
@@ -115,6 +157,11 @@ def generate_log_filename(project_name: str, data_type: str, extension: str) -> 
     
     # تولید نام فایل
     filename = f"{safe_project_name}_{safe_data_type}_{today}.{extension}"
+    
+    # اگر مسیر دایرکتوری مشخص شده باشد، بررسی تکراری بودن نام فایل
+    if directory:
+        filename = get_unique_filename(directory, filename)
+    
     return filename
 
 def create_zip_archive(project_name: str, files_to_zip: List[str], doc_type: str = "Results") -> str:
@@ -133,8 +180,8 @@ def create_zip_archive(project_name: str, files_to_zip: List[str], doc_type: str
         # ایجاد مسیر خروجی پروژه
         project_dir = get_project_output_dir(project_name)
         
-        # تولید نام فایل ZIP
-        zip_filename = generate_document_filename(project_name, doc_type, "zip")
+        # تولید نام فایل ZIP با بررسی تکراری بودن
+        zip_filename = generate_document_filename(project_name, doc_type, "zip", directory=project_dir)
         zip_path = os.path.join(project_dir, zip_filename)
         
         # ایجاد فایل ZIP
@@ -176,4 +223,4 @@ def get_download_url(file_path: str) -> str:
         return f"/downloads/{relative_path}"
     
     # اگر مسیر فایل در مسیر پایه نیست، مسیر اصلی را برگردان
-    return file_path
+    return file_path  

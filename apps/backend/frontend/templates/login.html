@@ -16,7 +16,10 @@
         <div class="login-wrapper">
             <div class="login-header">
                 <div class="logo">
-                    <i class="fas fa-search-location"></i>
+                    <!-- جایگزین کردن آیکون با تصویر لوگو -->
+                    <div class="logo-icon">
+                        <img src="{{ url_for('static', filename='images/favicon.png') }}" alt="JB Detection Logo">
+                    </div>
                     <h1 id="title">سیستم تشخیص JB</h1>
                 </div>
                 <p id="subtitle">سیستم پیشرفته شناسایی و تطابق تگ‌های PDF و Excel</p>
@@ -295,6 +298,17 @@
             }
         `;
         document.head.appendChild(style);
+        
+        // اضافه کردن انیمیشن چرخش به لوگو در هنگام بارگذاری صفحه
+        const logoIcon = document.querySelector('.logo-icon');
+        if (logoIcon) {
+            logoIcon.classList.add('initial-load');
+            
+            // حذف کلاس انیمیشن پس از اتمام آن
+            setTimeout(() => {
+                logoIcon.classList.remove('initial-load');
+            }, 1500);
+        }
     });
 
     // Add auto-fill animation

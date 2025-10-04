@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_from_directory, Response
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session, send_from_directory
 from typing import List, Tuple, Dict, Set, Optional, Any, Union
 import os
 import re
@@ -16,14 +16,12 @@ import shutil
 from pathlib import Path
 import pytesseract
 import time
-import zipfile
+import zipfile  # Added missing import for zipfile
 from datetime import datetime  
 from multiprocessing import Pool, cpu_count
 import subprocess  
 import tkinter as tk
 import sys
-import threading
-import uuid
 
 # اصلاح مسیرهای import
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -65,12 +63,6 @@ app.secret_key = 'jb_detection_system_secret_key'
 UPLOAD_FOLDER = tempfile.gettempdir()
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# تعریف مسیر پایه برای فایل‌های خروجی در کانتینر
-OUTPUT_DIRS = {
-    "v1": "/home/devio/JB-outputs",
-    "v2": "/home/devio/JB-outputs"
-}
-
 # اطمینان از وجود دایرکتوری پایه
 os.makedirs(BASE_OUTPUT_DIR, exist_ok=True)
 
@@ -107,9 +99,6 @@ VALID_USERS = {
 
 # ایجاد لاگر برای فایل اصلی
 logger = get_logger('app')
-
-# Dictionary to store processing jobs
-processing_jobs = {}
 
 def get_platform_specific_extractor(tesseract_path=None, excel_path=None):
     """
@@ -237,65 +226,6 @@ def system_info():
         'system_info': system_info
     })
 
-# تابع پردازش در پس‌زمینه
-def background_processing_job(job_id, pdf_paths, excel_path, project_name, jb_examples, mc_examples, 
-                             spare_examples, cable_examples, wire_color_rule, scr_number_rule):
-    try:
-        extractor = get_platform_specific_extractor(
-            tesseract_path=DEFAULT_TESSERACT_PATH,
-            excel_path=excel_path
-        )
-
-        # تنظیم الگوها اگر نیاز باشد
-        if hasattr(extractor, 'set_patterns'):
-            extractor.set_patterns(
-                jb_examples=jb_examples,
-                mc_examples=mc_examples,
-                spare_examples=spare_examples,
-                cable_examples=cable_examples,
-                wire_color_rule=wire_color_rule,
-                scr_number_rule=scr_number_rule
-            )
-
-        # ایجاد دایرکتوری خروجی پروژه
-        project_output_dir = get_project_output_dir(project_name)
-        annotated_pdf_dir = os.path.join(project_output_dir, "annotated_pdfs")
-        os.makedirs(annotated_pdf_dir, exist_ok=True)
-
-        total_files = len(pdf_paths)
-        results = []
-
-        for idx, pdf_path in enumerate(pdf_paths):
-            unmatched_excel, unmatched_pdf = extractor.run_with_annotated_pdf(
-                pdf_paths=[pdf_path],
-                excel_path=excel_path,
-                output_excel_path=generate_document_filename(project_name, "Excel", "xlsx"),
-                output_pdf_dir=annotated_pdf_dir
-            )
-            results.append({
-                "pdf": os.path.basename(pdf_path),
-                "unmatched_excel": unmatched_excel,
-                "unmatched_pdf": unmatched_pdf
-            })
-
-            # بروزرسانی progress
-            processing_jobs[job_id]["progress"] = int((idx + 1) / total_files * 100)
-
-        processing_jobs[job_id]["status"] = "done"
-        processing_jobs[job_id]["results"] = results
-
-    except Exception as e:
-        processing_jobs[job_id]["status"] = "error"
-        processing_jobs[job_id]["results"] = str(e)
-
-    finally:
-        # پاکسازی فایل‌های موقت
-        for path in pdf_paths:
-            if os.path.exists(path):
-                os.remove(path)
-        if os.path.exists(excel_path):
-            os.remove(excel_path)
-
 @app.route('/process', methods=['POST'])
 def process_files():
     if 'username' not in session:
@@ -393,32 +323,102 @@ def process_files():
                 else:
                     logger.info("پردازش GPU غیرفعال شده است (توسط کاربر)")
         
-        # ایجاد یک job_id منحصر به فرد
-        job_id = str(uuid.uuid4())
+        # پردازش فایل‌ها
+        logger.info(f"شروع پردازش {len(pdf_paths)} فایل PDF و Excel...")
+        unmatched_excel_tags, unmatched_pdf_tags = extractor.run_with_annotated_pdf(
+            pdf_paths=pdf_paths,
+            excel_path=excel_path,
+            output_excel_path=output_excel_path,
+            output_pdf_dir=annotated_pdf_dir
+        )
         
-        # ایجاد یک ورودی در دیکشنری processing_jobs
-        processing_jobs[job_id] = {
-            "status": "processing",
-            "progress": 0,
-            "results": None
+        # ایجاد فایل اکسل برای تگ‌های تطبیق نیافته
+        unmatched_excel_filename = generate_document_filename(project_name, "UnmatchedTags", "xlsx")
+        unmatched_excel_path = os.path.join(project_output_dir, unmatched_excel_filename)
+        
+        # ایجاد فایل اکسل برای تگ‌های تطبیق نیافته
+        if hasattr(extractor, '_create_unmatched_tags_excel'):
+            extractor._create_unmatched_tags_excel(unmatched_excel_tags, unmatched_pdf_tags, unmatched_excel_path)
+            logger.info(f"فایل Excel تگ‌های تطبیق نیافته ذخیره شد: {unmatched_excel_path}")
+        
+        # ایجاد فایل گزارش
+        report_filename = generate_document_filename(project_name, "Report", "json")
+        report_path = os.path.join(project_output_dir, report_filename)
+        
+        # ذخیره گزارش پردازش
+        with open(report_path, 'w') as f:
+            json.dump({
+                'project_name': project_name,
+                'processing_date': datetime.now().isoformat(),
+                'user': username,
+                'results': {
+                    'unmatched_excel_tags': len(unmatched_excel_tags),
+                    'unmatched_pdf_tags': len(unmatched_pdf_tags),
+                    'pdf_count': len(pdf_paths),
+                    'pdf_names': [os.path.basename(p) for p in pdf_paths]
+                }
+            }, f, indent=2)
+        
+        # لیست فایل‌های خروجی
+        output_files = [output_excel_path, unmatched_excel_path, report_path]
+        
+        # اضافه کردن PDF های حاشیه‌نویسی شده
+        annotated_pdfs = []
+        for f in os.listdir(annotated_pdf_dir):
+            if f.startswith('annotated_'):
+                pdf_path = os.path.join(annotated_pdf_dir, f)
+                output_files.append(pdf_path)
+                annotated_pdfs.append(pdf_path)
+        
+        # ایجاد فایل ZIP
+        zip_path = create_zip_archive(project_name, output_files)
+        
+        # ایجاد URL دانلود
+        download_url = get_download_url(zip_path)
+        
+        # پاکسازی فایل‌های موقت
+        for path in pdf_paths:
+            os.remove(path)
+        os.remove(excel_path)
+        
+        # آماده‌سازی پاسخ
+        response = {
+            'status': 'success',
+            'message': 'Processing completed successfully',
+            'details': {
+                'project_name': project_name,
+                'input_files': {
+                    'pdf_count': len(pdf_paths),
+                    'pdf_names': [os.path.basename(p) for p in pdf_paths],
+                    'excel_file': excel_file.filename
+                },
+                'output_files': {
+                    'excel_path': output_excel_path,
+                    'unmatched_excel_path': unmatched_excel_path,
+                    'report_path': report_path,
+                    'zip_path': zip_path,
+                    'download_url': download_url,
+                    'annotated_pdfs': annotated_pdfs
+                },
+                'results': {
+                    'unmatched_excel_tags': unmatched_excel_tags,
+                    'unmatched_pdf_tags': unmatched_pdf_tags,
+                    'unmatched_excel_count': len(unmatched_excel_tags),
+                    'unmatched_pdf_count': len(unmatched_pdf_tags)
+                },
+                'system': {
+                    'platform': platform.system(),
+                    'gpu_info': gpu_info
+                }
+            }
         }
         
-        # شروع یک thread برای پردازش در پس‌زمینه
-        thread = threading.Thread(
-            target=background_processing_job,
-            args=(job_id, pdf_paths, excel_path, project_name, jb_examples, mc_examples, 
-                  spare_examples, cable_examples, wire_color_rule, scr_number_rule)
-        )
-        thread.daemon = True
-        thread.start()
-        
-        # پاسخ اولیه شامل job_id
-        return jsonify({
-            "status": "accepted", 
-            "job_id": job_id,
-            "message": "پردازش در پس‌زمینه آغاز شد"
-        })
-        
+        logger.info(f"پردازش با موفقیت به پایان رسید", extra={'user': username, 'results': {
+            'unmatched_excel_count': len(unmatched_excel_tags),
+            'unmatched_pdf_count': len(unmatched_pdf_tags)
+        }})
+        return jsonify(response)
+    
     except Exception as e:
         logger.error(f"خطا در پردازش فایل‌ها: {str(e)}", extra={'user': username})
         logger.error(traceback.format_exc())
@@ -431,34 +431,6 @@ def process_files():
             }
         }), 500
 
-@app.route('/progress/<job_id>')
-def get_progress(job_id):
-    job = processing_jobs.get(job_id)
-    if not job:
-        return jsonify({"status": "error", "message": "Job not found"}), 404
-    
-    def generate():
-        while job["status"] == "processing":
-            yield f"data: {job['progress']}\n\n"
-            time.sleep(1)
-        yield f"data: {job['status']}\n\n"
-    
-    return Response(generate(), mimetype='text/event-stream')
-
-@app.route('/job-result/<job_id>')
-def get_job_result(job_id):
-    job = processing_jobs.get(job_id)
-    if not job:
-        return jsonify({"status": "error", "message": "Job not found"}), 404
-    
-    if job["status"] == "processing":
-        return jsonify({"status": "processing", "progress": job["progress"]}), 202
-    
-    return jsonify({
-        "status": job["status"],
-        "results": job["results"]
-    })
-    
 @app.route('/api/process', methods=['POST'])
 def api_process():
     """
@@ -543,19 +515,10 @@ def api_process():
         # ایجاد فایل ZIP
         zip_path = create_zip_archive(project_name, output_files)
         
-        # تعیین نسخه سرویس (v1 یا v2) بر اساس پورت درخواست
-        version = "v1"
-        if request.host.endswith(':5001'):
-            version = "v2"
-        
-        # تشخیص پورت فعلی برای تعیین نسخه API
-        current_port = request.host.split(':')[-1] if ':' in request.host else '5000'
-        
         # ایجاد URL دانلود
-        server_name = request.host.split(':')[0]
-        download_url = f"http://{server_name}:{current_port}/download?file={project_name}/{os.path.basename(zip_path)}"
+        download_url = get_download_url(zip_path)
         
-        # آماده‌سازی پاسخ
+        # مثالی از پاسخ API پردازش
         response = {
             "status": "success",
             "message": "Processing completed successfully",
@@ -583,27 +546,11 @@ def api_process():
             'message': str(e)
         }), 500
 
-@app.route('/api/status', methods=['GET'])
-def api_status():
-    """
-    API endpoint برای بررسی وضعیت سرور
-    """
-    try:
-        # تعیین نسخه سرویس (v1 یا v2) بر اساس پورت درخواست
-        version = "v1"
-        if request.host.endswith(':5001'):
-            version = "v2"
-            
-        return jsonify({
-            'status': 'online',
-            'version': version,
-            'timestamp': datetime.now().isoformat()
-        })
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        }), 500
+# تعریف مسیر پایه برای فایل‌های خروجی
+OUTPUT_DIRS = {
+    "v1": "/home/devio/JB-outputs",
+    "v2": "/home/devio/JB-outputs"
+}
 
 @app.route('/download', methods=['GET'])
 def download_file():
@@ -717,6 +664,17 @@ def download_all_pdfs():
         username = session.get('username', 'anonymous')
         logger.error(f"خطا در دانلود همه PDF ها: {str(e)}", extra={'user': username})
         return jsonify({"error": str(e)}), 500
+
+@app.route('/api/status')
+def api_status():
+    """
+    بررسی وضعیت API
+    """
+    return jsonify({
+        'status': 'online',
+        'version': '1.0',
+        'time': datetime.now().isoformat()
+    })
 
 if __name__ == '__main__':
     # Print startup message

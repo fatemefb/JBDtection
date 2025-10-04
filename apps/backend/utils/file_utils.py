@@ -14,6 +14,9 @@ if current_dir not in sys.path:
     sys.path.append(current_dir)
 logger = logging.getLogger(__name__)
 
+# اضافه کردن import برای استفاده از توابع file_naming
+from utils.file_naming import get_unique_filename
+
 def standardize_path(path: str) -> str:
     """
     استاندارد‌سازی مسیر فایل با توجه به سیستم عامل
@@ -35,7 +38,7 @@ def standardize_path(path: str) -> str:
 
 def copy_to_output_paths(files_to_copy: List[str], server_output_dir: str = None, user_output_dir: str = None) -> Dict[str, Any]:
     """
-    کپی فایل‌های خروجی به مسیرهای سرور و کاربر
+    کپی فایل‌های خروجی به مسیرهای سرور و کاربر با ورژن‌بندی خودکار
     
     Args:
         files_to_copy: لیست فایل‌های مورد نظر برای کپی
@@ -68,13 +71,16 @@ def copy_to_output_paths(files_to_copy: List[str], server_output_dir: str = None
             
             for file_path in files_to_copy:
                 if os.path.exists(file_path):
-                    dest_path = os.path.join(server_output_dir, os.path.basename(file_path))
+                    # استفاده از get_unique_filename برای جلوگیری از بازنویسی فایل‌های قبلی
+                    base_filename = os.path.basename(file_path)
+                    unique_filename = get_unique_filename(server_output_dir, base_filename)
+                    dest_path = os.path.join(server_output_dir, unique_filename)
                     
                     # بررسی یکسان نبودن مسیر مبدأ و مقصد
                     if os.path.normpath(file_path) != os.path.normpath(dest_path):
                         shutil.copy2(file_path, dest_path)
                         server_files.append(dest_path)
-                        logger.info(f"Copied to server: {file_path} -> {dest_path}")
+                        logger.info(f"Copied to server with version control: {file_path} -> {dest_path}")
                     else:
                         # اگر مسیرها یکسان هستند، فقط به لیست اضافه کن بدون کپی
                         server_files.append(file_path)
@@ -99,13 +105,16 @@ def copy_to_output_paths(files_to_copy: List[str], server_output_dir: str = None
             # روش کپی: محلی
             for file_path in files_to_copy:
                 if os.path.exists(file_path):
-                    dest_path = os.path.join(user_output_dir, os.path.basename(file_path))
+                    # استفاده از get_unique_filename برای جلوگیری از بازنویسی فایل‌های قبلی
+                    base_filename = os.path.basename(file_path)
+                    unique_filename = get_unique_filename(user_output_dir, base_filename)
+                    dest_path = os.path.join(user_output_dir, unique_filename)
                     
                     # بررسی یکسان نبودن مسیر مبدأ و مقصد
                     if os.path.normpath(file_path) != os.path.normpath(dest_path):
                         shutil.copy2(file_path, dest_path)
                         user_files.append(dest_path)
-                        logger.info(f"Copied to user path: {file_path} -> {dest_path}")
+                        logger.info(f"Copied to user path with version control: {file_path} -> {dest_path}")
                     else:
                         # اگر مسیرها یکسان هستند، فقط به لیست اضافه کن بدون کپی
                         user_files.append(file_path)
@@ -299,16 +308,20 @@ def create_zip_with_filtered_files(zip_path: str, files_to_zip: List[str], exclu
         zip_dir = os.path.dirname(zip_path)
         ensure_directory_exists(zip_dir)
         
+        # استفاده از get_unique_filename برای جلوگیری از بازنویسی فایل ZIP قبلی
+        unique_zip_filename = get_unique_filename(zip_dir, os.path.basename(zip_path))
+        unique_zip_path = os.path.join(zip_dir, unique_zip_filename)
+        
         # ایجاد فایل ZIP
         import zipfile
-        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        with zipfile.ZipFile(unique_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for file_path in filtered_files:
                 # افزودن فایل با نام نسبی (بدون مسیر کامل)
                 arcname = os.path.basename(file_path)
                 zipf.write(file_path, arcname)
                 logger.info(f"Added file to ZIP: {file_path}")
         
-        logger.info(f"Created ZIP archive with {len(filtered_files)} files: {zip_path}")
+        logger.info(f"Created ZIP archive with {len(filtered_files)} files: {unique_zip_path}")
         return True
         
     except Exception as e:

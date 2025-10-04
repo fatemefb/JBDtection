@@ -1206,167 +1206,92 @@ class TagJBExtractor:
             logger.error(traceback.format_exc())
             return page_num + 1, set(), set(), set(), [], [], {}, []
 
-    def process_pdf(self, pdf_path, io_list_path=None, output_excel_path=None, similarity_threshold=0.8):
+    def process_pdf(self, pdf_path: str) -> 'Dict[int, Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str]]]':
         """
-        پردازش کامل یک فایل PDF و تطبیق با لیست IO
+        Process all pages in a PDF file.
         
         Args:
-            pdf_path: مسیر فایل PDF
-            io_list_path: مسیر فایل اکسل لیست IO (اختیاری)
-            output_excel_path: مسیر فایل اکسل خروجی (اختیاری)
-            similarity_threshold: آستانه شباهت برای تطبیق تگ‌ها
+            pdf_path: Path to the PDF file
             
         Returns:
-            دیکشنری نتایج پردازش
+            Dictionary mapping page numbers to Tuples of (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions)
         """
+        results = {}
+        # Reinitialize Tesseract for this process
         try:
-            start_time = time.time()
-            
-            # تنظیم مسیرهای پیش‌فرض اگر مشخص نشده باشند
-            if not output_excel_path:
-                output_excel_path = os.path.splitext(pdf_path)[0] + "_results.xlsx"
-            
-            # پردازش PDF و استخراج تگ‌ها
-            logger.info(f"Processing PDF: {pdf_path}")
-            
-            # استخراج نام فایل PDF
-            pdf_name = os.path.basename(pdf_path)
-            
-            # پردازش PDF و استخراج اطلاعات
-            page_results = self.extract_information_from_pdf(pdf_path)
-            
-            # جمع‌آوری همه تگ‌ها از تمام صفحات
-            all_tags = set()
-            all_jbs = set()
-            all_mcs = set()
-            tag_to_number = {}
-            
-            # پردازش نتایج هر صفحه
-            for page_num, page_data in page_results.items():
-                if isinstance(page_data, tuple) and len(page_data) >= 6:
-                    tags = page_data[0]
-                    jbs = page_data[1]
-                    mcs = page_data[2]
-                    page_tag_to_number = page_data[5] if len(page_data) > 5 else {}
-                    
-                    # اضافه کردن به مجموعه‌های کلی
-                    all_tags.update(tags)
-                    all_jbs.update(jbs)
-                    all_mcs.update(mcs)
-                    
-                    # اضافه کردن به دیکشنری tag_to_number
-                    tag_to_number.update(page_tag_to_number)
-            
-            # تنظیم متغیرهای آماری
-            self.all_tags = all_tags
-            self.all_jbs = all_jbs
-            self.total_tags = len(all_tags)
-            
-            # اگر لیست IO مشخص شده، تطبیق تگ‌ها انجام شود
-            if io_list_path and os.path.exists(io_list_path):
-                # خواندن لیست IO
-                io_list_df = pd.read_excel(io_list_path)
-                
-                # استخراج تگ‌های IO
-                io_list_tag_col = 'Tag No'  # نام ستون تگ در IO List
-                io_list_tags = [str(tag).strip().upper() for tag in io_list_df[io_list_tag_col] if pd.notna(tag)]
-                
-                # تطبیق تگ‌ها با استفاده از متد جدید
-                matched_tags_dict, unmatched_io_tags, unknown_signals = self.match_tags_with_io_list(
-                    list(all_tags), io_list_tags, similarity_threshold
-                )
-                
-                # تنظیم متغیرهای آماری
-                self.matched_tags_set = set(matched_tags_dict.keys())
-                self.matched_tags = len(matched_tags_dict)
-                
-                logger.info(f"Tag matching results: {self.matched_tags} matched out of {self.total_tags} tags")
-                logger.info(f"Exact matches: {self.exact_matches}, Similar matches: {self.similar_matches}")
-                logger.info(f"Unmatched IO tags: {len(unmatched_io_tags)}")
-                logger.info(f"Unknown signals: {len(unknown_signals)}")
-                
-                # ایجاد فایل اکسل میانی
-                intermediate_excel_path = os.path.splitext(output_excel_path)[0] + "_intermediate.xlsx"
-                df = self._process_page_results(page_results, tag_to_number, intermediate_excel_path)
-                
-                # ترکیب با لیست IO
-                final_df, unmatched_io_tags, unmatched_tags = self.process_excel_with_io_list(
-                    intermediate_excel_path, io_list_path, output_excel_path
-                )
-                
-                # بررسی تطابق شماره تگ با توضیحات کابل
-                is_consistent, max_tag_number, extracted_pair_number = self.check_tag_number_consistency(tag_to_number)
-                
-                # زمان پردازش
-                self.processing_time = time.time() - start_time
-                
-                # نتایج نهایی
-                return {
-                    'pdf_name': pdf_name,
-                    'total_pages': len(page_results),
-                    'total_tags': self.total_tags,
-                    'matched_tags': self.matched_tags,
-                    'exact_matches': self.exact_matches,
-                    'similar_matches': self.similar_matches,
-                    'unmatched_io_tags': len(unmatched_io_tags),
-                    'unmatched_tags': len(unmatched_tags),
-                    'unknown_signals': len(unknown_signals),
-                    'output_excel_path': output_excel_path,
-                    'processing_time': self.processing_time,
-                    'is_tag_number_consistent': is_consistent,
-                    'max_tag_number': max_tag_number,
-                    'extracted_pair_number': extracted_pair_number
-                }
-            else:
-                # اگر لیست IO مشخص نشده، فقط فایل اکسل میانی ایجاد شود
-                df = self.add_wire_colors_and_scr_to_dataframe(
-                    pd.DataFrame(), tag_to_number, output_excel_path, {pdf_name: page_results}, pdf_name
-                )
-                
-                # بررسی تطابق شماره تگ با توضیحات کابل
-                is_consistent, max_tag_number, extracted_pair_number = self.check_tag_number_consistency(tag_to_number)
-                
-                # زمان پردازش
-                self.processing_time = time.time() - start_time
-                
-                # نتایج نهایی
-                return {
-                    'pdf_name': pdf_name,
-                    'total_pages': len(page_results),
-                    'total_tags': self.total_tags,
-                    'matched_tags': 0,
-                    'exact_matches': 0,
-                    'similar_matches': 0,
-                    'unmatched_io_tags': 0,
-                    'unmatched_tags': self.total_tags,
-                    'unknown_signals': 0,
-                    'output_excel_path': output_excel_path,
-                    'processing_time': self.processing_time,
-                    'is_tag_number_consistent': is_consistent,
-                    'max_tag_number': max_tag_number,
-                    'extracted_pair_number': extracted_pair_number
-                }
-                
+            # Try to find Tesseract in common locations
+            common_locations = [
+                r'C:\Program Files\Tesseract-OCR\tesseract.exe',
+                r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
+                '/usr/bin/tesseract',
+                '/usr/local/bin/tesseract'
+            ]
+            tesseract_found = False
+            for location in common_locations:
+                if os.path.exists(location):
+                    pytesseract.pytesseract.tesseract_cmd = location
+                    tesseract_found = True
+                    break
+            if not tesseract_found:
+                raise RuntimeError("Tesseract not found in common locations")
         except Exception as e:
-            logger.error(f"Error processing PDF: {e}")
-            logger.error(traceback.format_exc())
-            return {
-                'error': str(e),
-                'pdf_name': os.path.basename(pdf_path),
-                'total_pages': 0,
-                'total_tags': 0,
-                'matched_tags': 0,
-                'exact_matches': 0,
-                'similar_matches': 0,
-                'unmatched_io_tags': 0,
-                'unmatched_tags': 0,
-                'unknown_signals': 0,
-                'output_excel_path': output_excel_path,
-                'processing_time': time.time() - start_time,
-                'is_tag_number_consistent': False,
-                'max_tag_number': 0,
-                'extracted_pair_number': 0
-            }
+            logger.error(f"Error initializing Tesseract in process: {e}")
+            return {}
+            
+        logger.info(f"Opening PDF: {pdf_path}")
+        pdf_document = fitz.open(pdf_path)
+        pdf_filename = os.path.basename(pdf_path)
+        print(f"\nProcessing PDF: {pdf_filename}")
+        print("-" * 50)
+        
+        # Create temporary directory for image processing
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Process pages sequentially within each PDF
+            for page_num in range(len(pdf_document)):
+                try:
+                    logger.info(f"Processing page {page_num + 1}/{len(pdf_document)}")
+                    
+                    # Get page
+                    page = pdf_document[page_num]
+                    
+                    # Convert page to image with higher resolution
+                    pix = page.get_pixmap(matrix=fitz.Matrix(300/72, 300/72))
+                    image_path = os.path.join(temp_dir, f"page_{page_num + 1}.png")
+                    pix.save(image_path)
+                    
+                    # Load image
+                    image = cv2.imread(image_path)
+                    if image is None:
+                        logger.error(f"Failed to load image for page {page_num + 1}")
+                        continue
+                    
+                    # Extract tags and JB identifiers
+                    tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions = self.extract_from_image(image)
+                    
+                    # Store results
+                    results[page_num + 1] = (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions)
+                    
+                    # Print results immediately for this page
+                    print(f"Page {page_num + 1}:")
+                    print(f"  Tags found ({len(tags)}): {', '.join(sorted(tags))}")
+                    print(f"  JB identifiers found ({len(jb_identifiers)}): {', '.join(sorted(jb_identifiers))}")
+                    print(f"  MC identifiers found ({len(mc_identifiers)}): {', '.join(sorted(mc_identifiers))}")
+                    print(f"  Cable descriptions found ({len(cable_descriptions)}): {', '.join(sorted(cable_descriptions))}")
+                    print(f"  Raw cable descriptions found ({len(raw_cable_descriptions)}): {', '.join(raw_cable_descriptions)}")
+                    print(f"  Spare identifiers found ({len(spare_identifiers)}): {', '.join(sorted(spare_identifiers))}")
+                    print(f"  Tag to number mapping ({len(tag_to_number)}): {tag_to_number}")
+                    
+                    # Clean up temporary image file
+                    try:
+                        os.remove(image_path)
+                    except:
+                        pass
+                        
+                except Exception as e:
+                    logger.error(f"Error processing page {page_num + 1}: {e}")
+                    continue
+                    
+        return results
 
     def process_multiple_pdfs(self, pdf_paths: 'List[str]') -> 'Dict[int, Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str]]]':
         """
