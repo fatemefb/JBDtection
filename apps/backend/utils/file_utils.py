@@ -138,16 +138,49 @@ def copy_to_output_paths(files_to_copy: List[str], server_output_dir: str = None
     
     return result
 
-def get_file_info(file_path: str) -> Dict[str, Any]:
+def get_file_info(file_path: Union[str, List[str]]) -> Dict[str, Any]:
     """
     دریافت اطلاعات فایل
     
     Args:
-        file_path: مسیر فایل
+        file_path: مسیر فایل یا لیست مسیرهای فایل
         
     Returns:
         دیکشنری اطلاعات فایل
     """
+    # اگر ورودی لیست باشد، اطلاعات اولین فایل موجود را برگردان
+    if isinstance(file_path, list):
+        logger.warning(f"Received a list of file paths instead of a single path. Using first valid path.")
+        for path in file_path:
+            if path and os.path.exists(path):
+                return get_file_info(path)
+        # اگر هیچ فایل معتبری در لیست نباشد
+        logger.error(f"No valid file path found in the list: {file_path}")
+        return {
+            'exists': False,
+            'size': 0,
+            'is_file': False,
+            'is_dir': False,
+            'permissions': '',
+            'last_modified': '',
+            'path': str(file_path),
+            'error': 'Invalid file path list'
+        }
+    
+    # اگر ورودی رشته نباشد، خطا برگردان
+    if not isinstance(file_path, str):
+        logger.error(f"Invalid file_path type: {type(file_path)}, expected string")
+        return {
+            'exists': False,
+            'size': 0,
+            'is_file': False,
+            'is_dir': False,
+            'permissions': '',
+            'last_modified': '',
+            'path': str(file_path),
+            'error': f'Invalid file_path type: {type(file_path)}'
+        }
+    
     file_info = {
         'exists': False,
         'size': 0,
@@ -190,6 +223,9 @@ def ensure_directory_exists(directory_path: str) -> bool:
         نتیجه عملیات (True در صورت موفقیت)
     """
     try:
+        if not directory_path:
+            logger.error(f"Empty directory path provided")
+            return False
         os.makedirs(directory_path, exist_ok=True)
         return True
     except Exception as e:

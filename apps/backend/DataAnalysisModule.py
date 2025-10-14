@@ -349,6 +349,589 @@ class TagJBExtractor:
         except Exception as e:
             logger.error(f"Error building tag vectors: {e}")
             raise
+    def calculate_tag_similarity(self, text1: str, text2: str) -> float:
+        """
+        محاسبه شباهت بین دو رشته متن با ترکیبی از روش‌های مختلف
+        
+        Args:
+            text1: رشته اول
+            text2: رشته دوم
+            
+        Returns:
+            امتیاز شباهت بین 0 تا 1
+        """
+        # روش 1: شباهت رشته‌ای ساده
+        string_similarity = self.calculate_string_similarity(text1, text2)
+        
+        # روش 2: شباهت بخش‌های تگ (اگر با خط تیره جدا شده‌اند)
+        parts_similarity = 0
+        if '-' in text1 and '-' in text2:
+            parts_similarity = self.calculate_parts_similarity(text1, text2)
+        
+        # روش 3: شباهت عددی
+        numeric_similarity = self.calculate_numeric_similarity(text1, text2)
+        
+        # روش 4: بررسی پیشوند مشترک
+        prefix_similarity = 0
+        if '-' in text1 and '-' in text2:
+            prefix1 = text1.split('-')[0]
+            prefix2 = text2.split('-')[0]
+            if prefix1 == prefix2:
+                prefix_similarity = 0.8
+        
+        # ترکیب امتیازهای مختلف - وزن بیشتر به شباهت رشته‌ای و پیشوند
+        final_similarity = max(
+            string_similarity,
+            0.7 * parts_similarity + 0.3 * string_similarity,
+            0.6 * prefix_similarity + 0.4 * string_similarity,
+            0.5 * numeric_similarity + 0.5 * string_similarity
+        )
+        
+        return final_similarity
+    
+    def calculate_string_similarity(self, str1: str, str2: str) -> float:
+        """
+        محاسبه شباهت دو رشته با استفاده از فاصله لواشتاین
+        
+        Args:
+            str1: رشته اول
+            str2: رشته دوم
+            
+        Returns:
+            امتیاز شباهت بین 0 تا 1 (1 برای رشته‌های کاملاً یکسان)
+        """
+        try:
+            import difflib
+            similarity = difflib.SequenceMatcher(None, str1, str2).ratio()
+            return similarity
+        except:
+            # اگر کتابخانه difflib در دسترس نبود، از روش ساده‌تر استفاده می‌کنیم
+            max_len = max(len(str1), len(str2))
+            if max_len == 0:
+                return 1.0
+                
+            # محاسبه تعداد کاراکترهای یکسان
+            same_chars = sum(c1 == c2 for c1, c2 in zip(str1, str2))
+            return same_chars / max_len
+    def calculate_numeric_similarity(self, tag1: str, tag2: str) -> float:
+        """
+        محاسبه شباهت بخش‌های عددی دو تگ
+        
+        Args:
+            tag1: تگ اول
+            tag2: تگ دوم
+            
+        Returns:
+            امتیاز شباهت بین 0 تا 1 (1 برای تگ‌های با بخش‌های عددی یکسان)
+        """
+        import re
+        
+        # استخراج بخش‌های عددی
+        numbers1 = [int(x) for x in re.findall(r'\d+', tag1)]
+        numbers2 = [int(x) for x in re.findall(r'\d+', tag2)]
+        
+        if not numbers1 or not numbers2:
+            return 0.0
+            
+        # محاسبه شباهت بر اساس اشتراک بخش‌های عددی
+        common_numbers = set(numbers1).intersection(set(numbers2))
+        all_numbers = set(numbers1).union(set(numbers2))
+        
+        if not all_numbers:
+            return 0.0
+            
+        return len(common_numbers) / len(all_numbers)
+
+    def calculate_parts_similarity(self, tag1: str, tag2: str) -> float:
+        """
+        محاسبه شباهت بخش‌های جدا شده با خط تیره دو تگ
+        
+        Args:
+            tag1: تگ اول
+            tag2: تگ دوم
+            
+        Returns:
+            امتیاز شباهت بین 0 تا 1
+        """
+        # جدا کردن تگ‌ها به بخش‌های مختلف با خط تیره
+        parts1 = tag1.split('-')
+        parts2 = tag2.split('-')
+        
+        # اگر تعداد بخش‌های تگ‌ها متفاوت است، امتیاز کمتری بده
+        if len(parts1) != len(parts2):
+            return 0.5
+            
+        # محاسبه امتیاز شباهت برای هر بخش
+        similarity_sum = 0
+        for p1, p2 in zip(parts1, parts2):
+            similarity_sum += self.calculate_string_similarity(p1, p2)
+        
+        # میانگین امتیازهای شباهت
+        return similarity_sum / max(len(parts1), 1)
+    
+    def extract_and_match_tags(self, ocr_text_items: list, io_list_tags: list, threshold: float = 0.8) -> tuple:
+        """
+        استخراج تگ‌های کاندید از متن OCR و تطبیق آنها با تگ‌های IO List
+        
+        Args:
+            ocr_text_items: لیست متن‌های استخراج شده از OCR
+            io_list_tags: لیست تگ‌های IO List
+            threshold: حد آستانه شباهت
+            
+        Returns:
+            tuple of (matched_tags, tag_candidates)
+            matched_tags: دیکشنری {ocr_text: io_tag} از تگ‌های تطبیق داده شده
+            tag_candidates: دیکشنری {ocr_text: [(io_tag, similarity), ...]} از کاندیداهای هر متن
+        """
+        # پیدا کردن کاندیداهای تگ برای هر متن OCR
+        tag_candidates = self.find_candidate_tags(ocr_text_items, io_list_tags, threshold)
+        
+        # انتخاب بهترین کاندیدا برای هر متن OCR
+        matched_tags = {}
+        for text, candidates in tag_candidates.items():
+            if candidates:
+                # بهترین کاندیدا (با بیشترین شباهت)
+                best_match, best_similarity = candidates[0]
+                
+                # اگر شباهت از حد آستانه بالاتر است
+                if best_similarity >= threshold:
+                    matched_tags[text] = best_match
+                    logger.info(f"Matched OCR text '{text}' to IO tag '{best_match}' with similarity {best_similarity:.2f}")
+                    
+                    # اضافه کردن به آمار
+                    if text.upper() == best_match.upper():
+                        self.exact_matches += 1
+                    else:
+                        self.similar_matches += 1
+                    
+                    # اضافه کردن به مجموعه تگ‌های تطبیق داده شده
+                    if hasattr(self, 'matched_tags_set'):
+                        self.matched_tags_set.add(text)
+        
+        # گزارش آمار
+        logger.info(f"Tag matching completed: {len(matched_tags)} matches found out of {len(ocr_text_items)} OCR text items")
+        logger.info(f"Exact matches: {self.exact_matches}, Similar matches: {self.similar_matches}")
+        
+        return matched_tags, tag_candidates
+    
+    def process_ocr_results_with_io_list(self, ocr_results: list, io_list_tags: list) -> dict:
+        """
+        پردازش نتایج OCR و تطبیق با تگ‌های IO List
+        
+        Args:
+            ocr_results: لیست نتایج OCR (متن‌های استخراج شده از تصویر)
+            io_list_tags: لیست تگ‌های IO List
+            
+        Returns:
+            دیکشنری تگ‌های تطبیق داده شده {ocr_text: io_tag}
+        """
+        # استخراج متن‌های OCR
+        ocr_text_items = []
+        for result in ocr_results:
+            if isinstance(result, dict) and 'text' in result:
+                ocr_text_items.append(result['text'])
+            elif isinstance(result, str):
+                ocr_text_items.append(result)
+        
+        # حذف متن‌های خالی و تکراری
+        ocr_text_items = [text.strip() for text in ocr_text_items if text.strip()]
+        ocr_text_items = list(set(ocr_text_items))
+        
+        logger.info(f"Processing {len(ocr_text_items)} unique OCR text items")
+        
+        # تطبیق تگ‌ها
+        matched_tags, _ = self.extract_and_match_tags(ocr_text_items, io_list_tags)
+        
+        return matched_tags
+
+    def find_candidate_tags(self, query_tag, io_tags, min_similarity=0.6):
+        """
+        پیدا کردن کاندیداهای مشابه برای یک تگ در لیست IO با فیلترهای بهبود یافته
+        
+        Args:
+            query_tag: تگ مورد جستجو
+            io_tags: لیست تگ‌های IO
+            min_similarity: حداقل میزان شباهت مورد نیاز
+        
+        Returns:
+            لیست مرتب شده از کاندیداها با امتیاز شباهت آنها
+        """
+        logger.info(f"CANDIDATE_FUNCTION_CALLED: Finding candidate tags for '{query_tag}' among {len(io_tags)} IO tags")
+        try:
+            logger.debug(f"Finding candidate tags for {query_tag} among {len(io_tags)} IO tags")
+            
+            # مرحله 0: بررسی تطبیق دقیق اولیه
+            query_tag_upper = str(query_tag).strip().upper()
+            for io_tag in io_tags:
+                if not io_tag or pd.isna(io_tag):
+                    continue
+                io_tag_upper = str(io_tag).strip().upper()
+                if query_tag_upper == io_tag_upper:
+                    logger.info(f"Found exact match: {query_tag} -> {io_tag}")
+                    return [(io_tag, 1.0)]
+            
+            # استخراج اجزای تگ مورد جستجو
+            query_prefix, query_first_num, query_second_num, query_suffix = self._split_tag_to_parts(query_tag)
+            
+            # محاسبه امتیاز شباهت برای تمام تگ‌های IO
+            similarity_scores = []
+            for io_tag in io_tags:
+                if not io_tag or pd.isna(io_tag):
+                    continue
+                
+                io_tag_str = str(io_tag).strip().upper()
+                
+                # استخراج اجزای تگ IO
+                io_prefix, io_first_num, io_second_num, io_suffix = self._split_tag_to_parts(io_tag)
+                
+                # فیلتر 1: پیشوند باید یکسان یا بسیار شبیه باشد
+                prefix_similarity = self._calculate_prefix_similarity(query_prefix, io_prefix)
+                if prefix_similarity < 0.85:  # آستانه بالاتر برای پیشوند
+                    continue
+                
+                # فیلتر 2: حداقل یکی از اعداد باید تطبیق نزدیک داشته باشد
+                first_num_match = self._are_numeric_parts_very_similar(query_first_num, io_first_num)
+                second_num_match = self._are_numeric_parts_very_similar(query_second_num, io_second_num)
+                
+                if not (first_num_match or second_num_match):
+                    # اگر هیچ یک از اعداد تطبیق نزدیک ندارند، رد می‌شود
+                    continue
+                
+                # فیلتر 3: اگر هر دو عدد وجود دارند، هر دو باید شبیه باشند
+                if query_first_num and query_second_num and io_first_num and io_second_num:
+                    if not (first_num_match and second_num_match):
+                        continue
+                
+                # محاسبه امتیاز نهایی شباهت
+                similarity = self._calculate_final_similarity_score(query_tag, io_tag)
+                
+                # افزودن به لیست اگر امتیاز از حداقل بیشتر باشد
+                if similarity >= min_similarity:
+                    similarity_scores.append((io_tag, similarity))
+            
+            # مرتب‌سازی بر اساس امتیاز شباهت (نزولی)
+            sorted_candidates = sorted(similarity_scores, key=lambda x: x[1], reverse=True)
+            
+            # فیلتر نهایی: فقط کاندیداهایی با امتیاز بالا را نگه دار
+            # اگر بهترین کاندیدا امتیاز بالای 0.95 دارد، فقط کاندیداهای بالای 0.9 را نگه دار
+            if sorted_candidates and sorted_candidates[0][1] > 0.95:
+                sorted_candidates = [c for c in sorted_candidates if c[1] > 0.9]
+            
+            logger.debug(f"Found {len(sorted_candidates)} candidate tags for {query_tag}")
+            for candidate, score in sorted_candidates[:3]:  # لاگ سه مورد اول
+                logger.debug(f"  Candidate: {candidate}, Similarity: {score:.2f}")
+            
+            return sorted_candidates
+            
+        except Exception as e:
+            logger.error(f"Error finding candidate tags for {query_tag}: {e}")
+            return []
+
+
+    def _split_tag_to_parts(self, tag):
+        """
+        تجزیه تگ به بخش‌های مختلف شامل پیشوند، اعداد و پسوند
+        
+        مثال: 
+        - PIT-100-01A -> ('PIT', '100', '01', 'A')
+        - PDIT-100-13 -> ('PDIT', '100', '13', '')
+        - FT-101A -> ('FT', '101', '', 'A')
+        
+        Args:
+            tag: رشته تگ
+        
+        Returns:
+            Tuple of (prefix, first_number, second_number, suffix)
+        """
+        try:
+            tag = str(tag).strip().upper()
+            
+            # الگوی استاندارد: پیشوند، خط تیره، عدد، خط تیره، عدد، پسوند (اختیاری)
+            pattern1 = r'^([A-Z]+)-(\d+)-(\d+)([A-Z]*)$'
+            
+            # الگوی جایگزین: پیشوند، خط تیره، عدد، پسوند (اختیاری)
+            pattern2 = r'^([A-Z]+)-(\d+)([A-Z]*)$'
+            
+            # الگوی ساده: پیشوند و عدد و پسوند (اختیاری)
+            pattern3 = r'^([A-Z]+)(\d+)([A-Z]*)$'
+            
+            # تلاش برای تطبیق با الگوی استاندارد
+            match = re.match(pattern1, tag)
+            if match:
+                prefix, first_num, second_num, suffix = match.groups()
+                return prefix, first_num, second_num, suffix
+                
+            # تلاش برای تطبیق با الگوی جایگزین
+            match = re.match(pattern2, tag)
+            if match:
+                prefix, first_num, suffix = match.groups()
+                return prefix, first_num, "", suffix
+                
+            # تلاش برای تطبیق با الگوی ساده
+            match = re.match(pattern3, tag)
+            if match:
+                prefix, first_num, suffix = match.groups()
+                return prefix, first_num, "", suffix
+            
+            # اگر هیچکدام از الگوها تطبیق نکرد
+            logger.debug(f"Tag {tag} does not match any pattern, returning parts as is")
+            
+            # جداسازی اجزاء بدون استفاده از الگو
+            prefix = ''.join(c for c in tag if c.isalpha())
+            numbers = ''.join(c for c in tag if c.isdigit())
+            
+            return prefix, numbers, "", ""
+            
+        except Exception as e:
+            logger.error(f"Error splitting tag {tag}: {e}")
+            return "", "", "", ""
+
+
+    def _calculate_prefix_similarity(self, prefix1, prefix2):
+        """
+        محاسبه میزان شباهت بین دو پیشوند
+        
+        Args:
+            prefix1: پیشوند اول
+            prefix2: پیشوند دوم
+        
+        Returns:
+            امتیاز شباهت بین 0 تا 1
+        """
+        try:
+            if prefix1 == prefix2:
+                return 1.0
+                
+            # اگر یکی از پیشوندها خالی باشد
+            if not prefix1 or not prefix2:
+                return 0.0
+                
+            # محاسبه فاصله Levenshtein
+            distance = Levenshtein.distance(prefix1, prefix2)
+            max_len = max(len(prefix1), len(prefix2))
+            
+            if max_len == 0:
+                return 1.0
+                
+            return 1.0 - (distance / max_len)
+            
+        except Exception as e:
+            logger.error(f"Error calculating prefix similarity: {e}")
+            return 0.0
+
+    def _are_numeric_parts_very_similar(self, num1, num2):
+        """
+        بررسی شباهت بسیار نزدیک بخش‌های عددی (سخت‌گیرانه‌تر)
+        
+        Args:
+            num1: عدد اول (به صورت رشته)
+            num2: عدد دوم (به صورت رشته)
+        
+        Returns:
+            True اگر اعداد بسیار شبیه هم باشند، False در غیر این صورت
+        """
+        try:
+            # اگر هر دو خالی باشند
+            if not num1 and not num2:
+                return True
+                
+            # اگر فقط یکی خالی باشد
+            if not num1 or not num2:
+                return False
+            
+            # حذف صفرهای ابتدایی برای مقایسه
+            num1_stripped = num1.lstrip('0') or '0'
+            num2_stripped = num2.lstrip('0') or '0'
+            
+            # تبدیل به عدد
+            try:
+                n1 = int(num1_stripped)
+                n2 = int(num2_stripped)
+            except ValueError:
+                # اگر تبدیل به عدد ممکن نبود، مقایسه رشته‌ای انجام بده
+                return num1_stripped == num2_stripped
+            
+            # بررسی برابری دقیق
+            if n1 == n2:
+                return True
+            
+            # تلرانس بسیار کم - فقط اختلاف 1 مجاز است
+            diff = abs(n1 - n2)
+            if diff <= 1:
+                return True
+                
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error comparing numeric parts {num1} and {num2}: {e}")
+            return False
+
+    def _calculate_final_similarity_score(self, tag1, tag2):
+        """
+        محاسبه امتیاز نهایی شباهت بین دو تگ
+        
+        Args:
+            tag1: تگ اول
+            tag2: تگ دوم
+        
+        Returns:
+            امتیاز شباهت بین 0 تا 1
+        """
+        try:
+            # تجزیه تگ‌ها به اجزا
+            prefix1, first_num1, second_num1, suffix1 = self._split_tag_to_parts(tag1)
+            prefix2, first_num2, second_num2, suffix2 = self._split_tag_to_parts(tag2)
+            
+            # محاسبه شباهت پیشوند - وزن 40%
+            prefix_similarity = self._calculate_prefix_similarity(prefix1, prefix2) * 0.4
+            
+            # بررسی شباهت اعداد اول - وزن 30%
+            if self._are_numeric_parts_very_similar(first_num1, first_num2):
+                first_num_similarity = 0.3  # امتیاز کامل
+            elif self._are_numeric_parts_similar(first_num1, first_num2):
+                first_num_similarity = 0.2  # امتیاز نسبی
+            else:
+                first_num_similarity = 0.0  # بدون امتیاز
+                
+            # بررسی شباهت اعداد دوم - وزن 20%
+            if self._are_numeric_parts_very_similar(second_num1, second_num2):
+                second_num_similarity = 0.2  # امتیاز کامل
+            elif self._are_numeric_parts_similar(second_num1, second_num2):
+                second_num_similarity = 0.1  # امتیاز نسبی
+            else:
+                second_num_similarity = 0.0  # بدون امتیاز
+                
+            # بررسی شباهت پسوندها - وزن 10%
+            suffix_similarity = 0.1 if suffix1 == suffix2 else 0.0
+            
+            # محاسبه امتیاز نهایی
+            total_similarity = prefix_similarity + first_num_similarity + second_num_similarity + suffix_similarity
+            
+            return total_similarity
+            
+        except Exception as e:
+            logger.error(f"Error calculating similarity score between {tag1} and {tag2}: {e}")
+            return 0.0
+
+    def validate_tag_candidates(self, query_tag, candidates):
+        """
+        اعتبارسنجی و فیلتر کردن کاندیداهای تگ با قوانین سخت‌گیرانه‌تر
+        
+        Args:
+            query_tag: تگ مورد جستجو
+            candidates: لیست کاندیداها با امتیازات آنها
+        
+        Returns:
+            لیست فیلتر شده کاندیداها
+        """
+        logger.info(f"CANDIDATE_FUNCTION_CALLED: Validating {len(candidates)} candidates for tag '{query_tag}'")
+
+        try:
+            if not candidates:
+                return []
+                
+            logger.debug(f"Validating {len(candidates)} candidates for tag {query_tag}")
+            
+            # فیلتر کردن کاندیداها با قوانین سخت‌گیرانه‌تر
+            valid_candidates = []
+            query_parts = self._split_tag_to_parts(query_tag)
+            query_prefix, query_first_num, query_second_num, query_suffix = query_parts
+            
+            for candidate, score in candidates:
+                candidate_parts = self._split_tag_to_parts(candidate)
+                candidate_prefix, candidate_first_num, candidate_second_num, candidate_suffix = candidate_parts
+                
+                # قانون 1: پیشوندها باید یکسان باشند (نه فقط شبیه)
+                if query_prefix.upper() != candidate_prefix.upper():
+                    logger.debug(f"  Rejecting {candidate} due to different prefix: {query_prefix} != {candidate_prefix}")
+                    continue
+                
+                # قانون 2: اگر query_tag عدد اول دارد، candidate هم باید داشته باشد و باید یکسان باشند
+                if query_first_num:
+                    if not candidate_first_num:
+                        logger.debug(f"  Rejecting {candidate} due to missing first number")
+                        continue
+                    if not self._are_numeric_parts_very_similar(query_first_num, candidate_first_num):
+                        logger.debug(f"  Rejecting {candidate} due to different first number: {query_first_num} != {candidate_first_num}")
+                        continue
+                
+                # قانون 3: اگر query_tag عدد دوم دارد، candidate هم باید داشته باشد و باید یکسان باشند
+                if query_second_num:
+                    if not candidate_second_num:
+                        logger.debug(f"  Rejecting {candidate} due to missing second number")
+                        continue
+                    if not self._are_numeric_parts_very_similar(query_second_num, candidate_second_num):
+                        logger.debug(f"  Rejecting {candidate} due to different second number: {query_second_num} != {candidate_second_num}")
+                        continue
+                
+                # قانون 4: اگر پسوند وجود دارد، باید یکسان باشد
+                if query_suffix and candidate_suffix:
+                    if query_suffix.upper() != candidate_suffix.upper():
+                        logger.debug(f"  Rejecting {candidate} due to different suffix: {query_suffix} != {candidate_suffix}")
+                        continue
+                
+                # قانون 5: امتیاز شباهت باید بالاتر از 0.8 باشد
+                if score < 0.8:
+                    logger.debug(f"  Rejecting {candidate} due to low similarity score: {score:.2f}")
+                    continue
+                
+                # کاندیدای معتبر
+                valid_candidates.append((candidate, score))
+                logger.debug(f"  Accepted {candidate} with score {score:.2f}")
+            
+            logger.debug(f"Validated candidates: {len(valid_candidates)} out of {len(candidates)}")
+            
+            # اگر چندین کاندیدا باقی مانده، فقط بهترین را نگه دار
+            if len(valid_candidates) > 1:
+                best_candidate = max(valid_candidates, key=lambda x: x[1])
+                # فقط کاندیداهایی که امتیازشان خیلی نزدیک به بهترین است را نگه دار
+                valid_candidates = [c for c in valid_candidates if c[1] >= best_candidate[1] - 0.05]
+            
+            return valid_candidates
+            
+        except Exception as e:
+            logger.error(f"Error validating candidates for {query_tag}: {e}")
+            return []
+
+
+    def _are_numeric_parts_very_similar(self, num1, num2):
+        """
+        بررسی شباهت بسیار نزدیک بخش‌های عددی
+        
+        Args:
+            num1: عدد اول (به صورت رشته)
+            num2: عدد دوم (به صورت رشته)
+        
+        Returns:
+            True اگر اعداد بسیار شبیه هم باشند، False در غیر این صورت
+        """
+        try:
+            # اگر هر دو خالی باشند
+            if not num1 and not num2:
+                return True
+                
+            # اگر فقط یکی خالی باشد
+            if not num1 or not num2:
+                return False
+                
+            # تبدیل به عدد
+            n1 = int(num1)
+            n2 = int(num2)
+            
+            # بررسی برابری دقیق
+            if n1 == n2:
+                return True
+                
+            # بررسی شباهت با تلرانس کمتر - اختلاف کمتر از 2 یا 5% اختلاف
+            diff = abs(n1 - n2)
+            if diff <= 2 or diff / max(n1, n2) <= 0.05:
+                return True
+                
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error comparing numeric parts {num1} and {num2}: {e}")
+            return False
 
     def set_patterns(self, jb_examples=None, mc_examples=None, spare_examples=None, 
                     cable_examples=None, wire_color_rule=None, scr_number_rule=None):
@@ -419,15 +1002,18 @@ class TagJBExtractor:
                 self.mc_regex = re.compile(rf'\b{re.escape(self.mc_examples)}-?\d+\b', re.IGNORECASE)
                 logger.debug(f"MC regex compiled: {self.mc_regex.pattern}")
             
-            # الگوی SPARE
+            # 🔧 FIX: الگوی SPARE ساده‌تر - فقط کلمه "spare" یا "sp"
             if self.spare_examples:
-                self.spare_regex = re.compile(rf'\b{re.escape(self.spare_examples)}\b', re.IGNORECASE)
-                logger.debug(f"SPARE regex compiled: {self.spare_regex.pattern}")
+                self.spare_regex = re.compile(r'\b(spare|sp)\b', re.IGNORECASE)
+                logger.debug(f"SPARE regex compiled (simple pattern): {self.spare_regex.pattern}")
+            
+            logger.info("✅ All regex patterns compiled successfully")
                 
         except Exception as e:
             logger.error(f"Error compiling regex patterns: {e}")
-        
-    def extract_from_image(self, image: np.ndarray) -> 'Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str]]':
+
+
+    def extract_from_image(self, image: np.ndarray) -> 'Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str], Dict[str, Dict]]':
         """
         Extract tags, JB identifiers, MC identifiers, cable descriptions, SPAREs, and raw cable descriptions from the image.
         Also assigns and returns sequential numbers to tags and spares.
@@ -436,9 +1022,12 @@ class TagJBExtractor:
             image: Input image as numpy array
             
         Returns:
-            Tuple of (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions)
+            Tuple of (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, 
+                    tag_to_number, raw_cable_descriptions, tag_match_info)
         """
-        # اطمینان از وجود الگوها
+        # ============================================================
+        # مرحله 0: مقداردهی اولیه و بررسی الگوها
+        # ============================================================
         if not hasattr(self, 'jb_examples') or not self.jb_examples:
             logger.warning("JB examples not set, using default 'JB'")
             self.jb_examples = "JB"
@@ -451,17 +1040,18 @@ class TagJBExtractor:
         
         logger.info(f"Using patterns - JB: '{self.jb_examples}', MC: '{self.mc_examples}', SPARE: '{self.spare_examples}'")
         
-        # اگر تصویر grayscale است، به RGB تبدیل کن
+        # تبدیل تصویر به RGB در صورت نیاز
         if len(image.shape) == 2:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
         
-        # تطبیق کامل config با draw_bounding_boxes
+        # تنظیم OCR config
         custom_config = r'--oem 3 --psm 11 -c tessedit_char_whiteList=ABCDEFGHIJKLMNOPQRSTUVWXYZsparetcoilpr0123456789-.'
         
-        # OCR output with position data
+        # اجرای OCR
         logger.info("Starting OCR extraction...")
         ocr_data = pytesseract.image_to_data(image, config=custom_config, output_type=pytesseract.Output.DICT)
 
+        # مقداردهی متغیرها
         tags = set()
         jb_identifiers = set()
         mc_identifiers = set()
@@ -469,164 +1059,244 @@ class TagJBExtractor:
         spare_identifiers = []
         raw_cable_descriptions = []
         tag_to_number = {}
-        processed_identifiers = set()
+        tag_match_info = {}  # 🔧 دیکشنری اصلی برای ردیابی نوع تطبیق
         
-        # استفاده از الگوی کامپایل شده برای SPARE
+        # 🔧 FIX 1: جداسازی processed_identifiers برای تگ‌ها و SPARE‌ها
+        processed_tag_texts = set()  # فقط برای OCR texts تگ‌ها
+        processed_spare_indices = set()  # برای index های SPARE در OCR
+        
+        # کامپایل regex patterns
         if not hasattr(self, 'spare_regex') or not self.spare_regex:
             self._compile_regex_patterns()
         
-        # بهبود regex pattern برای cable descriptions
+        # 🔧 FIX: ایجاد الگوی SPARE ساده
+        spare_pattern = re.compile(r'\b(spare|sp)\b', re.IGNORECASE)
+        logger.debug(f"SPARE pattern compiled: {spare_pattern.pattern}")
+        
+        # الگوهای cable description
         cable_patterns = [
-            re.compile(r'(\d+)\s*(P|PR|PAIR)', re.IGNORECASE),  # pair patterns
-            re.compile(r'(\d+)\s*(T|TR|TRIPLE)', re.IGNORECASE),  # triple patterns  
-            re.compile(r'(\d+)\s*(C|CR|CORE)', re.IGNORECASE),  # core patterns
-            re.compile(r'(\d+)\s*PAIR', re.IGNORECASE),  # direct pair
-            re.compile(r'(\d+)\s*TRIPLE', re.IGNORECASE),  # direct triple
-            re.compile(r'(\d+)\s*CORE', re.IGNORECASE),  # direct core
-            re.compile(r'(\d+)P\b', re.IGNORECASE),  # shorthand like "12P"
-            re.compile(r'(\d+)T\b', re.IGNORECASE),  # shorthand like "12T"
-            re.compile(r'(\d+)C\b', re.IGNORECASE),  # shorthand like "12C"
+            re.compile(r'(\d+)\s*(P|PR|PAIR)', re.IGNORECASE),
+            re.compile(r'(\d+)\s*(T|TR|TRIPLE)', re.IGNORECASE),
+            re.compile(r'(\d+)\s*(C|CR|CORE)', re.IGNORECASE),
+            re.compile(r'(\d+)\s*PAIR', re.IGNORECASE),
+            re.compile(r'(\d+)\s*TRIPLE', re.IGNORECASE),
+            re.compile(r'(\d+)\s*CORE', re.IGNORECASE),
+            re.compile(r'(\d+)P\b', re.IGNORECASE),
+            re.compile(r'(\d+)T\b', re.IGNORECASE),
+            re.compile(r'(\d+)C\b', re.IGNORECASE),
         ]
 
         mc_positions = []
         mc_indices = []
         
-        # Initialize sequence number for tags and spares
+        # شمارنده‌ها
         sequence_number = 1
-        
-        # Step 1: پردازش اولیه تمام کلمات
-        logger.info("Processing all words from OCR...")
         spare_found_count = 0
+
+        # ============================================================
+        # 🆕 مرحله 1: جستجوی EXACT TAG MATCHES (اولویت اول)
+        # ============================================================
+        logger.info("Phase 1: Searching for EXACT tag matches...")
+        exact_matched_tags = set()
+        
+        # 🔧 بررسی وجود vector_matcher
+        if not hasattr(self, 'vector_matcher'):
+            logger.error("❌ vector_matcher NOT FOUND - Phase 1 will be skipped!")
+            logger.error("   All tags will be marked as 'unknown'")
+        else:
+            logger.info(f"✅ vector_matcher exists")
+            if hasattr(self.vector_matcher, 'reference_tags'):
+                logger.info(f"   Reference tags count: {len(self.vector_matcher.reference_tags)}")
+            
+            for i, word in enumerate(ocr_data['text']):
+                word_clean = word.strip().upper()
+                if not word_clean or len(word_clean) < 4:
+                    continue
+                
+                # 🔧 رد کردن JB/MC/SPARE (بدون اضافه به processed)
+                if (self.jb_examples in word_clean or 
+                    self.mc_examples in word_clean or 
+                    spare_pattern.search(word_clean)):
+                    continue
+                
+                # بررسی exact match با vector matcher
+                similar_tags = self.vector_matcher.find_similar_tags(word_clean)
+                if similar_tags:
+                    best_match, best_score = similar_tags[0]
+                    
+                    # فقط exact matches (score >= 0.999)
+                    if best_score >= 0.999:
+                        if best_match not in exact_matched_tags:
+                            exact_matched_tags.add(best_match)
+                            tags.add(best_match)
+                            
+                            # تخصیص شماره
+                            if best_match not in tag_to_number:
+                                tag_to_number[best_match] = sequence_number
+                                sequence_number += 1
+                            
+                            # 🔧 FIX 2: ثبت صحیح اطلاعات match
+                            tag_match_info[best_match] = {
+                                'match_type': 'exact',
+                                'score': best_score,
+                                'ocr_text': word_clean
+                            }
+                            
+                            processed_tag_texts.add(word_clean)
+                            logger.info(f"✅ EXACT match: {word_clean} → {best_match} (score: {best_score:.3f})")
+        
+        logger.info(f"Phase 1 complete: Found {len(exact_matched_tags)} exact matches")
+        
+        # ============================================================
+        # 🆕 مرحله 2: جستجوی SIMILAR TAG MATCHES
+        # ============================================================
+        logger.info("Phase 2: Searching for SIMILAR tag matches...")
+        similar_matched_tags = set()
+        
+        if hasattr(self, 'vector_matcher'):
+            for i, word in enumerate(ocr_data['text']):
+                word_clean = word.strip().upper()
+                if not word_clean or len(word_clean) < 4:
+                    continue
+                
+                # اگر قبلاً پردازش شده، رد کن
+                if word_clean in processed_tag_texts:
+                    continue
+                
+                # رد کردن JB/MC/SPARE
+                if (self.jb_examples in word_clean or 
+                    self.mc_examples in word_clean or 
+                    spare_pattern.search(word_clean)):
+                    continue
+                
+                # بررسی similar match
+                similar_tags = self.vector_matcher.find_similar_tags(word_clean)
+                if similar_tags:
+                    best_match, best_score = similar_tags[0]
+                    
+                    # فقط similar matches (threshold <= score < 0.999)
+                    if best_score >= self.vector_matcher.similarity_threshold and best_score < 0.999:
+                        
+                        # بررسی: آیا این تگ قبلاً با exact match اضافه شده؟
+                        if best_match in exact_matched_tags:
+                            logger.debug(f"⚠️ Ignoring similar match for {word_clean} → {best_match} (exact exists)")
+                            continue
+                        
+                        # بررسی: آیا این تگ قبلاً با similar match اضافه شده؟
+                        if best_match in similar_matched_tags:
+                            logger.debug(f"⚠️ Ignoring duplicate similar match for {word_clean} → {best_match}")
+                            continue
+                        
+                        similar_matched_tags.add(best_match)
+                        tags.add(best_match)
+                        
+                        # تخصیص شماره
+                        if best_match not in tag_to_number:
+                            tag_to_number[best_match] = sequence_number
+                            sequence_number += 1
+                        
+                        # 🔧 FIX 3: ثبت صحیح اطلاعات similar match
+                        tag_match_info[best_match] = {
+                            'match_type': 'similar',
+                            'score': best_score,
+                            'ocr_text': word_clean
+                        }
+                        
+                        processed_tag_texts.add(word_clean)
+                        
+                        # ثبت گزارش
+                        if hasattr(self, 'similarity_reports'):
+                            self.similarity_reports.append({
+                                'input_tag': word_clean,
+                                'matched_tag': best_match,
+                                'similarity_score': best_score,
+                            })
+                        
+                        logger.info(f"⚠️ SIMILAR match: {word_clean} → {best_match} (score: {best_score:.3f})")
+        else:
+            logger.warning("⚠️ vector_matcher not found - Phase 2 skipped")
+        
+        logger.info(f"Phase 2 complete: Found {len(similar_matched_tags)} similar matches")
+        
+        # ============================================================
+        # 🔧 FIX 4: پردازش SPARE، JB، MC (مستقل از تگ‌ها)
+        # ============================================================
+        logger.info("Phase 3: Processing SPARE, MC, JB identifiers...")
         
         for i, word in enumerate(ocr_data['text']):
             word_clean = word.strip().upper()
             if not word_clean:
                 continue
             
-            # DEBUG: چاپ همه کلمات برای یافتن SPARE
-            if self.spare_examples in word_clean:
-                logger.debug(f"Potential {self.spare_examples} word found: '{word_clean}' at index {i}")
-
-            # تشخیص SPARE identifiers - استفاده از regex کامپایل شده
-            if self.spare_regex and self.spare_regex.search(word_clean):
-                spare_identifiers.append(word_clean)
-                processed_identifiers.add(word_clean)
-                spare_found_count += 1
-                logger.info(f"*** {self.spare_examples} FOUND ***: {word_clean} at index {i}")
-                
-                # Assign a sequence number to this SPARE
-                spare_id = f"{self.spare_examples}_{spare_found_count}"
-                tag_to_number[spare_id] = sequence_number
-                sequence_number += 1
-                continue
-            
-            # جستجوی manual برای کلمات مشابه SPARE (بدون تغییر)
-            spare_match = False
-            spare_variations = [self.spare_examples, self.spare_examples.replace('A', 'E'), self.spare_examples.replace('A', 'I')]
-            for variation in spare_variations:
-                if variation in word_clean:
+            # 🔧 FIX 5: شناسایی SPARE (بدون تداخل با تگ‌ها)
+            # استفاده از الگوی ساده‌تر
+            if spare_pattern.search(word_clean):
+                # بررسی که این index قبلاً پردازش نشده
+                if i not in processed_spare_indices:
                     spare_identifiers.append(word_clean)
-                    processed_identifiers.add(word_clean)
+                    processed_spare_indices.add(i)
                     spare_found_count += 1
-                    logger.info(f"*** {self.spare_examples} VARIATION FOUND ***: {word_clean} (matched: {variation}) at index {i}")
                     
-                    # Assign a sequence number to this SPARE variation
+                    # ایجاد شناسه یکتا برای SPARE
                     spare_id = f"{self.spare_examples}_{spare_found_count}"
                     tag_to_number[spare_id] = sequence_number
                     sequence_number += 1
-                    spare_match = True
-                    break
-            
-            if spare_match:
+                    
+                    # 🔧 FIX 6: اضافه کردن SPARE به tag_match_info
+                    tag_match_info[spare_id] = {
+                        'match_type': 'spare',
+                        'score': 1.0,
+                        'ocr_text': word_clean
+                    }
+                    
+                    logger.info(f"✅ {self.spare_examples} FOUND: {word_clean} (#{tag_to_number[spare_id]})")
                 continue
             
-            # تشخیص MC identifiers (بدون تغییر)
+            # شناسایی MC
             if len(word_clean) >= len(self.mc_examples) + 1 and self.mc_examples in word_clean and 'AS' not in word_clean:
                 x, y = ocr_data['left'][i], ocr_data['top'][i]
                 mc_positions.append((x, y))
                 mc_indices.append(i)
                 mc_identifiers.add(word_clean)
-                processed_identifiers.add(word_clean)
                 logger.info(f"{self.mc_examples} identifier found: {word_clean}")
                 continue
-
-            # تشخیص JB identifiers
+            
+            # شناسایی JB
             if word_clean.startswith(self.jb_examples):
                 jb_identifiers.add(word_clean)
-                processed_identifiers.add(word_clean)
                 logger.info(f"{self.jb_examples} identifier found: {word_clean}")
                 continue
-            
-            # تشخیص Tags - این بخش در حلقه اصلی قرار می‌گیرد
-            if (len(word_clean) >= 4 and 
-                self.jb_examples not in word_clean and 
-                self.mc_examples not in word_clean and 
-                word_clean not in processed_identifiers):
-                if hasattr(self, 'vector_matcher'):
-                    similar_tags = self.vector_matcher.find_similar_tags(word_clean)
-                    if similar_tags:
-                        best_match, best_score = similar_tags[0]
-                        if best_score >= self.vector_matcher.similarity_threshold:
-                            tags.add(best_match)
-                            
-                            # Assign a sequence number to this tag if not already assigned
-                            if best_match not in tag_to_number:
-                                tag_to_number[best_match] = sequence_number
-                                sequence_number += 1
-                                
-                            self.similarity_reports.append({
-                                'input_tag': word_clean,
-                                'matched_tag': best_match,
-                                'similarity_score': best_score,
-                            })
-                            logger.info(f"Found tag: {best_match} (similarity: {best_score}, number: {tag_to_number[best_match]})")
-                            processed_identifiers.add(word_clean)
-                            continue
-
-        logger.info(f"{self.spare_examples} search completed. Found {spare_found_count} {self.spare_examples} identifiers.")
-        logger.info(f"Final spare_identifiers found: {spare_identifiers}")
-        logger.info(f"Total tags with assigned numbers: {len(tag_to_number) - spare_found_count}")
-        logger.info(f"Total spares with assigned numbers: {spare_found_count}")
-
-        # Step 2: Find cable descriptions near each MC using spatial proximity
+        
+        # ============================================================
+        # مرحله 4: استخراج cable descriptions
+        # ============================================================
+        logger.info("Phase 4: Extracting cable descriptions...")
+        
         for mc_i in mc_indices:
             mc_x, mc_y = ocr_data['left'][mc_i], ocr_data['top'][mc_i]
             
-            # تعریف محدوده مکانی جستجو (پیکسل)
-            search_radius_x = 300  # محدوده افقی
-            search_radius_y = 100  # محدوده عمودی
+            search_radius_x = 300
+            search_radius_y = 100
             
-            # جستجو بر اساس موقعیت مکانی
             nearby_words = []
-            nearby_indices = []
-            
             for j, word_j in enumerate(ocr_data['text']):
                 if not word_j.strip() or len(word_j.strip()) < 1:
                     continue
-                    
-                word_x, word_y = ocr_data['left'][j], ocr_data['top'][j]
                 
-                # محاسبه فاصله مکانی
+                word_x, word_y = ocr_data['left'][j], ocr_data['top'][j]
                 distance_x = abs(word_x - mc_x)
                 distance_y = abs(word_y - mc_y)
                 
-                # اگر در محدوده مکانی باشد
                 if distance_x <= search_radius_x and distance_y <= search_radius_y:
                     nearby_words.append(word_j.strip())
-                    nearby_indices.append(j)
-                    logger.debug(f"Word '{word_j.strip()}' at distance ({distance_x}, {distance_y}) from {self.mc_examples}")
-                
-            # تمیز کردن و ترکیب متن
-            combined_text = ' '.join(nearby_words).upper()
-            logger.debug(f"Combined text near {self.mc_examples} {mc_i}: '{combined_text}'")
             
-            # ذخیره متن اصلی در متغیر raw_cable_descriptions
+            combined_text = ' '.join(nearby_words).upper()
+            
             if combined_text:
                 raw_cable_descriptions.append(combined_text)
                 logger.info(f"Added raw cable description: '{combined_text}'")
             
-            # جستجو با patterns مختلف
-            found_cable = False
+            # جستجو با patterns
             for pattern in cable_patterns:
                 matches = pattern.findall(combined_text)
                 for match in matches:
@@ -634,11 +1304,9 @@ class TagJBExtractor:
                         number = match[0]
                         cable_type = match[1] if len(match) > 1 else ''
                     else:
-                        # برای patterns ساده‌تر
                         number = match
                         cable_type = ''
                     
-                    # تعیین نوع کابل
                     cable_type_full = ''
                     if cable_type:
                         cable_type_upper = cable_type.upper()
@@ -649,7 +1317,6 @@ class TagJBExtractor:
                         elif cable_type_upper in ['C', 'CR', 'CORE']:
                             cable_type_full = 'core'
                     else:
-                        # حدس زدن نوع بر اساس context
                         if 'PAIR' in combined_text:
                             cable_type_full = 'pair'
                         elif 'TRIPLE' in combined_text:
@@ -657,35 +1324,64 @@ class TagJBExtractor:
                         elif 'CORE' in combined_text:
                             cable_type_full = 'core'
                         else:
-                            cable_type_full = 'pair'  # default
+                            cable_type_full = 'pair'
                     
                     cable_desc = f"{number} {cable_type_full}"
                     if cable_desc not in cable_descriptions:
                         cable_descriptions.append(cable_desc)
                         logger.info(f"Found cable description: {cable_desc}")
-                        found_cable = True
-            
-            # اگر هیچ cable description پیدا نشد، تمام کلمات نزدیک را چاپ کن
-            if not found_cable:
-                logger.debug(f"No cable description found near {self.mc_examples}. Nearby words: {nearby_words}")
-                
-                # جستجوی دستی برای اعداد
-                for word in nearby_words:
-                    clean_word = word.strip().upper()
-                    # جستجو برای اعداد منفرد که ممکن است cable باشند
-                    if re.match(r'^\d+$', clean_word):
-                        potential_cable = f"{clean_word} pair"  # default to pair
-                        logger.debug(f"Found potential cable number: {clean_word}")
-                        if potential_cable not in cable_descriptions:
-                            cable_descriptions.append(potential_cable)
-
-        logger.info(f'Final cable_descriptions: {cable_descriptions}')
-        logger.info(f'Final raw_cable_descriptions: {raw_cable_descriptions}')
-        logger.info(f'Final spare_identifiers: {spare_identifiers}')
-        logger.info(f'Final tag_to_number mapping: {tag_to_number}')
-        logger.info(f'Final tags found: {tags}')
         
-        # Update final sets
+        # ============================================================
+        # 🔧 FIX 7: اطمینان از وجود tag_match_info برای همه تگ‌ها
+        # ============================================================
+        for tag in tags:
+            if tag not in tag_match_info:
+                logger.warning(f"⚠️ Tag '{tag}' missing from tag_match_info, adding default 'unknown'")
+                tag_match_info[tag] = {
+                    'match_type': 'unknown',
+                    'score': 0.0,
+                    'ocr_text': tag
+                }
+        
+        # ============================================================
+        # مرحله 5: ذخیره اطلاعات در instance
+        # ============================================================
+        if not hasattr(self, 'page_match_info'):
+            self.page_match_info = {}
+        
+        self.page_match_info['tags'] = tags
+        self.page_match_info['tag_match_info'] = tag_match_info
+        self.page_match_info['exact_matched_tags'] = exact_matched_tags
+        self.page_match_info['similar_matched_tags'] = similar_matched_tags
+        
+        # ============================================================
+        # لاگ نهایی با جزئیات کامل
+        # ============================================================
+        logger.info(f'='*60)
+        logger.info(f'EXTRACTION COMPLETE - Final Results:')
+        logger.info(f'  📊 Tags:')
+        logger.info(f'     - Exact matches: {len(exact_matched_tags)}')
+        logger.info(f'     - Similar matches: {len(similar_matched_tags)}')
+        logger.info(f'     - Total unique tags: {len(tags)}')
+        logger.info(f'  🔧 Components:')
+        logger.info(f'     - JB identifiers: {len(jb_identifiers)}')
+        logger.info(f'     - MC identifiers: {len(mc_identifiers)}')
+        logger.info(f'     - SPARE identifiers: {len(spare_identifiers)}')
+        logger.info(f'     - Cable descriptions: {len(cable_descriptions)}')
+        logger.info(f'  📋 Metadata:')
+        logger.info(f'     - tag_match_info entries: {len(tag_match_info)}')
+        logger.info(f'     - tag_to_number entries: {len(tag_to_number)}')
+        logger.info(f'='*60)
+        
+        # 🔧 Debug: نمایش نمونه‌هایی از هر نوع
+        if exact_matched_tags:
+            logger.debug(f"Sample exact matches: {list(exact_matched_tags)[:3]}")
+        if similar_matched_tags:
+            logger.debug(f"Sample similar matches: {list(similar_matched_tags)[:3]}")
+        if spare_identifiers:
+            logger.debug(f"SPARE identifiers: {spare_identifiers}")
+        
+        # به‌روزرسانی مجموعه‌های کلی
         if hasattr(self, 'all_tags'):
             self.all_tags.update(tags)
         if hasattr(self, 'all_jbs'):
@@ -697,10 +1393,13 @@ class TagJBExtractor:
         if hasattr(self, 'matched_tags_set'):
             self.matched_tags_set.update(tags)
         
-        # اطمینان از برگرداندن 7 مقدار
-        logger.info(f"Returning 7 values from extract_from_image")
-        return tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions   
-        
+        # ============================================================
+        # بازگشت 8 مقدار
+        # ============================================================
+        logger.info(f"✅ Returning 8 values from extract_from_image")
+        return (tags, jb_identifiers, mc_identifiers, cable_descriptions, 
+                spare_identifiers, tag_to_number, raw_cable_descriptions, tag_match_info)
+
     def get_similarity_reports(self) -> 'List[Dict[str, Any]]':
         """
         دریافت گزارشات کامل شباهت بین تگ‌های شناسایی شده و تگ‌های مرجع
@@ -755,91 +1454,7 @@ class TagJBExtractor:
         gray = cv2.dilate(gray, kernel_dilate, iterations=1)
         
         return gray
-
-    def find_candidate_tags(self, ocr_text: str, io_list_tags: 'List[str]', similarity_threshold: float = 0.8) -> 'List[Tuple[str, float]]':
-        """
-        یافتن تگ‌های کاندیدا از لیست IO که به متن OCR شباهت دارند
-        
-        Args:
-            ocr_text: متن استخراج شده از OCR
-            io_list_tags: لیست تگ‌های IO
-            similarity_threshold: آستانه شباهت برای انتخاب کاندیدا
             
-        Returns:
-            لیست تاپل‌های (تگ IO، امتیاز شباهت) که امتیاز آن‌ها بالاتر از آستانه است
-        """
-        try:
-            # پیش‌پردازش متن OCR
-            ocr_text = str(ocr_text).strip().upper()
-            if not ocr_text:
-                return []
-            
-            # محاسبه شباهت با همه تگ‌های IO
-            candidates = []
-            for io_tag in io_list_tags:
-                io_tag_str = str(io_tag).strip().upper()
-                if not io_tag_str:
-                    continue
-                
-                # محاسبه امتیاز شباهت
-                similarity = self.calculate_similarity(ocr_text, io_tag_str)
-                
-                # اگر امتیاز بالاتر از آستانه است، به عنوان کاندیدا اضافه کن
-                if similarity >= similarity_threshold:
-                    candidates.append((io_tag, similarity))
-            
-            # مرتب‌سازی کاندیداها بر اساس امتیاز شباهت (نزولی)
-            candidates.sort(key=lambda x: x[1], reverse=True)
-            
-            return candidates
-            
-        except Exception as e:
-            logger.error(f"Error finding candidate tags: {e}")
-            return []
-            
-    def validate_tag_candidates(self, ocr_text: str, candidates: 'List[Tuple[str, float]]', 
-                               exact_match_required: bool = True) -> 'Tuple[List[str], List[Tuple[str, float]]]':
-        """
-        اعتبارسنجی تگ‌های کاندیدا و تقسیم آن‌ها به تگ‌های تأیید شده و ناشناخته
-        
-        Args:
-            ocr_text: متن اصلی OCR
-            candidates: لیست تاپل‌های (تگ IO، امتیاز شباهت)
-            exact_match_required: آیا تطابق دقیق برای تأیید نهایی لازم است
-            
-        Returns:
-            تاپلی از (لیست تگ‌های تأیید شده، لیست تگ‌های ناشناخته با امتیاز شباهت)
-        """
-        try:
-            # پیش‌پردازش متن OCR
-            ocr_text = str(ocr_text).strip().upper()
-            if not ocr_text or not candidates:
-                return [], []
-            
-            validated_tags = []
-            unknown_signals = []
-            
-            for io_tag, similarity in candidates:
-                io_tag_str = str(io_tag).strip().upper()
-                
-                # بررسی تطابق دقیق اگر لازم است
-                if exact_match_required:
-                    # اگر متن OCR دقیقاً با تگ IO مطابقت دارد، آن را تأیید کن
-                    if ocr_text == io_tag_str:
-                        validated_tags.append(io_tag)
-                    else:
-                        # در غیر این صورت به عنوان ناشناخته اضافه کن
-                        unknown_signals.append((io_tag, similarity))
-                else:
-                    # اگر تطابق دقیق لازم نیست، همه کاندیداها را تأیید کن
-                    validated_tags.append(io_tag)
-            
-            return validated_tags, unknown_signals
-            
-        except Exception as e:
-            logger.error(f"Error validating tag candidates: {e}")
-            return [], []
-
     def calculate_similarity(self, text1: str, text2: str) -> float:
         """
         محاسبه امتیاز شباهت بین دو رشته متنی
@@ -903,69 +1518,110 @@ class TagJBExtractor:
         # برای حفظ سازگاری با کد قبلی، فقط دیکشنری تطبیق را برگردان
         return matched_tags_dict
 
-    def match_tags_with_io_list(self, extracted_tags: 'List[str]', io_list_tags: 'List[str]', 
-                              similarity_threshold: float = 0.8) -> 'Tuple[Dict[str, str], List[str], List[Tuple[str, float]]]':
+    def match_tags_with_io_list(self, pdf_tags, io_tags, min_similarity=0.75):
         """
-        تطبیق تگ‌های استخراج شده با لیست IO با استفاده از فرآیند دو مرحله‌ای
+        تطبیق تگ‌های استخراج شده از PDF با تگ‌های IO List با استفاده از روش بهبود یافته
         
         Args:
-            extracted_tags: لیست تگ‌های استخراج شده از OCR
-            io_list_tags: لیست تگ‌های IO
-            similarity_threshold: آستانه شباهت برای انتخاب کاندیدا
-            
+            pdf_tags: لیست تگ‌های استخراج شده از PDF
+            io_tags: لیست تگ‌های IO
+            min_similarity: حداقل میزان شباهت مورد نیاز (افزایش یافته به 0.75)
+        
         Returns:
-            تاپلی از (دیکشنری تگ‌های تطبیق داده شده، لیست تگ‌های IO بدون تطبیق، لیست سیگنال‌های ناشناخته)
+            دیکشنری نگاشت تگ‌های PDF به تگ‌های IO
         """
+        logger.info(f"CANDIDATE_FUNCTION_CALLED: Matching {len(pdf_tags)} PDF tags with {len(io_tags)} IO tags using improved approach")
+
         try:
-            # پیش‌پردازش تگ‌های IO
-            io_list_tags = [str(tag).strip().upper() for tag in io_list_tags if pd.notna(tag)]
+            matched_tags = {}
             
-            # دیکشنری برای نگهداری تگ‌های تطبیق داده شده
-            matched_tags_dict = {}
+            logger.info(f"Matching {len(pdf_tags)} PDF tags with {len(io_tags)} IO tags")
             
-            # لیست برای نگهداری سیگنال‌های ناشناخته
-            unknown_signals = []
+            # تبدیل io_tags به set برای جستجوی سریع‌تر
+            io_tags_set = set(str(tag).strip().upper() for tag in io_tags if tag and not pd.isna(tag))
             
-            # شمارنده‌های آماری
-            self.exact_matches = 0
-            self.similar_matches = 0
+            # جستجوی تگ‌های دقیق - مرحله اول (اولویت بالا)
+            exact_matches = []
+            pdf_tags_exact_not_found = []
             
-            # پردازش هر تگ استخراج شده
-            for ocr_tag in extracted_tags:
-                ocr_tag = str(ocr_tag).strip().upper()
-                if not ocr_tag:
+            logger.info("Step 1: Searching for exact tag matches...")
+            for pdf_tag in pdf_tags:
+                pdf_tag_upper = str(pdf_tag).strip().upper()
+                if pdf_tag_upper in io_tags_set:
+                    matched_tags[pdf_tag] = pdf_tag_upper
+                    exact_matches.append(pdf_tag)
+                    logger.info(f"Found exact match: {pdf_tag}")
+                else:
+                    pdf_tags_exact_not_found.append(pdf_tag)
+            
+            logger.info(f"Found {len(exact_matches)} exact matches")
+            
+            # استفاده از روش کاندید تگ برای تگ‌های باقی‌مانده - مرحله دوم
+            logger.info(f"Step 2: Finding similar tags for {len(pdf_tags_exact_not_found)} unmatched tags...")
+            
+            for pdf_tag in pdf_tags_exact_not_found:
+                # پیدا کردن کاندیداهای مشابه
+                candidates = self.find_candidate_tags(pdf_tag, io_tags, min_similarity)
+                
+                # اگر هیچ کاندیدایی پیدا نشد، ادامه بده
+                if not candidates:
+                    logger.debug(f"No candidates found for tag: {pdf_tag}")
                     continue
                 
-                # مرحله 1: یافتن کاندیداها
-                candidates = self.find_candidate_tags(ocr_tag, io_list_tags, similarity_threshold)
+                # اعتبارسنجی کاندیداها
+                valid_candidates = self.validate_tag_candidates(pdf_tag, candidates)
                 
-                # مرحله 2: اعتبارسنجی کاندیداها
-                validated_tags, unvalidated_candidates = self.validate_tag_candidates(ocr_tag, candidates, True)
-                
-                if validated_tags:
-                    # اگر تگ معتبر پیدا شد، اولین مورد را انتخاب کن
-                    matched_tags_dict[ocr_tag] = validated_tags[0]
-                    self.exact_matches += 1
+                # انتخاب بهترین کاندیدا
+                if valid_candidates:
+                    # اگر چند کاندیدای معتبر وجود دارد، بهترین را انتخاب کن
+                    best_match, similarity = valid_candidates[0]
                     
-                    # تگ تطبیق داده شده را از لیست IO حذف کن تا از تطبیق مجدد جلوگیری شود
-                    if validated_tags[0] in io_list_tags:
-                        io_list_tags.remove(validated_tags[0])
+                    # بررسی نهایی: آیا این تگ قبلاً به تگ دیگری نسبت داده شده؟
+                    if best_match.upper() in [v.upper() for v in matched_tags.values()]:
+                        logger.warning(f"Tag {best_match} already matched to another PDF tag, skipping {pdf_tag}")
+                        continue
+                    
+                    matched_tags[pdf_tag] = best_match
+                    logger.info(f"Found similar tag: {pdf_tag} -> {best_match} (similarity: {similarity:.2f})")
                 else:
-                    # اگر هیچ تگ معتبری پیدا نشد، به عنوان ناشناخته ثبت کن
-                    for candidate, similarity in unvalidated_candidates:
-                        unknown_signals.append((ocr_tag, candidate, similarity))
+                    logger.debug(f"No valid candidates after validation for tag: {pdf_tag}")
             
-            # تگ‌های IO که هنوز تطبیق داده نشده‌اند
-            unmatched_io_tags = io_list_tags.copy()
+            # آمار تطبیق
+            matched_count = len(matched_tags)
+            exact_count = len(exact_matches)
+            similar_count = matched_count - exact_count
+            unmatched_count = len(pdf_tags) - matched_count
             
-            # آمار نهایی
-            self.matched_tags = len(matched_tags_dict)
+            logger.info(f"Tag matching stats - Total: {len(pdf_tags)}, Matched: {matched_count} " +
+                    f"(Exact: {exact_count}, Similar: {similar_count}), Unmatched: {unmatched_count}")
             
-            return matched_tags_dict, unmatched_io_tags, unknown_signals
+            if unmatched_count > 0:
+                unmatched_tags = [tag for tag in pdf_tags if tag not in matched_tags]
+                logger.warning(f"Unmatched tags ({unmatched_count}): {unmatched_tags[:10]}...")  # نمایش 10 مورد اول
+            
+            # بررسی تکراری
+            matched_io_tags = list(matched_tags.values())
+            unique_io_tags = set(matched_io_tags)
+            if len(matched_io_tags) != len(unique_io_tags):
+                duplicates = [tag for tag in unique_io_tags if matched_io_tags.count(tag) > 1]
+                logger.error(f"WARNING: Found duplicate IO tag matches: {duplicates}")
+                # حذف تکراری‌ها - فقط اولین تطبیق را نگه دار
+                seen = set()
+                cleaned_matched_tags = {}
+                for pdf_tag, io_tag in matched_tags.items():
+                    if io_tag.upper() not in seen:
+                        cleaned_matched_tags[pdf_tag] = io_tag
+                        seen.add(io_tag.upper())
+                    else:
+                        logger.warning(f"Removing duplicate match: {pdf_tag} -> {io_tag}")
+                matched_tags = cleaned_matched_tags
+            
+            return matched_tags
             
         except Exception as e:
             logger.error(f"Error matching tags with IO list: {e}")
-            return {}, io_list_tags, []
+            return {}
+
     
                 
     def create_tag_jb_mapping(self, pdf_results: 'Dict[int, Tuple[Any, ...]]') -> 'Dict[str, str]':
@@ -1153,7 +1809,7 @@ class TagJBExtractor:
         return new_tags
 
 
-    def process_pdf_page(self, page_info: 'Tuple[fitz.Page, str, int]') -> 'Tuple[int, Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str]]':
+    def process_pdf_page(self, page_info: 'Tuple[fitz.Page, str, int]') -> 'Tuple[int, Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str]], Dict[str, Dict]]':
         """
         Process a single PDF page - اصلاح شده برای بازگرداندن 7 مقدار
         
@@ -1161,7 +1817,7 @@ class TagJBExtractor:
             page_info: Tuple containing (page object, temp_dir path, page number)
             
         Returns:
-            Tuple of (page_number, tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions)
+            Tuple of (page_number, tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions , tag_match_info)
         """
         page, temp_dir, page_num = page_info
         
@@ -1177,21 +1833,22 @@ class TagJBExtractor:
             image = cv2.imread(image_path)
             if image is None:
                 logger.error(f"Failed to load image for page {page_num + 1}")
-                return page_num + 1, set(), set(), set(), [], [], {}, []
+                return page_num + 1, set(), set(), set(), [], [], {}, [] , {}
                 
             result = self.extract_from_image(image)
             
             # Handle different return formats
-            if len(result) >= 7:
-                tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions = result[:7]
-            elif len(result) >= 6:
-                tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number = result[:6]
+            if len(result) >= 8:
+                tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions , process_pdf_page ,tag_match_info= result[:8]
+            elif len(result) >= 7:
+                tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number ,process_pdf_page , tag_match_info = result[:7]
                 raw_cable_descriptions = []
+                tag_match_info = {}
             else:
                 logger.error(f"Unexpected result format: {len(result)} values")
                 tags, jb_identifiers, mc_identifiers = set(), set(), set()
                 cable_descriptions, spare_identifiers = [], []
-                tag_to_number, raw_cable_descriptions = {}, []
+                tag_to_number, raw_cable_descriptions , tag_match_info  = {}, [] ,{}
             
             # Clean up temporary image file
             try:
@@ -1199,27 +1856,26 @@ class TagJBExtractor:
             except:
                 pass
                 
-            return page_num + 1, tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions
+            return page_num + 1, tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions , tag_match_info
             
         except Exception as e:
             logger.error(f"Error processing page {page_num + 1}: {e}")
             logger.error(traceback.format_exc())
-            return page_num + 1, set(), set(), set(), [], [], {}, []
+            return page_num + 1, set(), set(), set(), [], [], {}, [] , {}
 
-    def process_pdf(self, pdf_path: str) -> 'Dict[int, Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str]]]':
+    def process_pdf(self, pdf_path: str) -> 'Dict[int, Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str], Dict[str, Dict]]]':
         """
         Process all pages in a PDF file.
         
-        Args:
-            pdf_path: Path to the PDF file
-            
         Returns:
-            Dictionary mapping page numbers to Tuples of (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions)
+            Dictionary mapping page numbers to Tuples of (tags, jb_identifiers, mc_identifiers, 
+                                                        cable_descriptions, spare_identifiers, 
+                                                        tag_to_number, raw_cable_descriptions, tag_match_info)
         """
         results = {}
-        # Reinitialize Tesseract for this process
+        
+        # Reinitialize Tesseract
         try:
-            # Try to find Tesseract in common locations
             common_locations = [
                 r'C:\Program Files\Tesseract-OCR\tesseract.exe',
                 r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
@@ -1237,7 +1893,7 @@ class TagJBExtractor:
         except Exception as e:
             logger.error(f"Error initializing Tesseract in process: {e}")
             return {}
-            
+        
         logger.info(f"Opening PDF: {pdf_path}")
         pdf_document = fitz.open(pdf_path)
         pdf_filename = os.path.basename(pdf_path)
@@ -1246,7 +1902,7 @@ class TagJBExtractor:
         
         # Create temporary directory for image processing
         with tempfile.TemporaryDirectory() as temp_dir:
-            # Process pages sequentially within each PDF
+            # Process pages sequentially
             for page_num in range(len(pdf_document)):
                 try:
                     logger.info(f"Processing page {page_num + 1}/{len(pdf_document)}")
@@ -1254,7 +1910,7 @@ class TagJBExtractor:
                     # Get page
                     page = pdf_document[page_num]
                     
-                    # Convert page to image with higher resolution
+                    # Convert page to image
                     pix = page.get_pixmap(matrix=fitz.Matrix(300/72, 300/72))
                     image_path = os.path.join(temp_dir, f"page_{page_num + 1}.png")
                     pix.save(image_path)
@@ -1265,23 +1921,35 @@ class TagJBExtractor:
                         logger.error(f"Failed to load image for page {page_num + 1}")
                         continue
                     
-                    # Extract tags and JB identifiers
-                    tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions = self.extract_from_image(image)
+                    # 🆕 Extract tags with match info (8 مقدار)
+                    extract_result = self.extract_from_image(image)
                     
-                    # Store results
-                    results[page_num + 1] = (tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions)
+                    if len(extract_result) >= 8:
+                        tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions, tag_match_info = extract_result[:8]
+                    elif len(extract_result) >= 7:
+                        tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions , tag_match_info = extract_result[:7]
+                        tag_match_info = {}
+                    else:
+                        logger.error(f"Unexpected extract result length: {len(extract_result)}")
+                        continue
                     
-                    # Print results immediately for this page
+                    # 🆕 Store results with match info (8 مقدار)
+                    results[page_num + 1] = (tags, jb_identifiers, mc_identifiers, 
+                                            cable_descriptions, spare_identifiers, 
+                                            tag_to_number, raw_cable_descriptions, 
+                                            tag_match_info)
+                    
+                    # Print results
                     print(f"Page {page_num + 1}:")
                     print(f"  Tags found ({len(tags)}): {', '.join(sorted(tags))}")
+                    if tag_match_info:
+                        exact_count = sum(1 for info in tag_match_info.values() if info.get('match_type') == 'exact')
+                        similar_count = sum(1 for info in tag_match_info.values() if info.get('match_type') == 'similar')
+                        print(f"  Match types: {exact_count} exact, {similar_count} similar")
                     print(f"  JB identifiers found ({len(jb_identifiers)}): {', '.join(sorted(jb_identifiers))}")
                     print(f"  MC identifiers found ({len(mc_identifiers)}): {', '.join(sorted(mc_identifiers))}")
-                    print(f"  Cable descriptions found ({len(cable_descriptions)}): {', '.join(sorted(cable_descriptions))}")
-                    print(f"  Raw cable descriptions found ({len(raw_cable_descriptions)}): {', '.join(raw_cable_descriptions)}")
-                    print(f"  Spare identifiers found ({len(spare_identifiers)}): {', '.join(sorted(spare_identifiers))}")
-                    print(f"  Tag to number mapping ({len(tag_to_number)}): {tag_to_number}")
                     
-                    # Clean up temporary image file
+                    # Clean up
                     try:
                         os.remove(image_path)
                     except:
@@ -1290,7 +1958,7 @@ class TagJBExtractor:
                 except Exception as e:
                     logger.error(f"Error processing page {page_num + 1}: {e}")
                     continue
-                    
+        
         return results
 
     def process_multiple_pdfs(self, pdf_paths: 'List[str]') -> 'Dict[int, Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str]]]':
@@ -1333,14 +2001,14 @@ class TagJBExtractor:
         return combined_results
 
 
-    def process_excel_with_io_list(self, intermediate_excel_path: str, excel_path: str ,output_path: str) -> 'Tuple[pd.DataFrame, List[str], List[str]]':
+    def process_excel_with_io_list(self, intermediate_excel_path: str, excel_path: str, output_path: str) -> 'Tuple[pd.DataFrame, List[str], List[str]]':
         """
         ترکیب داده‌های فایل intermediate با فایل IO List و ایجاد فایل اکسل نهایی.
         این تابع تمام ستون‌های IO List را حفظ می‌کند و ستون‌های جدید از فایل intermediate را به آن اضافه می‌کند.
         
         Args:
             intermediate_excel_path: مسیر فایل اکسل intermediate
-            io_List_path: مسیر فایل اکسل IO List
+            excel_path: مسیر فایل اکسل IO List
             output_path: مسیر فایل اکسل خروجی
             
         Returns:
@@ -1359,15 +2027,44 @@ class TagJBExtractor:
             io_list_tag_col = 'Tag No'  # نام ستون تگ در IO List
             
             # استخراج لیست تگ‌ها از هر دو فایل
-            intermediate_tags = set(str(tag).strip().upper() for tag in intermediate_df[intermediate_tag_col] if pd.notna(tag))
-            io_list_tags = set(str(tag).strip().upper() for tag in io_list_df[io_list_tag_col] if pd.notna(tag))
+            intermediate_tags = list(str(tag).strip().upper() for tag in intermediate_df[intermediate_tag_col] if pd.notna(tag))
+            io_list_tags = list(str(tag).strip().upper() for tag in io_list_df[io_list_tag_col] if pd.notna(tag))
+            
+            # تطبیق تگ‌ها با استفاده از مکانیزم کاندید تگ
+            logger.info(f"Finding tag candidates for {len(intermediate_tags)} PDF tags with {len(io_list_tags)} IO List tags")
+            
+            # ایجاد دیکشنری برای نگاشت تگ‌های PDF به تگ‌های IO List
+            pdf_to_io_tag_map = {}
+            
+            # برای هر تگ PDF، کاندیداهای مشابه در IO List را پیدا کن
+            for pdf_tag in intermediate_tags:
+                # پیدا کردن کاندیداها
+                candidates = []
+                for io_tag in io_list_tags:
+                    similarity = self.calculate_tag_similarity(pdf_tag, io_tag)
+                    if similarity >= 0.8:  # حد آستانه شباهت
+                        candidates.append((io_tag, similarity))
+                
+                # مرتب‌سازی کاندیداها بر اساس امتیاز شباهت
+                candidates.sort(key=lambda x: x[1], reverse=True)
+                
+                # انتخاب بهترین کاندیدا
+                if candidates:
+                    best_match, best_similarity = candidates[0]
+                    pdf_to_io_tag_map[pdf_tag] = best_match
+                    logger.info(f"Matched PDF tag '{pdf_tag}' to IO tag '{best_match}' with similarity {best_similarity:.2f}")
+            
+            logger.info(f"Found {len(pdf_to_io_tag_map)} tag matches")
             
             # یافتن تگ‌های تطبیق نیافته
-            unmatched_io_tags = list(io_list_tags - intermediate_tags)  # تگ‌های IO List که در intermediate نیستند
-            unmatched_tags = list(intermediate_tags - io_list_tags)  # تگ‌های intermediate که در IO List نیستند
+            matched_pdf_tags = set(pdf_to_io_tag_map.keys())
+            matched_io_tags = set(pdf_to_io_tag_map.values())
             
+            unmatched_tags = list(set(intermediate_tags) - matched_pdf_tags)
+            unmatched_io_tags = list(set(io_list_tags) - matched_io_tags)
+            
+            logger.info(f"Unmatched PDF tags: {len(unmatched_tags)}")
             logger.info(f"Unmatched IO List tags: {len(unmatched_io_tags)}")
-            logger.info(f"Unmatched intermediate tags: {len(unmatched_tags)}")
             
             # ایجاد کپی از IO List برای حفظ تمام ستون‌های آن
             final_df = io_list_df.copy()
@@ -1375,7 +2072,7 @@ class TagJBExtractor:
             # ستون‌های intermediate که می‌خواهیم اضافه کنیم
             intermediate_columns_to_add = [
                 'PDF_Name', 'Page', 'JB', 'MC', 'Tag_Number', 
-                'Wire_Code_1', 'Wire_Code_2', 'Terminal_First_Number', 'Terminal_Second_Number', 'SCR_Terminal_Number','Cable_code',
+                'Wire_Code_1', 'Wire_Code_2', 'Terminal_First_Number', 'Terminal_Second_Number', 'SCR_Terminal_Number', 'Cable_code',
                 'Cable_Description', 'Type', 'Tag_Number_Status'
             ]
             
@@ -1387,19 +2084,27 @@ class TagJBExtractor:
                 if col not in final_df.columns:
                     final_df[col] = None
             
-            # تطبیق داده‌ها بر اساس تگ
+            # تطبیق داده‌ها با استفاده از دیکشنری pdf_to_io_tag_map
             for idx, row in final_df.iterrows():
                 io_tag = str(row[io_list_tag_col]).strip().upper() if pd.notna(row[io_list_tag_col]) else ""
                 
-                # جستجوی تگ در intermediate_df
-                matching_rows = intermediate_df[intermediate_df[intermediate_tag_col].apply(
-                    lambda x: str(x).strip().upper() == io_tag if pd.notna(x) else False
-                )]
+                # جستجو در تگ‌های PDF که تطبیق داده شده‌اند
+                pdf_tag = None
+                for pdf_t, io_t in pdf_to_io_tag_map.items():
+                    if str(io_t).strip().upper() == io_tag:
+                        pdf_tag = pdf_t
+                        break
                 
-                if not matching_rows.empty:
-                    # اگر تگ در intermediate پیدا شد، اطلاعات را به final_df اضافه کن
-                    for col in intermediate_columns_to_add:
-                        final_df.at[idx, col] = matching_rows.iloc[0][col]
+                if pdf_tag:
+                    # پیدا کردن اطلاعات تگ در intermediate_df
+                    matching_rows = intermediate_df[intermediate_df[intermediate_tag_col].apply(
+                        lambda x: str(x).strip().upper() == pdf_tag if pd.notna(x) else False
+                    )]
+                    
+                    if not matching_rows.empty:
+                        # اگر تگ در intermediate پیدا شد، اطلاعات را به final_df اضافه کن
+                        for col in intermediate_columns_to_add:
+                            final_df.at[idx, col] = matching_rows.iloc[0][col]
             
             # اضافه کردن تگ‌های intermediate که در IO List نیستند به final_df
             if unmatched_tags:
@@ -1440,38 +2145,6 @@ class TagJBExtractor:
             logger.error(f"Error processing Excel files: {e}")
             logger.error(traceback.format_exc())
             return pd.DataFrame(), [], []
-        
-    def create_simple_vector(self, tag: str) -> 'List[float]':
-            """Create an improved feature vector for a tag"""
-            tag = str(tag).upper().strip()
-            
-            
-            vector = [
-                len(tag) * 1.5,  
-                sum(c.isdigit() for c in tag) * 2.0,  
-                sum(c.isalpha() for c in tag) * 1.5,
-                sum(c == '-' for c in tag) * 3.0, 
-                len(tag.split('-')) * 2.0,  
-            ]
-            
-           
-            prefixes = ['TIT', 'FIT', 'PIT', 'LIT', 'TCV', 'FCV', 'PCV', 'LCV', 
-                        'UZSO', 'UZSC', 'UY', 'UHSL', 'UHSH', 'TY', 'LA']
-            for prefix in prefixes:
-                vector.append(5.0 if tag.startswith(prefix) else 0.0)
-            
-        
-            parts = tag.split('-')
-            if len(parts) >= 2:
-                vector.extend([
-                    float(hash(parts[0]) % 1000),  
-                    float(hash(parts[-1]) % 1000),  
-                    sum(c.isdigit() for c in parts[-1]) * 2.0  
-                ])
-            else:
-                vector.extend([0.0, 0.0, 0.0])
-            
-            return vector
 
         
     def calculate_vector_similarity(self, vec1: 'List[float]', vec2: 'List[float]') -> float:
@@ -1555,10 +2228,15 @@ class TagJBExtractor:
         return unmatched_io_tags, unmatched_tags
 
     def draw_bounding_boxes(self, image: np.ndarray, tags: 'Set[str]', jb_identifiers: 'Set[str]', 
-                    mc_identifiers: 'Set[str]', cable_descriptions: 'List[str]', spare_identifiers: 'List[str]',
-                    tag_to_number: 'Dict[str, int]') -> 'Tuple[np.ndarray, Dict[str, int]]':
-
-        # اطمینان از وجود متغیرها
+                            mc_identifiers: 'Set[str]', cable_descriptions: 'List[str]', spare_identifiers: 'List[str]',
+                            tag_to_number: 'Dict[str, int]', tag_match_info: 'Dict[str, Dict]' = None) -> 'Tuple[np.ndarray, Dict[str, int]]':
+        """
+        Draw bounding boxes with correct match type information and SPARE handling
+        """
+        
+        # ============================================================
+        # مرحله 0: بررسی و مقداردهی اولیه
+        # ============================================================
         if tags is None:
             tags = set()
         if jb_identifiers is None:
@@ -1572,7 +2250,20 @@ class TagJBExtractor:
         if tag_to_number is None:
             tag_to_number = {}
         
-        # اطمینان از اینکه متغیرهای کلاس تنظیم شده‌اند
+        # 🔧 FIX 1: مقداردهی صحیح tag_match_info
+        if tag_match_info is None or not tag_match_info:
+            tag_match_info = {}
+            logger.warning("⚠️ tag_match_info is None/empty, creating default entries for all tags")
+            
+            # ایجاد entry پیش‌فرض برای همه تگ‌ها
+            for tag in tags:
+                tag_match_info[tag] = {
+                    'match_type': 'unknown',
+                    'score': 0.0,
+                    'ocr_text': tag
+                }
+        
+        # اطمینان از تنظیم الگوها
         if not hasattr(self, 'jb_examples') or self.jb_examples is None:
             self.jb_examples = "JB"
         if not hasattr(self, 'mc_examples') or self.mc_examples is None:
@@ -1581,21 +2272,20 @@ class TagJBExtractor:
             self.spare_examples = "SPARE"
         
         # Debug logging
-        logger.info(f"Drawing bounding boxes for:")
-        logger.info(f"  Tags ({len(tags)}): {list(tags)[:5]}...")
-        logger.info(f"  JBs ({len(jb_identifiers)}): {list(jb_identifiers)}")
-        logger.info(f"  MCs ({len(mc_identifiers)}): {list(mc_identifiers)}")
-        logger.info(f"  Spares ({len(spare_identifiers)}): {spare_identifiers}")
-        logger.info(f"  Cables ({len(cable_descriptions)}): {cable_descriptions}")
+        logger.info(f"Drawing bounding boxes:")
+        logger.info(f"  Tags: {len(tags)}")
+        logger.info(f"  JBs: {len(jb_identifiers)}")
+        logger.info(f"  MCs: {len(mc_identifiers)}")
+        logger.info(f"  SPAREs: {len(spare_identifiers)}")
+        logger.info(f"  tag_match_info entries: {len(tag_match_info)}")
         
         if len(image.shape) == 2:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
 
-        # همان config که در extract_from_image استفاده شده
+        # OCR config
         custom_config = r'--oem 3 --psm 11 -c tessedit_char_whiteList=ABCDEFGHIJKLMNOPQRSTUVWXYZsparetcoilpr0123456789-.'
         ocr_data = pytesseract.image_to_data(image, config=custom_config, output_type=pytesseract.Output.DICT)
 
-        # دیکشنری برای ذخیره مختصات هر نوع شناسه
         found_items = {
             'tags': [],
             'jbs': [],
@@ -1605,67 +2295,116 @@ class TagJBExtractor:
         }
         
         processed_regions = set()
-        all_tag_numbers = dict(tag_to_number)  # کپی از tag_to_number ورودی
+        all_tag_numbers = dict(tag_to_number)
         sequence_number = max(all_tag_numbers.values()) + 1 if all_tag_numbers else 1
-
-        # مرحله 1: جستجوی دقیق برای تگ‌ها
-        logger.info("Searching for exact tag matches...")
+        drawn_io_tags = set()
+        
+        # ============================================================
+        # Phase 1: رسم Exact Matches
+        # ============================================================
+        logger.info("Phase 1: Drawing EXACT matches...")
+        exact_drawn_count = 0
+        
         for tag in tags:
-            tag_found = False
+            if tag.upper() in drawn_io_tags:
+                continue
+            
+            # دریافت match info
+            match_type = 'unknown'
+            match_score = 0.0
+            ocr_text_used = tag
+            
+            if tag in tag_match_info:
+                info = tag_match_info[tag]
+                match_type = info.get('match_type', 'unknown')
+                match_score = info.get('score', 0.0)
+                ocr_text_used = info.get('ocr_text', tag)
+            else:
+                logger.warning(f"⚠️ Tag '{tag}' not found in tag_match_info, treating as 'unknown'")
+            
+            # فقط exact matches
+            if match_type != 'exact':
+                continue
+            
+            tag_upper = tag.upper()
+            
             for i, text in enumerate(ocr_data['text']):
                 text_clean = text.strip().upper()
-                if text_clean == tag.upper():
+                
+                if text_clean == tag_upper or text_clean == ocr_text_used.upper():
                     region_key = (ocr_data['left'][i], ocr_data['top'][i],
                                 ocr_data['width'][i], ocr_data['height'][i])
+                    
                     if region_key not in processed_regions:
                         found_items['tags'].append({
                             'text': tag,
                             'position': region_key,
-                            'match_type': 'exact'
+                            'match_type': 'exact',
+                            'score': match_score
                         })
                         processed_regions.add(region_key)
-                        tag_found = True
-                        logger.info(f"Found exact tag: {tag}")
+                        drawn_io_tags.add(tag_upper)
+                        exact_drawn_count += 1
+                        logger.debug(f"✅ Drew exact match: {tag}")
                         break
+        
+        logger.info(f"Phase 1 complete: Drew {exact_drawn_count} exact matches")
+        
+        # ============================================================
+        # Phase 2: رسم Similar Matches
+        # ============================================================
+        logger.info("Phase 2: Drawing SIMILAR matches...")
+        similar_drawn_count = 0
+        
+        for tag in tags:
+            if tag.upper() in drawn_io_tags:
+                continue
             
-            if not tag_found:
-                logger.warning(f"Tag not found in OCR: {tag}")
-
-        # مرحله 2: جستجوی تطبیقی برای تگ‌ها با vector matcher
-        if hasattr(self, 'vector_matcher'):
-            logger.info("Searching for similar tags using vector matcher...")
+            match_type = 'unknown'
+            match_score = 0.0
+            ocr_text_used = tag
+            
+            if tag in tag_match_info:
+                info = tag_match_info[tag]
+                match_type = info.get('match_type', 'unknown')
+                match_score = info.get('score', 0.0)
+                ocr_text_used = info.get('ocr_text', tag)
+            
+            # فقط similar matches
+            if match_type != 'similar':
+                continue
+            
             for i, text in enumerate(ocr_data['text']):
                 text_clean = text.strip().upper()
-                if not text_clean or len(text_clean) < 4:
-                    continue
-                    
+                
                 region_key = (ocr_data['left'][i], ocr_data['top'][i],
                             ocr_data['width'][i], ocr_data['height'][i])
+                
                 if region_key in processed_regions:
                     continue
                 
-                # بررسی که این متن JB، MC یا SPARE نباشد
-                if (self.jb_examples in text_clean or 
-                    self.mc_examples in text_clean or 
-                    self.spare_examples in text_clean):
-                    continue
-                    
-                similar_tags = self.vector_matcher.find_similar_tags(text_clean)
-                if similar_tags:
-                    best_match, similarity = similar_tags[0]
-                    if similarity >= self.vector_matcher.similarity_threshold:
-                        found_items['tags'].append({
-                            'text': best_match,
-                            'position': region_key,
-                            'match_type': 'similar',
-                            'similarity': similarity,
-                            'original_text': text_clean
-                        })
-                        processed_regions.add(region_key)
-                        logger.info(f"Found similar tag: {text_clean} -> {best_match} (similarity: {similarity:.2f})")
-
-        # مرحله 3: جستجو برای JB identifiers
-        logger.info("Searching for JB identifiers...")
+                if text_clean == ocr_text_used.upper():
+                    found_items['tags'].append({
+                        'text': tag,
+                        'position': region_key,
+                        'match_type': 'similar',
+                        'score': match_score,
+                        'original_text': text_clean
+                    })
+                    processed_regions.add(region_key)
+                    drawn_io_tags.add(tag.upper())
+                    similar_drawn_count += 1
+                    logger.debug(f"⚠️ Drew similar match: {text_clean} → {tag}")
+                    break
+        
+        logger.info(f"Phase 2 complete: Drew {similar_drawn_count} similar matches")
+        
+        # ============================================================
+        # Phase 3: رسم JB identifiers
+        # ============================================================
+        logger.info("Phase 3: Drawing JB identifiers...")
+        jb_drawn_count = 0
+        
         for jb in jb_identifiers:
             for i, text in enumerate(ocr_data['text']):
                 text_clean = text.strip().upper()
@@ -1678,11 +2417,18 @@ class TagJBExtractor:
                             'position': region_key
                         })
                         processed_regions.add(region_key)
-                        logger.info(f"Found JB: {jb}")
+                        jb_drawn_count += 1
+                        logger.debug(f"Found JB: {jb}")
                         break
-
-        # مرحله 4: جستجو برای MC identifiers  
-        logger.info("Searching for MC identifiers...")
+        
+        logger.info(f"Phase 3 complete: Drew {jb_drawn_count} JBs")
+        
+        # ============================================================
+        # Phase 4: رسم MC identifiers
+        # ============================================================
+        logger.info("Phase 4: Drawing MC identifiers...")
+        mc_drawn_count = 0
+        
         for mc in mc_identifiers:
             for i, text in enumerate(ocr_data['text']):
                 text_clean = text.strip().upper()
@@ -1695,37 +2441,73 @@ class TagJBExtractor:
                             'position': region_key
                         })
                         processed_regions.add(region_key)
-                        logger.info(f"Found MC: {mc}")
+                        mc_drawn_count += 1
+                        logger.debug(f"Found MC: {mc}")
                         break
-
-        # مرحله 5: جستجو برای SPARE identifiers
-        logger.info("Searching for SPARE identifiers...")
-        spare_count = 0
+        
+        logger.info(f"Phase 4 complete: Drew {mc_drawn_count} MCs")
+        
+        # ============================================================
+        # 🔧 FIX 2: Phase 5 - رسم SPARE identifiers (بهبود یافته)
+        # ============================================================
+        logger.info(f"Phase 5: Drawing {len(spare_identifiers)} SPARE identifiers...")
+        spare_drawn_count = 0
+        
+        # ایجاد regex pattern برای SPARE
+        spare_pattern = re.compile(rf'\b{re.escape(self.spare_examples)}\b', re.IGNORECASE)
+        
         for spare in spare_identifiers:
+            spare_found = False
+            
             for i, text in enumerate(ocr_data['text']):
                 text_clean = text.strip().upper()
-                if self.spare_examples.upper() in text_clean:
+                
+                # 🔧 بررسی دقیق‌تر SPARE
+                # فقط اگر کلمه SPARE به تنهایی باشد (نه بخشی از کلمه دیگر)
+                if spare_pattern.search(text_clean):
                     region_key = (ocr_data['left'][i], ocr_data['top'][i],
                                 ocr_data['width'][i], ocr_data['height'][i])
+                    
                     if region_key not in processed_regions:
-                        spare_count += 1
-                        spare_id = f"{self.spare_examples}_{spare_count}"
+                        spare_drawn_count += 1
+                        spare_id = f"{self.spare_examples}_{spare_drawn_count}"
+                        
+                        # دریافت شماره SPARE
+                        if spare_id in all_tag_numbers:
+                            spare_number = all_tag_numbers[spare_id]
+                        elif spare_id in tag_to_number:
+                            spare_number = tag_to_number[spare_id]
+                        else:
+                            spare_number = sequence_number
+                            all_tag_numbers[spare_id] = spare_number
+                            sequence_number += 1
+                        
                         found_items['spares'].append({
                             'text': spare,
                             'position': region_key,
-                            'id': spare_id
+                            'id': spare_id,
+                            'number': spare_number
                         })
                         processed_regions.add(region_key)
-                        logger.info(f"Found SPARE: {spare}")
+                        spare_found = True
+                        logger.debug(f"✅ Found SPARE: {spare} (#{spare_number})")
                         break
-
-        # مرحله 6: جستجو برای Cable descriptions (ساده‌تر)
-        logger.info("Searching for cable descriptions...")
+            
+            if not spare_found:
+                logger.warning(f"⚠️ Could not find bounding box for SPARE: {spare}")
+        
+        logger.info(f"Phase 5 complete: Drew {spare_drawn_count} SPAREs")
+        
+        # ============================================================
+        # Phase 6: رسم Cable descriptions
+        # ============================================================
+        logger.info("Phase 6: Drawing cable descriptions...")
+        cable_drawn_count = 0
+        
         for cable_desc in cable_descriptions:
-            # جستجو برای اعداد در cable description
             cable_parts = cable_desc.split()
             if len(cable_parts) >= 1:
-                number_part = cable_parts[0]  # فرض می‌کنیم عدد اول است
+                number_part = cable_parts[0]
                 
                 for i, text in enumerate(ocr_data['text']):
                     text_clean = text.strip().upper()
@@ -1738,85 +2520,121 @@ class TagJBExtractor:
                                 'position': region_key
                             })
                             processed_regions.add(region_key)
-                            logger.info(f"Found cable: {cable_desc}")
+                            cable_drawn_count += 1
+                            logger.debug(f"Found cable: {cable_desc}")
                             break
-
-        # رسم bounding boxes
-        logger.info(f"Drawing {len(found_items['tags'])} tags, {len(found_items['jbs'])} JBs, {len(found_items['mcs'])} MCs, {len(found_items['spares'])} spares, {len(found_items['cables'])} cables")
-
+        
+        logger.info(f"Phase 6 complete: Drew {cable_drawn_count} cables")
+        
+        # ============================================================
+        # 🔧 FIX 3: رسم bounding boxes با رنگ‌بندی صحیح
+        # ============================================================
+        logger.info(f"Drawing all found items...")
+        
         # رسم تگ‌ها
         for item in found_items['tags']:
             x, y, w, h = item['position']
             text = item['text']
+            match_type = item.get('match_type', 'unknown')
+            score = item.get('score', 0.0)
             
-            # تعیین شماره برای تگ
             if text not in all_tag_numbers:
                 all_tag_numbers[text] = sequence_number
                 sequence_number += 1
             
             tag_number = all_tag_numbers[text]
             
-            # رنگ بر اساس نوع تطبیق
-            if item['match_type'] == 'exact':
-                color = (255, 0, 0)  # قرمز برای تطبیق دقیق
-            else:
-                color = (0, 165, 255)  # نارنجی برای تطبیق تشابهی
+            # رنگ‌بندی بر اساس match type
+            if match_type == 'exact':
+                color = (0, 255, 0)      # سبز
+                label_prefix = "✓"
+            elif match_type == 'similar':
+                color = (0, 165, 255)    # نارنجی
+                label_prefix = "≈"
+            else:  # unknown یا هر چیز دیگر
+                color = (128, 128, 128)  # خاکستری
+                label_prefix = "?"
+                logger.warning(f"⚠️ Unknown match type for tag '{text}': {match_type}")
             
             cv2.rectangle(image, (x, y), (x + w, y + h), color, 2)
             
-            # برچسب
-            if 'similarity' in item:
-                label = f"#{tag_number} {text} ({item['similarity']:.2f})"
+            if match_type == 'similar' and score > 0:
+                label = f"{label_prefix} #{tag_number} {text} ({score:.2f})"
             else:
-                label = f"#{tag_number} {text}"
-                
+                label = f"{label_prefix} #{tag_number} {text}"
+            
             cv2.putText(image, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-
+        
         # رسم JBها
         for item in found_items['jbs']:
             x, y, w, h = item['position']
-            cv2.rectangle(image, (x, y), (x + w, y + h), (0, 0, 255), 2)
-            cv2.putText(image, f"JB: {item['text']}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-
+            cv2.rectangle(image, (x, y), (x + w, y + h), (255, 0, 0), 2)  # آبی
+            cv2.putText(image, f"JB: {item['text']}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+        
         # رسم MCها
         for item in found_items['mcs']:
             x, y, w, h = item['position']
-            cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)
-            cv2.putText(image, f"MC: {item['text']}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-
-        # رسم SPAREها
+            cv2.rectangle(image, (x, y), (x + w, y + h), (255, 255, 0), 2)  # آبی روشن
+            cv2.putText(image, f"MC: {item['text']}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+        
+        # 🔧 FIX 4: رسم SPARE‌ها با رنگ مشخص
         for item in found_items['spares']:
             x, y, w, h = item['position']
-            spare_id = item['id']
-            if spare_id not in all_tag_numbers:
-                all_tag_numbers[spare_id] = sequence_number
-                sequence_number += 1
-            spare_number = all_tag_numbers[spare_id]
+            spare_number = item['number']
             
-            cv2.rectangle(image, (x, y), (x + w, y + h), (128, 0, 128), 2)
-            cv2.putText(image, f"#{spare_number} {item['text']}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (128, 0, 128), 2)
-
+            cv2.rectangle(image, (x, y), (x + w, y + h), (128, 0, 128), 2)  # بنفش
+            cv2.putText(image, f"SPARE #{spare_number}", (x, y - 10), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (128, 0, 128), 2)
+        
         # رسم کابل‌ها
         for item in found_items['cables']:
             x, y, w, h = item['position']
-            cv2.rectangle(image, (x, y), (x + w, y + h), (0, 200, 200), 2)
-            cv2.putText(image, f"Cable: {item['text']}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 200, 200), 2)
-
-        # افزودن legend
-        legend_y_pos = image.shape[0] - 60
+            cv2.rectangle(image, (x, y), (x + w, y + h), (0, 200, 200), 2)  # زرد
+            cv2.putText(image, f"Cable: {item['text']}", (x, y - 10), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 200, 200), 2)
+        
+        # ============================================================
+        # آمار و Legend
+        # ============================================================
+        exact_count = len([item for item in found_items['tags'] if item.get('match_type') == 'exact'])
+        similar_count = len([item for item in found_items['tags'] if item.get('match_type') == 'similar'])
+        unknown_count = len([item for item in found_items['tags'] if item.get('match_type') == 'unknown'])
+        spare_count = len(found_items['spares'])
+        
+        legend_y_pos = image.shape[0] - 100
         legend_x_pos = 10
-        cv2.putText(image, "Tag", (legend_x_pos, legend_y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
-        cv2.putText(image, "JB", (legend_x_pos + 100, legend_y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-        cv2.putText(image, "MC", (legend_x_pos + 200, legend_y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-        cv2.putText(image, "Cable", (legend_x_pos + 300, legend_y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 200), 2)
-        cv2.putText(image, "Spare", (legend_x_pos + 400, legend_y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (128, 0, 128), 2)
-
-        # اضافه کردن آمار
-        total_found = len(found_items['tags']) + len(found_items['jbs']) + len(found_items['mcs']) + len(found_items['spares']) + len(found_items['cables'])
-        stats_text = f"Found: {len(found_items['tags'])} tags, {len(found_items['jbs'])} JBs, {len(found_items['mcs'])} MCs, {len(found_items['spares'])} spares, {len(found_items['cables'])} cables"
-        cv2.putText(image, stats_text, (legend_x_pos, legend_y_pos + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
-
-        logger.info(f"Bounding boxes drawn successfully. Total items found: {total_found}")
+        
+        # Legend header
+        cv2.putText(image, "Legend:", (legend_x_pos, legend_y_pos - 40), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
+        
+        # Match types
+        cv2.putText(image, f"Exact: {exact_count}", (legend_x_pos, legend_y_pos - 15), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+        cv2.putText(image, f"Similar: {similar_count}", (legend_x_pos + 150, legend_y_pos - 15), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
+        cv2.putText(image, f"Unknown: {unknown_count}", (legend_x_pos + 300, legend_y_pos - 15), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (128, 128, 128), 2)
+        
+        # Components
+        cv2.putText(image, f"JB: {len(found_items['jbs'])}", (legend_x_pos, legend_y_pos + 10), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
+        cv2.putText(image, f"MC: {len(found_items['mcs'])}", (legend_x_pos + 100, legend_y_pos + 10), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+        cv2.putText(image, f"SPARE: {spare_count}", (legend_x_pos + 200, legend_y_pos + 10), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (128, 0, 128), 2)
+        cv2.putText(image, f"Cable: {len(found_items['cables'])}", (legend_x_pos + 330, legend_y_pos + 10), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 200), 2)
+        
+        # Stats summary
+        stats_text = f"Total: {len(found_items['tags'])} tags, {spare_count} spares"
+        cv2.putText(image, stats_text, (legend_x_pos, legend_y_pos + 35), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
+        
+        logger.info(f"✅ Bounding boxes drawn:")
+        logger.info(f"   Tags: {exact_count} exact, {similar_count} similar, {unknown_count} unknown")
+        logger.info(f"   Components: {len(found_items['jbs'])} JBs, {len(found_items['mcs'])} MCs, {spare_count} SPAREs")
+        
         return image, all_tag_numbers
     
     def add_tag_numbers_to_dataframe(self, df: pd.DataFrame, tag_to_number: 'Dict[str, int]') -> pd.DataFrame:
@@ -1870,34 +2688,32 @@ class TagJBExtractor:
                         image_path = os.path.join(temp_dir, f"page_{page_num + 1}.png")
                         pix.save(image_path)
                         
-                        # Load and process image
                         image = cv2.imread(image_path)
                         if image is None:
                             logger.warning(f"Failed to load image for page {page_num + 1}")
-                            # Add blank page and continue
                             new_page = new_pdf.new_page(width=pix.width, height=pix.height)
                             pix = None
                             continue
                         
-                        # Extract information
+                        # 🆕 استخراج با 8 مقدار
                         result = self.extract_from_image(image)
                         
-                        # Handle return format
-                        if len(result) >= 7:
-                            tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions = result[:7]
-                        elif len(result) >= 6:
-                            tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number = result[:6]
-                            raw_cable_descriptions = []
+                        if len(result) >= 8:
+                            tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions, tag_match_info = result[:8]
+                        elif len(result) >= 7:
+                            tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions ,tag_match_info = result[:7]
+                            tag_match_info = {}
                         else:
                             tags, jb_identifiers, mc_identifiers = set(), set(), set()
                             cable_descriptions, spare_identifiers = [], []
-                            tag_to_number, raw_cable_descriptions = {}, []
+                            tag_to_number, raw_cable_descriptions, tag_match_info = {}, [], {}
                         
                         # Draw bounding boxes
                         try:
                             annotated_image, page_tag_numbers = self.draw_bounding_boxes(
                                 image, tags, jb_identifiers, mc_identifiers,
-                                cable_descriptions, spare_identifiers, tag_to_number
+                                cable_descriptions, spare_identifiers, tag_to_number,
+                                tag_match_info  # 🆕 پارامتر اضافی
                             )
                             all_tag_numbers.update(page_tag_numbers)
                         except Exception as e:
@@ -1940,9 +2756,7 @@ class TagJBExtractor:
                             new_page = new_pdf.new_page(width=pix.width, height=pix.height)
                             new_page.insert_image(new_page.rect, filename=annotated_path)
                             
-                            # Clean up immediately
                             os.remove(annotated_path)
-                            
                         except Exception as e:
                             logger.error(f"Error saving page {page_num + 1}: {e}")
                             # Add original page if annotation fails
@@ -1970,12 +2784,10 @@ class TagJBExtractor:
                     except Exception as e:
                         logger.error(f"Error processing page {page_num + 1} for annotation: {e}")
                         logger.error(traceback.format_exc())
-                        # Continue with next page
                         continue
             
             # Save the annotated PDF
             try:
-                # Ensure output directory exists
                 os.makedirs(os.path.dirname(output_pdf_path), exist_ok=True)
                 new_pdf.save(output_pdf_path)
                 logger.info(f"Annotated PDF saved: {output_pdf_path}")
@@ -1992,7 +2804,6 @@ class TagJBExtractor:
             return {}
             
         finally:
-            # Clean up resources
             if new_pdf:
                 try:
                     new_pdf.close()
@@ -2004,6 +2815,7 @@ class TagJBExtractor:
                 except:
                     pass
 
+    # اصلاح تابع _create_unmatched_tags_excel برای رفع خطای فایل Excel
     def _create_unmatched_tags_excel(self, unmatched_excel_tags: 'List[str]', unmatched_pdf_tags: 'List[str]', output_path: str):
         """
         ایجاد فایل اکسل برای تگ‌های تطبیق نیافته
@@ -2014,6 +2826,14 @@ class TagJBExtractor:
             output_path: مسیر فایل خروجی
         """
         try:
+            # بررسی مسیر فایل خروجی
+            if not output_path or not output_path.strip():
+                output_path = "unmatched_tags.xlsx"  # مسیر پیش‌فرض
+            
+            # اطمینان از پسوند صحیح
+            if not output_path.endswith('.xlsx'):
+                output_path = output_path + '.xlsx'
+            
             # ایجاد دیتافریم برای تگ‌های تطبیق نیافته
             excel_tags_df = pd.DataFrame({"Tag": unmatched_excel_tags, "Source": "Excel", "Status": "Not found in PDF"})
             pdf_tags_df = pd.DataFrame({"Tag": unmatched_pdf_tags, "Source": "PDF", "Status": "Not found in Excel"})
@@ -2025,6 +2845,9 @@ class TagJBExtractor:
             if unmatched_df.empty:
                 unmatched_df = pd.DataFrame(columns=["Tag", "Source", "Status"])
             
+            # اطمینان از وجود دایرکتوری مسیر خروجی
+            os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+            
             # ذخیره به فایل اکسل
             unmatched_df.to_excel(output_path, index=False)
             logger.info(f"Unmatched tags Excel file created with {len(unmatched_df)} rows")
@@ -2033,8 +2856,13 @@ class TagJBExtractor:
             logger.error(f"Error creating unmatched tags Excel file: {e}")
             logger.error(traceback.format_exc())
             
-            # ایجاد فایل خالی در صورت خطا
-            pd.DataFrame(columns=["Tag", "Source", "Status"]).to_excel(output_path, index=False)
+            try:
+                # تلاش مجدد با مسیر ساده‌تر
+                simple_path = "unmatched_tags.xlsx"
+                pd.DataFrame(columns=["Tag", "Source", "Status"]).to_excel(simple_path, index=False)
+                logger.info(f"Created simple unmatched tags file at: {simple_path}")
+            except:
+                logger.error("Failed to create even a simple Excel file")
         
     def run_with_annotated_pdf(self, pdf_paths: 'List[str]', excel_path: str, output_excel_path: str, output_pdf_dir: str, 
                             create_zip: bool = True, zip_path: str = None) -> 'Tuple[List[str], List[str]]':
@@ -2060,6 +2888,18 @@ class TagJBExtractor:
         start_time = time.time()
         self.build_tag_vectors_from_excel(excel_path)
         logger.info(f"Using tag patterns with {len(self.tag_patterns)} patterns")
+
+        # 🆕 خواندن تگ‌های IO List
+        io_tags = set()
+        if excel_path:
+            try:
+                df = pd.read_excel(excel_path)
+                if 'Tag No' in df.columns:
+                    io_tags = set(str(tag).strip().upper() for tag in df['Tag No'] 
+                                if pd.notna(tag))
+                    logger.info(f"Loaded {len(io_tags)} tags from IO List")
+            except Exception as e:
+                logger.error(f"Error loading IO List: {e}")
         
         # Create output PDF directory if it doesn't exist
         os.makedirs(output_pdf_dir, exist_ok=True)
@@ -2090,6 +2930,7 @@ class TagJBExtractor:
             # Create annotated PDF with vector matching results and get tag numbers
             output_pdf_path = os.path.join(output_pdf_dir, f"annotated_{pdf_filename}")
             pdf_tag_numbers = self.create_annotated_pdf(pdf_path, output_pdf_path)
+            master_tag_numbers.update(pdf_tag_numbers)
             
             # اضافه کردن PDF حاشیه‌گذاری شده به لیست فایل‌های خروجی
             output_files.append(output_pdf_path)
@@ -2115,8 +2956,9 @@ class TagJBExtractor:
             pd.DataFrame(), 
             master_tag_numbers, 
             intermediate_excel_path, 
-            all_pdf_results
-        )
+            all_pdf_results,
+            io_tags  # 🆕 ارسال تگ‌های IO
+        )  
         
         # اضافه کردن فایل اکسل میانی به لیست فایل‌های خروجی
         output_files.append(intermediate_excel_path)
@@ -2321,8 +3163,9 @@ class TagJBExtractor:
             return ''
 
     def add_wire_colors_and_scr_to_dataframe(self, df: pd.DataFrame, tag_to_number: 'Dict[str, int]', 
-                                    output_path: str, pdf_results: 'Dict[str, Dict[int, Tuple[Any, ...]]]',                       
-                                    pdf_name: str = None) -> pd.DataFrame:
+                                            output_path: str, pdf_results: 'Dict[str, Dict[int, Tuple[Any, ...]]]',
+                                            io_tags: 'Set[str]' = None,
+                                            pdf_name: str = None) -> pd.DataFrame:
             """
             رنگ‌های سیم MC و شماره‌های SCR را به دیتافریم اضافه می‌کند و یک فایل اکسل جدید ایجاد می‌کند.
             استفاده مستقیم از شماره‌های تگ استخراج شده توسط bounding box.
@@ -2355,7 +3198,7 @@ class TagJBExtractor:
                     # پردازش هر صفحه از این PDF
                     for page_num, page_results in page_results_dict.items():
                         # فراخوانی متد کمکی برای پردازش هر صفحه
-                        self._process_single_page_data(new_df_data, page_num, page_results, pdf_name, tag_to_number)
+                        self._process_single_page_data(new_df_data, page_num, page_results, pdf_name, tag_to_number , io_tags)
                 
                 # ایجاد دیتافریم جدید
                 new_df = pd.DataFrame(new_df_data)
@@ -2468,6 +3311,8 @@ class TagJBExtractor:
         try:
             intermediate_data = []
             row_counter = 1
+            skipped_pages_multiple_jb = 0
+            skipped_pages_no_match = 0
             
             logger.info(f"Processing PDF results with {len(pdf_results)} PDFs")
             
@@ -2511,6 +3356,25 @@ class TagJBExtractor:
                             spare_identifiers = list(spare_identifiers)
                         
                         logger.debug(f"Extracted data - Tags: {len(tags)}, JBs: {len(jb_identifiers)}, MCs: {len(mc_identifiers)}, Spares: {len(spare_identifiers)}")
+                        
+                        # شرط 1: اگر بیش از یک JB در صفحه شناسایی شود، تگ‌های آن صفحه وارد اکسل میانی نشوند
+                        if len(jb_identifiers) > 1:
+                            logger.warning(f"Skipping page {page_num} of PDF {pdf_name} - Multiple JBs detected: {jb_identifiers}")
+                            skipped_pages_multiple_jb += 1
+                            continue
+                        
+                        # شرط 2: بررسی مطابقت کامل تگ‌ها
+                        # ابتدا بررسی می‌کنیم آیا حداقل یکی از تگ‌ها مطابقت کامل دارد
+                        has_exact_match = False
+                        for tag in tags:
+                            if tag in tag_to_number or tag in page_tag_to_number:
+                                has_exact_match = True
+                                break
+                        
+                        if not has_exact_match and tags:  # فقط اگر تگی وجود داشته باشد این شرط را بررسی کن
+                            logger.warning(f"Skipping page {page_num} of PDF {pdf_name} - No exact tag matches found")
+                            skipped_pages_no_match += 1
+                            continue
                         
                         # پردازش تگ‌ها
                         for tag in tags:
@@ -2573,6 +3437,11 @@ class TagJBExtractor:
                         logger.error(f"Error processing page {page_num} of PDF {pdf_name}: {e}")
                         logger.error(traceback.format_exc())
                         continue
+            
+            # گزارش تعداد صفحات حذف شده
+            if skipped_pages_multiple_jb > 0 or skipped_pages_no_match > 0:
+                logger.warning(f"Skipped {skipped_pages_multiple_jb} pages due to multiple JBs")
+                logger.warning(f"Skipped {skipped_pages_no_match} pages due to no exact tag matches")
             
             # ایجاد دیتافریم
             if intermediate_data:
@@ -2652,9 +3521,9 @@ class TagJBExtractor:
             return default_colors if as_list else ', '.join(default_colors)
 
     def _process_single_page_data(self, new_df_data: list, page_num: int, page_results: tuple, 
-                                pdf_name: str, tag_to_number: dict):
+                                pdf_name: str, tag_to_number: dict, io_tags: 'Set[str]' = None):
         """
-        پردازش داده‌های یک صفحه و اضافه کردن به لیست داده‌ها
+        پردازش داده‌های یک صفحه با بررسی اعتبار و شرط exact match
         
         Args:
             new_df_data: لیست داده‌های دیتافریم جدید
@@ -2662,6 +3531,7 @@ class TagJBExtractor:
             page_results: نتایج پردازش صفحه
             pdf_name: نام فایل PDF
             tag_to_number: دیکشنری نگاشت تگ‌ها به شماره‌ها
+            io_tags: مجموعه تگ‌های IO List (برای بررسی اعتبار)
         """
         try:
             # بررسی نوع و ساختار page_results
@@ -2673,7 +3543,7 @@ class TagJBExtractor:
                 logger.error(f"Insufficient data in page_results for page {page_num}: {len(page_results)} items")
                 return
             
-            # استخراج داده‌ها با امان
+            # استخراج داده‌ها
             tags = page_results[0] if len(page_results) > 0 else set()
             jb_identifiers = page_results[1] if len(page_results) > 1 else set()
             mc_identifiers = page_results[2] if len(page_results) > 2 else set()
@@ -2681,8 +3551,9 @@ class TagJBExtractor:
             spare_identifiers = page_results[4] if len(page_results) > 4 else []
             page_tag_to_number = page_results[5] if len(page_results) > 5 else {}
             raw_cable_descriptions = page_results[6] if len(page_results) > 6 else []
+            tag_match_info = page_results[7] if len(page_results) > 7 else {}
             
-            # تبدیل به لیست در صورت نیاز
+            # تبدیل به لیست
             if isinstance(tags, set):
                 tags = list(tags)
             if isinstance(jb_identifiers, set):
@@ -2694,40 +3565,116 @@ class TagJBExtractor:
             
             logger.debug(f"Page {page_num} - Tags: {len(tags)}, JBs: {len(jb_identifiers)}, MCs: {len(mc_identifiers)}, Spares: {len(spare_identifiers)}")
             
-            # شمارنده برای ردیف‌های بدون شماره تگ
+            should_process_tags = True
+            # ============================================================
+            # 🆕 شرط 1: بررسی وجود حداقل یک exact match
+            # ============================================================
+            if io_tags and tags:
+                tags_upper = set(str(tag).strip().upper() for tag in tags)
+                io_tags_upper = set(str(tag).strip().upper() for tag in io_tags if tag and not pd.isna(tag))
+                
+                # 🆕 شمارش exact matches با استفاده از tag_match_info
+                exact_match_count = 0
+                exact_matched_tags = []
+                
+                if tag_match_info:
+                    # استفاده از اطلاعات match type
+                    for tag in tags:
+                        if tag in tag_match_info:
+                            info = tag_match_info[tag]
+                            if info.get('match_type') == 'exact':
+                                exact_match_count += 1
+                                exact_matched_tags.append(tag)
+                else:
+                    # Fallback: بررسی مستقیم با IO List
+                    logger.warning(f"⚠️ tag_match_info not available for page {page_num}, using direct comparison")
+                    exact_matches = tags_upper.intersection(io_tags_upper)
+                    exact_match_count = len(exact_matches)
+                    exact_matched_tags = list(exact_matches)
+                
+                # 🆕 اگر هیچ exact match وجود ندارد، کل صفحه را رد کن
+                if exact_match_count == 0:
+                    logger.warning(f"❌ REJECTING page {page_num} of PDF {pdf_name}: NO EXACT MATCHES found")
+                    logger.warning(f"   Tags in page: {list(tags_upper)[:5]}...")
+                    should_process_tags = False
+
+                    if tag_match_info:
+                        similar_count = sum(1 for info in tag_match_info.values() if info.get('match_type') == 'similar')
+                        logger.warning(f"   Found {similar_count} similar matches, but NO exact matches")
+                    logger.warning(f"   This page will be completely skipped from intermediate Excel")
+                    return  # خروج - هیچ داده‌ای اضافه نمی‌شود
+                
+                logger.info(f"✅ Page {page_num} validation PASSED: {exact_match_count} exact match(es) found")
+                logger.debug(f"   Exact matched tags: {exact_matched_tags[:5]}...")
+            
+            # ============================================================
+            # شرط 2: بیش از یک JB
+            # ============================================================
+            if len(jb_identifiers) > 1:
+                logger.warning(f"⚠️ Skipping page {page_num} of PDF {pdf_name} - Multiple JBs detected: {jb_identifiers}")
+                return
+            
+            # ============================================================
+            # اضافه کردن داده‌ها به intermediate
+            # ============================================================
             row_counter = len(new_df_data) + 1
             
             # پردازش تگ‌ها
-            for tag in tags:
-                tag_number = tag_to_number.get(tag, page_tag_to_number.get(tag, ''))
+            if should_process_tags:
+                for tag in tags:
+                    tag_number = tag_to_number.get(tag, page_tag_to_number.get(tag, ''))
+                    
+                    if not tag_number:
+                        tag_number = row_counter
+                        row_counter += 1
+                    
+                    # 🆕 تشخیص نوع match از tag_match_info
+                    match_status = 'Auto-Assigned'
+                    
+                    if tag in tag_match_info:
+                        info = tag_match_info[tag]
+                        match_type = info.get('match_type', 'unknown')
+                        match_score = info.get('score', 0.0)
+                        
+                        if match_type == 'exact':
+                            match_status = f'Exact Match (score: {match_score:.3f})'
+                        elif match_type == 'similar':
+                            match_status = f'Similar Match (score: {match_score:.3f})'
+                        else:
+                            match_status = f'Unknown Match Type: {match_type}'
+                            logger.warning(f"⚠️ Unknown match type '{match_type}' for tag '{tag}'")
+                    else:
+                        # Fallback: بررسی مستقیم
+                        if io_tags:
+                            tag_upper = str(tag).strip().upper()
+                            io_tags_upper = set(str(t).strip().upper() for t in io_tags if t and not pd.isna(t))
+                            if tag_upper in io_tags_upper:
+                                match_status = 'Exact Match (fallback check)'
+                            else:
+                                match_status = 'Similar Match (assumed)'
+                    
+                    row_data = {
+                        'PDF_Name': pdf_name,
+                        'Page': page_num,
+                        'Tag/SPARE': tag,
+                        'JB': jb_identifiers[0] if jb_identifiers else '',
+                        'MC': mc_identifiers[0] if mc_identifiers else '',
+                        'Tag_Number': tag_number,
+                        'Wire_Code_1': self.generate_mc_wire_colors(tag_number) if hasattr(self, 'generate_mc_wire_colors') else '',
+                        'Wire_Code_2': '',
+                        'Terminal_First_Number': str(tag_number),
+                        'Terminal_Second_Number': str(tag_number + 1) if isinstance(tag_number, int) else str(int(tag_number) + 1) if str(tag_number).isdigit() else '',
+                        'Cable_Code': cable_descriptions[0] if cable_descriptions else '',
+                        'SCR_Terminal_Number': self.generate_scr_number(tag_number) if hasattr(self, 'generate_scr_number') else '',
+                        'Cable_Description': raw_cable_descriptions[0] if raw_cable_descriptions else (cable_descriptions[0] if cable_descriptions else ''),
+                        'Type': 'Tag',
+                        'Tag_Number_Status': match_status  # 🆕 وضعیت بهبود یافته
+                    }
+                    
+                    new_df_data.append(row_data)
+                    logger.debug(f"Added tag row: {tag} with number {tag_number} ({match_status})")
                 
-                if not tag_number:
-                    tag_number = row_counter
-                    row_counter += 1
-                
-                # ایجاد ردیف داده
-                row_data = {
-                    'PDF_Name': pdf_name,
-                    'Page': page_num,
-                    'Tag/SPARE': tag,
-                    'JB': jb_identifiers[0] if jb_identifiers else '',
-                    'MC': mc_identifiers[0] if mc_identifiers else '',
-                    'Tag_Number': tag_number,
-                    'Wire_Code_1': self.generate_mc_wire_colors(tag_number) if hasattr(self, 'generate_mc_wire_colors') else '',
-                    'Wire_Code_2': '',
-                    'Terminal_First_Number': str(tag_number),
-                    'Terminal_Second_Number': str(tag_number + 1) if isinstance(tag_number, int) else str(int(tag_number) + 1) if str(tag_number).isdigit() else '',
-                    'Cable_Code': cable_descriptions[0] if cable_descriptions else '',
-                    'SCR_Terminal_Number': self.generate_scr_number(tag_number) if hasattr(self, 'generate_scr_number') else '',
-                    'Cable_Description': raw_cable_descriptions[0] if raw_cable_descriptions else (cable_descriptions[0] if cable_descriptions else ''),
-                    'Type': 'Tag',
-                    'Tag_Number_Status': 'Assigned' if tag_to_number.get(tag) or page_tag_to_number.get(tag) else 'Auto-Assigned'
-                }
-                
-                new_df_data.append(row_data)
-                logger.debug(f"Added tag row: {tag} with number {tag_number}")
-            
-            # پردازش SPARE ها
+            # پردازش SPARE ها (بدون تغییر)
             for spare_idx, spare in enumerate(spare_identifiers):
                 spare_id = f"{getattr(self, 'spare_examples', 'SPARE')}_{spare_idx + 1}"
                 spare_number = tag_to_number.get(spare_id, page_tag_to_number.get(spare_id, ''))
@@ -2760,7 +3707,7 @@ class TagJBExtractor:
         except Exception as e:
             logger.error(f"Error processing page {page_num} of PDF {pdf_name}: {e}")
             logger.error(traceback.format_exc())
-        
+
     def process_excel_with_io_list(self, intermediate_excel_path: str, excel_path: str, output_path: str) -> 'Tuple[pd.DataFrame, List[str], List[str]]':
         """
         ترکیب داده‌های فایل intermediate با فایل IO List و ایجاد فایل اکسل نهایی.
@@ -3006,19 +3953,26 @@ class TagJBExtractor:
             logger.error(traceback.format_exc())
             return False, 0, 0
         
+    # اصلاح تابع get_processing_stats برای رفع خطای تقسیم set بر int
     def get_processing_stats(self) -> 'Dict[str, Any]':
         """
         بازگرداندن آمار پردازش با پشتیبانی از PDF های چندصفحه‌ای
         """
         try:
-            total_tags = getattr(self, 'total_tags', len(getattr(self, 'all_tags', set())))
-            matched_tags = getattr(self, 'matched_tags', len(getattr(self, 'matched_tags_set', set())))
+            # اطمینان از اینکه متغیرها به درستی مقداردهی شده‌اند
+            if not hasattr(self, 'all_tags'):
+                self.all_tags = set()
+            if not hasattr(self, 'matched_tags_set'):
+                self.matched_tags_set = set()
+            
+            total_tags = getattr(self, 'total_tags', len(self.all_tags))
+            matched_tags = getattr(self, 'matched_tags', len(self.matched_tags_set))
             exact_matches = getattr(self, 'exact_matches', 0)
             similar_matches = getattr(self, 'similar_matches', 0)
             total_jbs = len(getattr(self, 'all_jbs', set()))
             processing_time = getattr(self, 'processing_time', 0)
             
-            # محاسبه نرخ تطبیق
+            # محاسبه نرخ تطبیق - با بررسی تقسیم بر صفر
             match_rate = f"{(matched_tags / total_tags * 100):.1f}%" if total_tags > 0 else "0.0%"
             exact_match_rate = f"{(exact_matches / total_tags * 100):.0f}%" if total_tags > 0 else "0%"
             
@@ -3047,7 +4001,346 @@ class TagJBExtractor:
                 'exact_match_rate': '0%',
                 'unmatched_tags': 0
             }
+
+    def check_page_io_coverage(self, page_tags: 'Set[str]', io_tags: 'Set[str]', threshold: float = 0.8) -> 'Tuple[bool, float, List[str]]':
+        """
+        بررسی می‌کند که آیا تگ‌های یک صفحه در IO List هستند یا خیر.
+        
+        Args:
+            page_tags: تگ‌های استخراج شده از صفحه
+            io_tags: تگ‌های IO List
+            threshold: حداقل درصد تطابق برای تایید صفحه (پیش‌فرض: 80%)
+        
+        Returns:
+            Tuple of (is_valid_page, coverage_percentage, missing_tags)
+        """
+        if not page_tags:
+            return True, 100.0, []
+        
+        # تبدیل به مجموعه uppercase
+        page_tags_upper = set(str(tag).strip().upper() for tag in page_tags)
+        io_tags_upper = set(str(tag).strip().upper() for tag in io_tags if tag and not pd.isna(tag))
+        
+        # تعداد تگ‌هایی که در IO List هستند
+        matched_count = len(page_tags_upper.intersection(io_tags_upper))
+        
+        # درصد تطابق
+        coverage = (matched_count / len(page_tags_upper)) * 100 if page_tags_upper else 100.0
+        
+        # لیست تگ‌های موجود در صفحه ولی نه در IO List
+        missing_tags = list(page_tags_upper - io_tags_upper)
+        
+        # آیا صفحه معتبر است؟
+        is_valid = coverage >= (threshold * 100)
+        
+        logger.info(f"Page coverage: {coverage:.1f}% ({matched_count}/{len(page_tags_upper)} tags matched)")
+        if missing_tags:
+            logger.warning(f"Missing tags in IO List: {missing_tags}")
+        
+        return is_valid, coverage, missing_tags
     
+    def generate_processing_report(self, pdf_results: dict, io_tags: set, output_path: str = None):
+        """
+        تولید گزارش کامل با جزئیات exact/similar matches
+        """
+        report = {
+            'total_pdfs': len(pdf_results),
+            'total_pages': 0,
+            'valid_pages': 0,
+            'invalid_pages': 0,
+            'pages_with_exact_matches': 0,
+            'pages_without_exact_matches': 0,
+            'skipped_pages': [],
+            'duplicate_warnings': [],
+            'missing_tags': [],
+            'page_details': []
+        }
+        
+        for pdf_name, page_results_dict in pdf_results.items():
+            for page_num, page_results in page_results_dict.items():
+                report['total_pages'] += 1
+                
+                tags = page_results[0] if len(page_results) > 0 else set()
+                jb_identifiers = page_results[1] if len(page_results) > 1 else set()
+                
+                # 🆕 بررسی exact matches
+                tags_upper = set(str(tag).strip().upper() for tag in tags)
+                io_tags_upper = set(str(tag).strip().upper() for tag in io_tags if tag and not pd.isna(tag))
+                exact_matches = tags_upper.intersection(io_tags_upper)
+                has_exact_match = len(exact_matches) > 0
+                
+                # بررسی اعتبار
+                is_valid, coverage, missing = self.check_page_io_coverage(tags, io_tags)
+                
+                page_info = {
+                    'pdf': pdf_name,
+                    'page': page_num,
+                    'tags_count': len(tags),
+                    'jb_count': len(jb_identifiers),
+                    'exact_matches': len(exact_matches),
+                    'coverage': f"{coverage:.1f}%",
+                    'status': 'Valid' if is_valid else 'Invalid',
+                    'has_exact_match': has_exact_match
+                }
+                
+                # 🆕 شمارش صفحات با/بدون exact match
+                if has_exact_match:
+                    report['pages_with_exact_matches'] += 1
+                else:
+                    report['pages_without_exact_matches'] += 1
+                
+                # بررسی شروط رد شدن
+                skip_reason = None
+                
+                # 🆕 شرط 1: عدم وجود exact match
+                if not has_exact_match and tags:
+                    skip_reason = f"No exact matches found (similar only)"
+                    report['invalid_pages'] += 1
+                    report['skipped_pages'].append({
+                        'location': f"{pdf_name} - Page {page_num}",
+                        'reason': skip_reason,
+                        'tags': list(tags_upper)[:5]
+                    })
+                    page_info['status'] = 'Skipped'
+                    page_info['reason'] = skip_reason
+                
+                # شرط 2: چندین JB
+                elif len(jb_identifiers) > 1:
+                    skip_reason = f"Multiple JBs: {list(jb_identifiers)}"
+                    report['invalid_pages'] += 1
+                    report['skipped_pages'].append({
+                        'location': f"{pdf_name} - Page {page_num}",
+                        'reason': skip_reason,
+                        'jbs': list(jb_identifiers)
+                    })
+                    page_info['status'] = 'Skipped'
+                    page_info['reason'] = skip_reason
+                
+                # صفحه معتبر
+                else:
+                    report['valid_pages'] += 1
+                    if missing:
+                        report['missing_tags'].extend([
+                            f"{pdf_name} - Page {page_num}: {tag}" for tag in missing
+                        ])
+                
+                report['page_details'].append(page_info)
+        
+        # ============================================================
+        # چاپ گزارش تفصیلی
+        # ============================================================
+        logger.info("\n" + "="*70)
+        logger.info("📊 PROCESSING REPORT - DETAILED STATISTICS")
+        logger.info("="*70)
+        logger.info(f"Total PDFs processed: {report['total_pdfs']}")
+        logger.info(f"Total pages scanned: {report['total_pages']}")
+        logger.info("")
+        logger.info("─" * 70)
+        logger.info("PAGE VALIDATION:")
+        logger.info(f"  ✅ Valid pages (added to intermediate): {report['valid_pages']} ({report['valid_pages']/report['total_pages']*100:.1f}%)")
+        logger.info(f"  ❌ Invalid/Skipped pages: {report['invalid_pages']} ({report['invalid_pages']/report['total_pages']*100:.1f}%)")
+        logger.info("")
+        logger.info("─" * 70)
+        logger.info("EXACT MATCH ANALYSIS:")
+        logger.info(f"  ✅ Pages with exact matches: {report['pages_with_exact_matches']}")
+        logger.info(f"  ❌ Pages without exact matches (skipped): {report['pages_without_exact_matches']}")
+        
+        # 🆕 جزئیات صفحات رد شده
+        if report['skipped_pages']:
+            logger.info("")
+            logger.info("─" * 70)
+            logger.warning(f"⚠️ SKIPPED PAGES DETAILS ({len(report['skipped_pages'])} total):")
+            
+            # گروه‌بندی بر اساس دلیل
+            no_exact_match_pages = [p for p in report['skipped_pages'] if 'No exact matches' in p['reason']]
+            multiple_jb_pages = [p for p in report['skipped_pages'] if 'Multiple JBs' in p['reason']]
+            
+            if no_exact_match_pages:
+                logger.warning(f"\n  📋 No Exact Matches ({len(no_exact_match_pages)} pages):")
+                for page in no_exact_match_pages[:5]:  # نمایش 5 مورد اول
+                    logger.warning(f"     • {page['location']}")
+                    if 'tags' in page:
+                        logger.warning(f"       Tags found: {page['tags']}")
+                if len(no_exact_match_pages) > 5:
+                    logger.warning(f"     ... and {len(no_exact_match_pages) - 5} more")
+            
+            if multiple_jb_pages:
+                logger.warning(f"\n  📋 Multiple JBs ({len(multiple_jb_pages)} pages):")
+                for page in multiple_jb_pages[:5]:
+                    logger.warning(f"     • {page['location']}")
+                    if 'jbs' in page:
+                        logger.warning(f"       JBs found: {page['jbs']}")
+                if len(multiple_jb_pages) > 5:
+                    logger.warning(f"     ... and {len(multiple_jb_pages) - 5} more")
+        
+        # تگ‌های موجود در صفحات ولی نه در IO List
+        if report['missing_tags']:
+            logger.info("")
+            logger.info("─" * 70)
+            logger.warning(f"⚠️ TAGS FOUND IN PAGES BUT NOT IN IO LIST ({len(report['missing_tags'])} total):")
+            unique_missing = list(set(report['missing_tags']))[:10]
+            for tag_info in unique_missing:
+                logger.warning(f"  • {tag_info}")
+            if len(report['missing_tags']) > 10:
+                logger.warning(f"  ... and {len(report['missing_tags']) - 10} more")
+        
+        logger.info("")
+        logger.info("="*70 + "\n")
+        
+        # ============================================================
+        # 🆕 ذخیره گزارش JSON با جزئیات بیشتر
+        # ============================================================
+        if output_path:
+            import json
+            
+            # افزودن خلاصه‌ای از تگ‌های exact/similar
+            report['summary'] = {
+                'validation_rules': [
+                    'Rule 1: At least one EXACT match required',
+                    'Rule 2: Only one JB per page allowed',
+                    'Rule 3: Similar matches ignored if no exact match exists'
+                ],
+                'exact_match_requirement': 'ENFORCED',
+                'pages_accepted': report['valid_pages'],
+                'pages_rejected': report['invalid_pages']
+            }
+            
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(report, f, indent=2, ensure_ascii=False)
+            logger.info(f"📄 Detailed JSON report saved to: {output_path}")
+        
+        return report
+    
+    def check_and_resolve_duplicates(self, tags_dict: dict) -> dict:
+        """
+        بررسی و حل مشکل duplicate ها با اولویت exact match
+        
+        Args:
+            tags_dict: دیکشنری {tag_name: {'match_type': ..., 'score': ..., 'ocr_text': ...}}
+        
+        Returns:
+            دیکشنری تمیز شده بدون duplicate
+        """
+        cleaned_tags = {}
+        tag_occurrences = {}  # {tag_name: [match_info1, match_info2, ...]}
+        
+        # گروه‌بندی تگ‌های یکسان
+        for tag, info in tags_dict.items():
+            tag_upper = tag.upper()
+            if tag_upper not in tag_occurrences:
+                tag_occurrences[tag_upper] = []
+            tag_occurrences[tag_upper].append({'tag': tag, 'info': info})
+        
+        # حل duplicate ها
+        for tag_upper, occurrences in tag_occurrences.items():
+            if len(occurrences) == 1:
+                # تگ منحصر به فرد
+                tag = occurrences[0]['tag']
+                cleaned_tags[tag] = occurrences[0]['info']
+            else:
+                # چندین occurrence از یک تگ
+                logger.warning(f"⚠️ Found {len(occurrences)} occurrences of tag: {tag_upper}")
+                
+                # جستجو برای exact match
+                exact_matches = [occ for occ in occurrences if occ['info']['match_type'] == 'exact']
+                
+                if exact_matches:
+                    # اولویت با exact match
+                    selected = exact_matches[0]
+                    logger.info(f"✅ Selected EXACT match for {tag_upper}")
+                    cleaned_tags[selected['tag']] = selected['info']
+                    
+                    # لاگ موارد رد شده
+                    for occ in occurrences:
+                        if occ != selected:
+                            logger.debug(f"   Rejected: {occ['info']['ocr_text']} → {occ['tag']} "
+                                    f"(type: {occ['info']['match_type']}, score: {occ['info']['score']:.3f})")
+                else:
+                    # همه similar هستند، بالاترین score را انتخاب کن
+                    selected = max(occurrences, key=lambda x: x['info']['score'])
+                    logger.info(f"⚠️ No exact match, selected SIMILAR with highest score for {tag_upper}")
+                    cleaned_tags[selected['tag']] = selected['info']
+                    
+                    # لاگ موارد رد شده
+                    for occ in occurrences:
+                        if occ != selected:
+                            logger.debug(f"   Rejected: {occ['info']['ocr_text']} → {occ['tag']} "
+                                    f"(score: {occ['info']['score']:.3f})")
+        
+        logger.info(f"Duplicate resolution: {len(tags_dict)} → {len(cleaned_tags)} unique tags")
+        return cleaned_tags
+
+    def test_match_info_flow(self):
+        """
+        تست جریان tag_match_info از extract تا draw
+        """
+        logger.info("="*70)
+        logger.info("🧪 TESTING MATCH INFO FLOW")
+        logger.info("="*70)
+        
+        # مرحله 1: ساخت تصویر ساده تست
+        import numpy as np
+        test_image = np.ones((500, 500, 3), dtype=np.uint8) * 255
+        
+        try:
+            # مرحله 2: استخراج
+            logger.info("Step 1: Extracting from test image...")
+            result = self.extract_from_image(test_image)
+            
+            if len(result) < 8:
+                logger.error(f"❌ FAIL: extract_from_image returned {len(result)} values, expected 8")
+                return False
+            
+            tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions, tag_match_info = result
+            
+            logger.info(f"✅ extract_from_image returned 8 values")
+            logger.info(f"   - tags: {len(tags)}")
+            logger.info(f"   - tag_match_info: {len(tag_match_info)}")
+            
+            # مرحله 3: بررسی tag_match_info
+            logger.info("Step 2: Validating tag_match_info structure...")
+            
+            for tag in tags:
+                if tag not in tag_match_info:
+                    logger.error(f"❌ FAIL: Tag '{tag}' not in tag_match_info")
+                    return False
+                
+                info = tag_match_info[tag]
+                if 'match_type' not in info:
+                    logger.error(f"❌ FAIL: Tag '{tag}' has no 'match_type'")
+                    return False
+                
+                match_type = info['match_type']
+                if match_type not in ['exact', 'similar']:
+                    logger.error(f"❌ FAIL: Tag '{tag}' has invalid match_type: {match_type}")
+                    return False
+            
+            logger.info(f"✅ All {len(tags)} tags have valid match_type")
+            
+            # مرحله 4: تست draw_bounding_boxes
+            logger.info("Step 3: Testing draw_bounding_boxes...")
+            
+            try:
+                annotated_image, updated_tag_numbers = self.draw_bounding_boxes(
+                    test_image, tags, jb_identifiers, mc_identifiers,
+                    cable_descriptions, spare_identifiers, tag_to_number,
+                    tag_match_info  # پارامتر هشتم
+                )
+                logger.info(f"✅ draw_bounding_boxes executed successfully")
+            except Exception as e:
+                logger.error(f"❌ FAIL: draw_bounding_boxes raised exception: {e}")
+                return False
+            
+            logger.info("="*70)
+            logger.info("✅ ALL TESTS PASSED")
+            logger.info("="*70)
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ TEST FAILED: {e}")
+            logger.error(traceback.format_exc())
+            return False
+
     def reset_stats(self):
         """
         Reset all statistics counters.

@@ -7,6 +7,7 @@
     <link rel="icon" href="{{ url_for('static', filename='images/favicon.png') }}" type="image/png">
     <link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.png') }}" type="image/png">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/favicon.png') }}">
+    <link rel="name" href="{{ url_for('static', filename='images/JBD.png') }}" type="image/png">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/login.css') }}">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
@@ -20,7 +21,10 @@
                     <div class="logo-icon">
                         <img src="{{ url_for('static', filename='images/favicon.png') }}" alt="JB Detection Logo">
                     </div>
-                    <h1 id="title">سیستم تشخیص JB</h1>
+                    <!-- جایگزین کردن متن با تصویر -->
+                    <div id="title" class="title-image-container">
+                        <img src="{{ url_for('static', filename='images/JBD.png') }}" alt="JBDtection System" class="title-image">
+                    </div>
                 </div>
                 <p id="subtitle">سیستم پیشرفته شناسایی و تطابق تگ‌های PDF و Excel</p>
                 <div class="topbar">
@@ -169,7 +173,7 @@
         currentLang = lang;
 
         // Update all text elements
-        document.getElementById('title').textContent = translations[lang]['title'];
+        // متن عنوان دیگر تغییر نمی‌کند چون به تصویر تبدیل شده است
         document.getElementById('subtitle').textContent = translations[lang]['subtitle'];
         document.getElementById('username-label').textContent = translations[lang]['username-label'];
         document.getElementById('password-label').textContent = translations[lang]['password-label'];

@@ -12,6 +12,7 @@ services:
       - ./logs_v1:/home/devio/JB-logs
     environment:
       - PYTHONPATH=/app
+    user: "1000:1000"  # <-- اضافه شد
     cap_add:
       - SYS_ADMIN
       - DAC_READ_SEARCH
@@ -47,6 +48,7 @@ services:
       - ./logs_v2:/home/devio/JB-logs
     environment:
       - PYTHONPATH=/app
+    user: "1000:1000"  # <-- اضافه شد
     cap_add:
       - SYS_ADMIN
       - DAC_READ_SEARCH

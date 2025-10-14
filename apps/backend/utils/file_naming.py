@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # مسیر پایه برای ذخیره فایل‌ها
 # مسیر پایه برای ذخیره فایل‌ها
-BASE_OUTPUT_DIR = "/home/devio/projects/JBDtection/apps/backend/outputs_v1"
+BASE_OUTPUT_DIR = "/home/devio/JB-outputs"
 
 def ensure_directory_exists(directory_path: str) -> str:
     """

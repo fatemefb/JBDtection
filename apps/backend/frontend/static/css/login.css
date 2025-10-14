@@ -56,14 +56,15 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 15px;
     margin-bottom: 15px;
+    position: relative;
+    height: 120px; /* ارتفاع ثابت برای حفظ فضای لوگو */
 }
 
 /* استایل جدید برای لوگو - بدون پس‌زمینه و بزرگتر */
 .logo-icon {
-    width: 100px;  /* افزایش اندازه */
-    height: 100px; /* افزایش اندازه */
+    width: 80px;  /* کاهش اندازه برای تناسب بهتر */
+    height: 80px; /* کاهش اندازه برای تناسب بهتر */
     display: flex;
     align-items: center;
     justify-content: center;
@@ -72,6 +73,18 @@ body {
     background: none; /* حذف پس‌زمینه */
     box-shadow: none; /* حذف سایه */
     padding: 0; /* حذف حاشیه داخلی */
+    position: absolute;
+    top: 50%; /* قرار دادن در وسط عمودی */
+    transform: translateY(-50%);
+    z-index: 2; /* قرار دادن روی تصویر عنوان */
+}
+
+html[dir="rtl"] .logo-icon {
+    right: 0; /* در حالت RTL، از سمت راست */
+}
+
+html[dir="ltr"] .logo-icon {
+    left: 0; /* در حالت LTR، از سمت چپ */
 }
 
 .logo-icon img {
@@ -82,7 +95,7 @@ body {
 }
 
 .logo-icon:hover {
-    transform: scale(1.05);
+    transform: translateY(-50%) scale(1.05);
 }
 
 .logo-icon:hover img {
@@ -91,6 +104,33 @@ body {
 
 .logo-icon.initial-load {
     animation: logoSpin 1.5s ease-in-out;
+}
+
+/* استایل برای کانتینر تصویر عنوان */
+.title-image-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+}
+
+.title-image {
+    max-height: 150px;
+    width: auto;
+    display: block;
+    object-fit: contain;
+}
+
+html[dir="rtl"] .title-image-container {
+    padding-right: 70px; /* فضا برای لوگو در حالت RTL */
+    padding-left: 0;
+}
+
+html[dir="ltr"] .title-image-container {
+    padding-right: 0;
+    padding-left: 70px; /* فضا برای لوگو در حالت LTR */
 }
 
 .logo h1 {
@@ -440,10 +480,10 @@ html[dir="rtl"] .input-with-icon input {
     padding: 12px 45px 12px 12px;
 }
 
-/* تنظیمات RTL برای لوگو */
-html[dir="rtl"] .logo-icon {
-    margin-right: 0;
-    margin-left: 15px;
+/* انیمیشن چرخش لوگو */
+@keyframes logoSpin {
+    0% { transform: translateY(-50%) rotateY(0deg); }
+    100% { transform: translateY(-50%) rotateY(360deg); }
 }
 
 /* Responsive design */
@@ -463,8 +503,25 @@ html[dir="rtl"] .logo-icon {
     
     /* تنظیم اندازه لوگو برای صفحات کوچکتر */
     .logo-icon {
-        width: 80px;
-        height: 80px;
+        width: 70px;
+        height: 70px;
+    }
+    
+    /* حفظ موقعیت لوگو در صفحات کوچکتر */
+    .logo {
+        height: 100px; /* کاهش ارتفاع در صفحات کوچکتر */
+    }
+    
+    html[dir="rtl"] .title-image-container {
+        padding-right: 60px; /* کاهش فاصله در صفحات کوچکتر */
+    }
+    
+    html[dir="ltr"] .title-image-container {
+        padding-left: 60px; /* کاهش فاصله در صفحات کوچکتر */
+    }
+    
+    .title-image {
+        max-height: 120px; /* کاهش اندازه تصویر عنوان در صفحات کوچکتر */
     }
 }
 
@@ -487,8 +544,25 @@ html[dir="rtl"] .logo-icon {
     
     /* تنظیم اندازه لوگو برای صفحات خیلی کوچک */
     .logo-icon {
-        width: 70px;
-        height: 70px;
+        width: 60px;
+        height: 60px;
+    }
+    
+    /* حفظ موقعیت لوگو در صفحات خیلی کوچک */
+    .logo {
+        height: 90px; /* کاهش ارتفاع در صفحات خیلی کوچک */
+    }
+    
+    html[dir="rtl"] .title-image-container {
+        padding-right: 50px; /* کاهش بیشتر فاصله در صفحات خیلی کوچک */
+    }
+    
+    html[dir="ltr"] .title-image-container {
+        padding-left: 50px; /* کاهش بیشتر فاصله در صفحات خیلی کوچک */
+    }
+    
+    .title-image {
+        max-height: 100px; /* کاهش اندازه تصویر عنوان در صفحات خیلی کوچک */
     }
 }
 

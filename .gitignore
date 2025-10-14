@@ -101,3 +101,6 @@ apps/backend/outputs_v1/NGL/Aryavakav-NGL-Results-2025-09-15-v1.0.zip
 apps/backend/outputs_v1/NGL/Aryavakav-NGL-UnmatchedTags-2025-09-15-v1.0.xlsx
 apps/backend/outputs_v1/NGL/annotated_pdfs/intermediate_data.xlsx
 apps/backend/outputs_v1/NGL/annotated_pdfs/processing_reports.json
+__pycache__/
+*.pyc
+apps/backend/outputs_v1/
