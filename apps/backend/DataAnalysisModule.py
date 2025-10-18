@@ -156,7 +156,9 @@ class VectorMatcher:
 
         if norm1 == 0 or norm2 == 0:
             return 0.0
-        return dot_product / (norm1**0.5 * norm2**0.5)
+        similarity = dot_product / (norm1**0.5 * norm2**0.5)
+        return min(0.99, similarity)
+
 
     def find_similar_tags(self, input_tag: str) -> 'List[Tuple[str, float]]':
         """Find similar tags with improved matching logic and more flexible thresholds."""
@@ -312,20 +314,47 @@ class TagJBExtractor:
             excel_path: Path to Excel file containing tags
         """
         try:
-            logger.info(f"Building tag vectors from Excel: {excel_path}")
+            logger.info("="*70)
+            logger.info(f"🔄 Building tag vectors from Excel: {excel_path}")
+            logger.info("="*70)
 
+            # بررسی وجود فایل
+            if not os.path.exists(excel_path):
+                logger.error(f"❌ Excel file not found: {excel_path}")
+                return
+            
             # Read Excel file
             df = pd.read_excel(excel_path)
+            logger.info(f"✅ Excel file loaded: {len(df)} rows, {len(df.columns)} columns")
+            logger.info(f"   Columns: {df.columns.tolist()}")
 
+            # بررسی وجود ستون Tag No
             if 'Tag No' not in df.columns:
+                logger.error("❌ Excel file must contain a 'Tag No' column")
+                logger.error(f"   Available columns: {df.columns.tolist()}")
                 raise ValueError("Excel file must contain a 'Tag No' column")
 
             # Extract and clean tags
             tags = df['Tag No'].dropna().astype(str).str.strip().str.upper().unique()
+            logger.info(f"✅ Extracted {len(tags)} unique tags from 'Tag No' column")
+            
+            # نمایش نمونه
+            logger.info(f"   Sample tags: {tags[:5].tolist()}")
 
             # Add tags to vector matcher
+            added_count = 0
             for tag in tags:
                 self.vector_matcher.add_reference_tag(tag)
+                added_count += 1
+
+            logger.info(f"✅ Added {added_count} tags to vector matcher")
+
+            # بررسی نهایی
+            if hasattr(self.vector_matcher, 'reference_tags'):
+                final_count = len(self.vector_matcher.reference_tags)
+                logger.info(f"✅ Vector matcher now contains {final_count} reference tags")
+            else:
+                logger.error("❌ Vector matcher has no reference_tags attribute!")
 
             # Create tag patterns for later use
             instrument_prefixes = ['TIT', 'FIT', 'PIT', 'LIT', 'TCV', 'FCV', 'PCV', 'LCV']
@@ -343,52 +372,104 @@ class TagJBExtractor:
                 tag_patterns.append(pattern_parts)
 
             self.tag_patterns = {tag: pattern for tag, pattern in zip(tags, tag_patterns)}
+            logger.info(f"✅ Created tag patterns for {len(self.tag_patterns)} tags")
 
-            logger.info(f"Successfully built tag vectors and tag patterns for {len(tags)} tags")
+            logger.info("="*70 + "\n")
 
         except Exception as e:
-            logger.error(f"Error building tag vectors: {e}")
+            logger.error(f"❌ Error building tag vectors: {e}")
+            logger.error(traceback.format_exc())
             raise
-    def calculate_tag_similarity(self, text1: str, text2: str) -> float:
+
+    def calculate_tag_similarity(self, tag1: str, tag2: str) -> float:
         """
-        محاسبه شباهت بین دو رشته متن با ترکیبی از روش‌های مختلف
+        محاسبه شباهت بین دو تگ با معیارهای دقیق‌تر برای exact match
         
         Args:
-            text1: رشته اول
-            text2: رشته دوم
+            tag1: تگ اول
+            tag2: تگ دوم
             
         Returns:
-            امتیاز شباهت بین 0 تا 1
+            امتیاز شباهت بین 0.0 تا 1.0
         """
-        # روش 1: شباهت رشته‌ای ساده
-        string_similarity = self.calculate_string_similarity(text1, text2)
+        try:
+            # تبدیل به رشته و حذف فضاهای خالی
+            tag1_str = str(tag1).strip().upper()
+            tag2_str = str(tag2).strip().upper()
+            
+            # بررسی تطابق دقیق متنی - فقط در این حالت امتیاز 1.0 برمی‌گرداند
+            if tag1_str == tag2_str:
+                return 1.0
+            
+            # استخراج اجزای تگ (برای تگ‌هایی با فرمت XXX-YYY-ZZ)
+            tag1_parts = re.split(r'[-_]', tag1_str)
+            tag2_parts = re.split(r'[-_]', tag2_str)
+            
+            # اگر تعداد اجزا متفاوت است، امتیاز پایین‌تری برگردان
+            if len(tag1_parts) != len(tag2_parts):
+                return 0.5
+            
+            # بررسی اجزای تگ به صورت جداگانه
+            total_score = 0.0
+            weights = [0.4, 0.3, 0.3]  # وزن‌های هر بخش (پیشوند، شماره میانی، شماره انتهایی)
+            
+            for i in range(min(len(tag1_parts), len(tag2_parts), len(weights))):
+                part1 = tag1_parts[i]
+                part2 = tag2_parts[i]
+                
+                if part1 == part2:
+                    # بخش‌های یکسان
+                    total_score += weights[i]
+                elif i == 0 and part1 != part2:
+                    # پیشوندها متفاوت (مثلاً PIT با TIT) - کاهش شدید امتیاز
+                    # اگر پیشوندها متفاوت باشند، نباید exact match باشد
+                    total_score += weights[i] * 0.2
+                    # گزارش تفاوت پیشوند
+                    logger.debug(f"Prefix mismatch: {part1} vs {part2}")
+                elif i > 0 and part1.isdigit() and part2.isdigit():
+                    # اجزای عددی - بررسی شباهت عددی
+                    diff = abs(int(part1) - int(part2))
+                    if diff == 0:
+                        total_score += weights[i]
+                    elif diff <= 10:
+                        # شماره‌ها نزدیک هستند ولی متفاوت
+                        total_score += weights[i] * 0.5
+                        logger.debug(f"Number part close but different: {part1} vs {part2}")
+                    else:
+                        # شماره‌ها کاملاً متفاوت
+                        total_score += weights[i] * 0.2
+                        logger.debug(f"Number part significantly different: {part1} vs {part2}")
+                else:
+                    # سایر تفاوت‌ها
+                    total_score += weights[i] * 0.3
+                    logger.debug(f"Other part different: {part1} vs {part2}")
+            
+            final_score = min(0.99, total_score)
+            
+            return final_score
+            
+        except Exception as e:
+            logger.error(f"Error in tag similarity calculation: {e}")
+            return 0.0
+
+    def _calculate_vector_similarity_for_tags(self, tag1: str, tag2: str) -> float:
+        """
+        محاسبه شباهت وکتوری بین دو تگ
         
-        # روش 2: شباهت بخش‌های تگ (اگر با خط تیره جدا شده‌اند)
-        parts_similarity = 0
-        if '-' in text1 and '-' in text2:
-            parts_similarity = self.calculate_parts_similarity(text1, text2)
+        Args:
+            tag1: تگ اول
+            tag2: تگ دوم
+            
+        Returns:
+            امتیاز شباهت وکتوری
+        """
+        # تبدیل تگ‌ها به بردارهای ویژگی
+        vec1 = self.tag_to_vector(tag1)
+        vec2 = self.tag_to_vector(tag2)
         
-        # روش 3: شباهت عددی
-        numeric_similarity = self.calculate_numeric_similarity(text1, text2)
-        
-        # روش 4: بررسی پیشوند مشترک
-        prefix_similarity = 0
-        if '-' in text1 and '-' in text2:
-            prefix1 = text1.split('-')[0]
-            prefix2 = text2.split('-')[0]
-            if prefix1 == prefix2:
-                prefix_similarity = 0.8
-        
-        # ترکیب امتیازهای مختلف - وزن بیشتر به شباهت رشته‌ای و پیشوند
-        final_similarity = max(
-            string_similarity,
-            0.7 * parts_similarity + 0.3 * string_similarity,
-            0.6 * prefix_similarity + 0.4 * string_similarity,
-            0.5 * numeric_similarity + 0.5 * string_similarity
-        )
-        
-        return final_similarity
-    
+        # محاسبه شباهت وکتوری
+        return self.calculate_vector_similarity(vec1, vec2)
+
     def calculate_string_similarity(self, str1: str, str2: str) -> float:
         """
         محاسبه شباهت دو رشته با استفاده از فاصله لواشتاین
@@ -1098,8 +1179,7 @@ class TagJBExtractor:
         # ============================================================
         logger.info("Phase 1: Searching for EXACT tag matches...")
         exact_matched_tags = set()
-        
-        # 🔧 بررسی وجود vector_matcher
+
         if not hasattr(self, 'vector_matcher'):
             logger.error("❌ vector_matcher NOT FOUND - Phase 1 will be skipped!")
             logger.error("   All tags will be marked as 'unknown'")
@@ -1113,19 +1193,22 @@ class TagJBExtractor:
                 if not word_clean or len(word_clean) < 4:
                     continue
                 
-                # 🔧 رد کردن JB/MC/SPARE (بدون اضافه به processed)
+                # 🔧 رد کردن JB/MC/SPARE
                 if (self.jb_examples in word_clean or 
                     self.mc_examples in word_clean or 
                     spare_pattern.search(word_clean)):
                     continue
                 
-                # بررسی exact match با vector matcher
+                # ============================================================
+                # 🔧 FIX: شرط exact match سخت‌گیرانه
+                # ============================================================
                 similar_tags = self.vector_matcher.find_similar_tags(word_clean)
                 if similar_tags:
                     best_match, best_score = similar_tags[0]
                     
-                    # فقط exact matches (score >= 0.999)
-                    if best_score >= 0.999:
+                    # 🔧 شرط 1: Score باید دقیقاً 1.0 باشد (نه 0.999)
+                    # 🔧 شرط 2: متن OCR و IO Tag باید حرف به حرف یکسان باشند
+                    if best_score >= 1.0 and word_clean == best_match.upper():
                         if best_match not in exact_matched_tags:
                             exact_matched_tags.add(best_match)
                             tags.add(best_match)
@@ -1135,7 +1218,7 @@ class TagJBExtractor:
                                 tag_to_number[best_match] = sequence_number
                                 sequence_number += 1
                             
-                            # 🔧 FIX 2: ثبت صحیح اطلاعات match
+                            # ثبت اطلاعات match
                             tag_match_info[best_match] = {
                                 'match_type': 'exact',
                                 'score': best_score,
@@ -1144,7 +1227,12 @@ class TagJBExtractor:
                             
                             processed_tag_texts.add(word_clean)
                             logger.info(f"✅ EXACT match: {word_clean} → {best_match} (score: {best_score:.3f})")
-        
+                    else:
+                        # 🔧 لاگ برای debugging
+                        if best_score >= 0.95:
+                            logger.debug(f"⚠️ Near-exact rejected: {word_clean} → {best_match} "
+                                    f"(score: {best_score:.3f}, text_match: {word_clean == best_match.upper()})")
+
         logger.info(f"Phase 1 complete: Found {len(exact_matched_tags)} exact matches")
         
         # ============================================================
@@ -2232,6 +2320,7 @@ class TagJBExtractor:
                             tag_to_number: 'Dict[str, int]', tag_match_info: 'Dict[str, Dict]' = None) -> 'Tuple[np.ndarray, Dict[str, int]]':
         """
         Draw bounding boxes with correct match type information and SPARE handling
+        اصلاح شده برای کشیدن باندینگ باکس برای تمام نمونه‌های یک تگ در تصویر
         """
         
         # ============================================================
@@ -2297,7 +2386,7 @@ class TagJBExtractor:
         processed_regions = set()
         all_tag_numbers = dict(tag_to_number)
         sequence_number = max(all_tag_numbers.values()) + 1 if all_tag_numbers else 1
-        drawn_io_tags = set()
+        # حذف کردن مجموعه drawn_io_tags که باعث محدودیت در رسم باندینگ باکس می‌شد
         
         # ============================================================
         # Phase 1: رسم Exact Matches
@@ -2306,8 +2395,9 @@ class TagJBExtractor:
         exact_drawn_count = 0
         
         for tag in tags:
-            if tag.upper() in drawn_io_tags:
-                continue
+            # این خط حذف شده است تا به کشیدن باندینگ باکس برای تمام نمونه‌های تگ اجازه داده شود
+            # if tag.upper() in drawn_io_tags:
+            #    continue
             
             # دریافت match info
             match_type = 'unknown'
@@ -2328,6 +2418,7 @@ class TagJBExtractor:
             
             tag_upper = tag.upper()
             
+            # یافتن تمام نمونه‌های این تگ در متن OCR شده
             for i, text in enumerate(ocr_data['text']):
                 text_clean = text.strip().upper()
                 
@@ -2343,10 +2434,11 @@ class TagJBExtractor:
                             'score': match_score
                         })
                         processed_regions.add(region_key)
-                        drawn_io_tags.add(tag_upper)
+                        # حذف کردن اضافه کردن به drawn_io_tags
                         exact_drawn_count += 1
                         logger.debug(f"✅ Drew exact match: {tag}")
-                        break
+                        # حذف break برای ادامه جستجو برای نمونه‌های دیگر همین تگ
+                        # break
         
         logger.info(f"Phase 1 complete: Drew {exact_drawn_count} exact matches")
         
@@ -2357,8 +2449,9 @@ class TagJBExtractor:
         similar_drawn_count = 0
         
         for tag in tags:
-            if tag.upper() in drawn_io_tags:
-                continue
+            # حذف شده است
+            # if tag.upper() in drawn_io_tags:
+            #    continue
             
             match_type = 'unknown'
             match_score = 0.0
@@ -2374,6 +2467,7 @@ class TagJBExtractor:
             if match_type != 'similar':
                 continue
             
+            # یافتن تمام نمونه‌های این تگ در متن OCR شده
             for i, text in enumerate(ocr_data['text']):
                 text_clean = text.strip().upper()
                 
@@ -2392,13 +2486,15 @@ class TagJBExtractor:
                         'original_text': text_clean
                     })
                     processed_regions.add(region_key)
-                    drawn_io_tags.add(tag.upper())
+                    # حذف کردن اضافه کردن به drawn_io_tags
                     similar_drawn_count += 1
                     logger.debug(f"⚠️ Drew similar match: {text_clean} → {tag}")
-                    break
+                    # حذف break برای ادامه جستجو برای نمونه‌های دیگر همین تگ
+                    # break
         
         logger.info(f"Phase 2 complete: Drew {similar_drawn_count} similar matches")
         
+        # بقیه کد بدون تغییر باقی می‌ماند...
         # ============================================================
         # Phase 3: رسم JB identifiers
         # ============================================================
@@ -2419,7 +2515,7 @@ class TagJBExtractor:
                         processed_regions.add(region_key)
                         jb_drawn_count += 1
                         logger.debug(f"Found JB: {jb}")
-                        break
+                        # اینجا هم break را حذف می‌کنیم تا تمام نمونه‌های JB کشیده شوند
         
         logger.info(f"Phase 3 complete: Drew {jb_drawn_count} JBs")
         
@@ -2443,10 +2539,10 @@ class TagJBExtractor:
                         processed_regions.add(region_key)
                         mc_drawn_count += 1
                         logger.debug(f"Found MC: {mc}")
-                        break
+                        # حذف break
         
         logger.info(f"Phase 4 complete: Drew {mc_drawn_count} MCs")
-        
+            
         # ============================================================
         # 🔧 FIX 2: Phase 5 - رسم SPARE identifiers (بهبود یافته)
         # ============================================================
@@ -2491,7 +2587,7 @@ class TagJBExtractor:
                         processed_regions.add(region_key)
                         spare_found = True
                         logger.debug(f"✅ Found SPARE: {spare} (#{spare_number})")
-                        break
+                        # حذف break
             
             if not spare_found:
                 logger.warning(f"⚠️ Could not find bounding box for SPARE: {spare}")
@@ -2522,10 +2618,11 @@ class TagJBExtractor:
                             processed_regions.add(region_key)
                             cable_drawn_count += 1
                             logger.debug(f"Found cable: {cable_desc}")
-                            break
+                            # حذف break
         
         logger.info(f"Phase 6 complete: Drew {cable_drawn_count} cables")
         
+        # بقیه تابع بدون تغییر باقی می‌ماند
         # ============================================================
         # 🔧 FIX 3: رسم bounding boxes با رنگ‌بندی صحیح
         # ============================================================
@@ -2535,6 +2632,7 @@ class TagJBExtractor:
         for item in found_items['tags']:
             x, y, w, h = item['position']
             text = item['text']
+            cleaned_text = self.clean_text_for_display(text)
             match_type = item.get('match_type', 'unknown')
             score = item.get('score', 0.0)
             
@@ -2546,22 +2644,22 @@ class TagJBExtractor:
             
             # رنگ‌بندی بر اساس match type
             if match_type == 'exact':
-                color = (0, 255, 0)      # سبز
+                color = (255, 0, 0)      # سبز
                 label_prefix = "✓"
             elif match_type == 'similar':
                 color = (0, 165, 255)    # نارنجی
                 label_prefix = "≈"
             else:  # unknown یا هر چیز دیگر
                 color = (128, 128, 128)  # خاکستری
-                label_prefix = "?"
+                label_prefix = ""
                 logger.warning(f"⚠️ Unknown match type for tag '{text}': {match_type}")
             
             cv2.rectangle(image, (x, y), (x + w, y + h), color, 2)
             
             if match_type == 'similar' and score > 0:
-                label = f"{label_prefix} #{tag_number} {text} ({score:.2f})"
+                label = f"{label_prefix} #{tag_number} {cleaned_text} ({score:.2f})"
             else:
-                label = f"{label_prefix} #{tag_number} {text}"
+                label = f"#{tag_number} {cleaned_text}"
             
             cv2.putText(image, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
         
@@ -4340,6 +4438,24 @@ class TagJBExtractor:
             logger.error(f"❌ TEST FAILED: {e}")
             logger.error(traceback.format_exc())
             return False
+    
+    def clean_text_for_display(self, text):
+        """
+        پاکسازی متن برای نمایش توسط OpenCV
+        """
+        if not text:
+            return ""
+        
+        # حذف کاراکترهای کنترلی و نامرئی
+        text = ''.join(c if c.isprintable() else '' for c in text)
+        
+        # تبدیل به ASCII برای اطمینان از سازگاری با فونت OpenCV
+        text = text.encode('ascii', 'replace').decode('ascii')
+        
+        # جایگزینی علامت‌های سؤال با خط تیره
+        text = text.replace('???', '-').replace('??', '-').replace('?', '-')
+        
+        return text
 
     def reset_stats(self):
         """
