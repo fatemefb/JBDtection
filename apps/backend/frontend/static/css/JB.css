@@ -1302,8 +1302,8 @@ body.dark .file-item.error {
 
 /* استایل جدید برای لوگو - بدون پس‌زمینه و بزرگتر */
 .logo-icon {
-    width: 100px;  /* افزایش اندازه */
-    height: 100px; /* افزایش اندازه */
+    width: 200px !important;  /* افزایش اندازه */
+    height: 200px !important; /* افزایش اندازه */
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1323,10 +1323,6 @@ body.dark .file-item.error {
 
 .logo-icon:hover {
     transform: scale(1.05);
-}
-
-.logo-icon:hover img {
-    transform: rotate(5deg);
 }
 
 .nav-logo h1 {
@@ -3486,4 +3482,743 @@ html[dir="rtl"] .main-header .logo-icon {
 /* حالت تاریک */
 body.dark .main-header .logo-icon {
     background: none; /* حذف پس‌زمینه در حالت تاریک */
+}
+/* استایل‌های اصلی برای بخش تنظیمات پیشرفته */
+.advanced-pattern-section {
+    background-color: #f1f8fe;
+    border: 1px solid #d1e6fa;
+    border-left: 4px solid var(--primary-color);
+    border-radius: var(--border-radius);
+    padding: 25px;
+    margin-top: 20px;
+    box-shadow: var(--box-shadow);
+    transition: var(--transition);
+}
+
+.pattern-card {
+    background-color: #ffffff;
+    border-radius: var(--border-radius);
+    padding: 25px;
+    margin-bottom: 25px;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08);
+    transition: var(--transition);
+    border: 1px solid #eaeaea;
+}
+
+.pattern-card:hover {
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+}
+
+.pattern-card h3 {
+    color: var(--dark-color);
+    font-size: 1.3rem;
+    margin-top: 0;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #f1f1f1;
+    padding-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.pattern-card h3 i {
+    color: var(--primary-color);
+    font-size: 1.4rem;
+}
+
+.pattern-options {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    margin: 20px 0;
+}
+
+.pattern-option {
+    display: flex;
+    align-items: flex-start;
+    padding: 15px 18px;
+    border-radius: var(--border-radius);
+    background-color: #f8fafc;
+    cursor: pointer;
+    transition: var(--transition);
+    border: 1px solid #eaeaea;
+    position: relative;
+    overflow: hidden;
+}
+
+.pattern-option:hover {
+    background-color: #f0f7ff;
+    border-color: var(--primary-color);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px rgba(52, 152, 219, 0.12);
+}
+
+.pattern-option input[type="radio"] {
+    margin-top: 3px;
+    margin-right: 15px;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    cursor: pointer;
+}
+
+.pattern-option input[type="radio"]:checked + .option-content .option-title {
+    color: var(--primary-color);
+    font-weight: 600;
+}
+
+.option-content {
+    flex: 1;
+}
+
+.option-title {
+    font-weight: 500;
+    color: var(--dark-color);
+    transition: var(--transition);
+    font-size: 1.05rem;
+}
+
+.option-desc {
+    display: block;
+    font-size: 0.95rem;
+    color: var(--text-light);
+    margin-top: 8px;
+    line-height: 1.5;
+}
+
+.option-example {
+    display: inline-block;
+    font-size: 0.9rem;
+    color: var(--primary-color);
+    margin-top: 8px;
+    font-style: italic;
+    background-color: rgba(52, 152, 219, 0.08);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-family: 'Courier New', monospace;
+}
+
+/* استایل بهبود یافته برای بخش انتخاب رنگ */
+.color-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 15px;
+    margin-top: 20px;
+}
+
+.color-box {
+    display: flex;
+    align-items: center;
+    padding: 12px 15px;
+    border-radius: var(--border-radius);
+    background-color: #ffffff;
+    cursor: pointer;
+    transition: var(--transition);
+    border: 2px solid #eaeaea;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+    position: relative;
+    overflow: hidden;
+}
+
+.color-box:hover {
+    transform: translateY(-3px);
+    background-color: #f8fafc;
+    box-shadow: 0 5px 12px rgba(0, 0, 0, 0.08);
+}
+
+.color-box.selected {
+    border-color: var(--primary-color);
+    background-color: rgba(52, 152, 219, 0.08);
+    box-shadow: 0 4px 10px rgba(52, 152, 219, 0.2);
+}
+
+.color-swatch {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    margin-right: 15px;
+    flex-shrink: 0;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+    border: 2px solid rgba(0, 0, 0, 0.08);
+}
+
+.color-info {
+    flex: 1;
+}
+
+.color-name {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--dark-color);
+}
+
+.color-code {
+    font-size: 0.9rem;
+    color: var(--text-light);
+    margin-top: 4px;
+    font-family: 'Courier New', monospace;
+}
+
+/* استایل بهبود یافته برای بخش پیش‌نمایش */
+.preview-card {
+    background-color: #ffffff;
+    border-radius: var(--border-radius);
+    padding: 25px;
+    margin-top: 25px;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08);
+    border: 1px solid #eaeaea;
+    transition: var(--transition);
+}
+
+.preview-card:hover {
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+}
+
+.preview-card h3 {
+    color: var(--dark-color);
+    font-size: 1.3rem;
+    margin-top: 0;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #f1f1f1;
+    padding-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.preview-card h3 i {
+    color: var(--secondary-color);
+    font-size: 1.4rem;
+}
+
+.preview-input {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin: 20px 0;
+    background-color: #f8fafc;
+    padding: 15px 18px;
+    border-radius: var(--border-radius);
+    border: 1px solid #eaeaea;
+}
+
+.preview-input label {
+    font-weight: 600;
+    color: var(--dark-color);
+    min-width: 120px;
+    font-size: 1.05rem;
+}
+
+.preview-input input {
+    width: 100px;
+    padding: 12px 15px;
+    border-radius: var(--border-radius);
+    border: 1px solid #d1d8e0;
+    background-color: #ffffff;
+    color: var(--dark-color);
+    font-size: 1rem;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+    transition: var(--transition);
+}
+
+.preview-input input:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+    outline: none;
+}
+
+.preview-output {
+    background-color: #f8fafc;
+    border-radius: var(--border-radius);
+    padding: 18px;
+    border: 1px solid #eaeaea;
+}
+
+.preview-item {
+    margin-bottom: 15px;
+}
+
+.preview-item:last-child {
+    margin-bottom: 0;
+}
+
+.preview-item label {
+    display: block;
+    font-weight: 600;
+    color: var(--dark-color);
+    margin-bottom: 8px;
+    font-size: 1.05rem;
+}
+
+.preview-value {
+    display: inline-block;
+    background-color: #ffffff;
+    padding: 10px 15px;
+    border-radius: var(--border-radius);
+    margin-top: 5px;
+    font-family: 'Courier New', monospace;
+    font-size: 1rem;
+    border: 1px solid #d1d8e0;
+    color: var(--dark-color);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+}
+
+/* استایل بهبود یافته برای دکمه تنظیمات پیشرفته */
+.toggle-advanced-btn {
+    width: 100%;
+    padding: 16px 30px;
+    background: linear-gradient(135deg, #3498db, #2980b9);
+    color: white;
+    border: none;
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    transition: var(--transition);
+    margin: 25px 0;
+    box-shadow: 0 6px 12px rgba(52, 152, 219, 0.25);
+    font-weight: 600;
+    font-size: 1.15rem;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    position: relative;
+    overflow: hidden;
+}
+
+.toggle-advanced-btn:hover {
+    background: linear-gradient(135deg, #2980b9, #2471a3);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 15px rgba(52, 152, 219, 0.35);
+}
+
+.toggle-advanced-btn:active {
+    transform: translateY(1px);
+    box-shadow: 0 3px 6px rgba(52, 152, 219, 0.25);
+}
+
+.toggle-advanced-btn i {
+    transition: transform 0.3s ease;
+    font-size: 1.2rem;
+}
+
+/* استایل بهبود یافته برای بخش SCR */
+.scr-toggle {
+    margin-top: 20px;
+    padding: 15px 18px;
+    background-color: #f8fafc;
+    border-radius: var(--border-radius);
+    display: flex;
+    align-items: center;
+    border: 1px solid #eaeaea;
+}
+
+.scr-toggle label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    font-weight: 500;
+    color: var(--dark-color);
+    font-size: 1.05rem;
+}
+
+.scr-toggle input[type="checkbox"] {
+    margin-right: 15px;
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+}
+
+/* استایل بهبود یافته برای بخش‌های ورودی سفارشی */
+#customTerminalInput, #customWireInput {
+    margin-top: 20px;
+    padding: 20px;
+    background-color: #f8fafc;
+    border-radius: var(--border-radius);
+    border: 1px solid #eaeaea;
+}
+
+#customTerminalInput label, #customWireInput label {
+    display: block;
+    font-weight: 600;
+    color: var(--dark-color);
+    margin-bottom: 10px;
+    font-size: 1.05rem;
+}
+
+#customTerminalPattern, #customWirePattern {
+    width: 100%;
+    padding: 14px 15px;
+    border-radius: var(--border-radius);
+    border: 1px solid #d1d8e0;
+    background-color: #ffffff;
+    color: var(--dark-color);
+    margin-top: 8px;
+    font-family: 'Courier New', monospace;
+    font-size: 1rem;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+    transition: var(--transition);
+    box-sizing: border-box;
+}
+
+#customTerminalPattern:focus, #customWirePattern:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+    outline: none;
+}
+
+.hint {
+    display: block;
+    font-size: 0.9rem;
+    color: var(--text-light);
+    margin-top: 8px;
+    line-height: 1.5;
+    padding-left: 8px;
+    border-left: 2px solid #e9ecef;
+}
+
+/* استایل بهبود یافته برای بج‌های شماره */
+.badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    font-size: 0.9rem;
+    font-weight: bold;
+    color: white;
+    margin-right: 12px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+}
+
+.badge-primary {
+    background: linear-gradient(135deg, #3498db, #2980b9);
+}
+
+.badge-success {
+    background: linear-gradient(135deg, #2ecc71, #27ae60);
+}
+
+/* تغییر رنگ در حالت شب */
+body.dark .advanced-pattern-section {
+    background-color: #1a1a2e;
+    border-color: #2c2c44;
+    border-left-color: var(--primary-color);
+}
+
+body.dark .pattern-card {
+    background-color: #1e1e30;
+    border-color: #2c2c44;
+}
+
+body.dark .pattern-card h3 {
+    color: #e3e6f0;
+    border-color: #2c2c44;
+}
+
+body.dark .pattern-option {
+    background-color: #16213e;
+    border-color: #2c2c44;
+}
+
+body.dark .pattern-option:hover {
+    background-color: #1e2a38;
+    border-color: var(--primary-color);
+}
+
+body.dark .option-title {
+    color: #e3e6f0;
+}
+
+body.dark .pattern-option input[type="radio"]:checked + .option-content .option-title {
+    color: var(--primary-color);
+}
+
+body.dark .option-desc {
+    color: #a3bffa;
+}
+
+body.dark .option-example {
+    color: var(--primary-color);
+    background-color: rgba(52, 152, 219, 0.15);
+}
+
+body.dark .color-box {
+    background-color: #16213e;
+    border-color: #2c2c44;
+}
+
+body.dark .color-box:hover {
+    background-color: #1e2a38;
+}
+
+body.dark .color-box.selected {
+    border-color: var(--primary-color);
+    background-color: rgba(52, 152, 219, 0.15);
+}
+
+body.dark .color-name {
+    color: #e3e6f0;
+}
+
+body.dark .color-code {
+    color: #a3bffa;
+}
+
+body.dark .preview-card {
+    background-color: #1e1e30;
+    border-color: #2c2c44;
+}
+
+body.dark .preview-card h3 {
+    color: #e3e6f0;
+    border-color: #2c2c44;
+}
+
+body.dark .preview-input {
+    background-color: #16213e;
+    border-color: #2c2c44;
+}
+
+body.dark .preview-input label {
+    color: #e3e6f0;
+}
+
+body.dark .preview-input input {
+    background-color: #1a1a2e;
+    border-color: #2c2c44;
+    color: #e3e6f0;
+}
+
+body.dark .preview-output {
+    background-color: #16213e;
+    border-color: #2c2c44;
+}
+
+body.dark .preview-item label {
+    color: #e3e6f0;
+}
+
+body.dark .preview-value {
+    background-color: #1a1a2e;
+    border-color: #2c2c44;
+    color: #e3e6f0;
+}
+
+body.dark .toggle-advanced-btn {
+    background: linear-gradient(135deg, #3498db, #2980b9);
+}
+
+body.dark .toggle-advanced-btn:hover {
+    background: linear-gradient(135deg, #2980b9, #2471a3);
+}
+
+body.dark .scr-toggle {
+    background-color: #16213e;
+    border-color: #2c2c44;
+}
+
+body.dark .scr-toggle label {
+    color: #e3e6f0;
+}
+
+body.dark #customTerminalInput, body.dark #customWireInput {
+    background-color: #16213e;
+    border-color: #2c2c44;
+}
+
+body.dark #customTerminalInput label, body.dark #customWireInput label {
+    color: #e3e6f0;
+}
+
+body.dark #customTerminalPattern, body.dark #customWirePattern {
+    background-color: #1a1a2e;
+    border-color: #2c2c44;
+    color: #e3e6f0;
+}
+
+body.dark .hint {
+    color: #a3bffa;
+    border-color: #2c2c44;
+}
+
+/* تنظیمات RTL */
+html[dir="rtl"] .pattern-card h3 i,
+html[dir="rtl"] .preview-card h3 i {
+    margin-right: 0;
+    margin-left: 12px;
+}
+
+html[dir="rtl"] .pattern-option input[type="radio"] {
+    margin-right: 0;
+    margin-left: 15px;
+}
+
+html[dir="rtl"] .color-swatch {
+    margin-right: 0;
+    margin-left: 15px;
+}
+
+html[dir="rtl"] .scr-toggle input[type="checkbox"] {
+    margin-right: 0;
+    margin-left: 15px;
+}
+
+html[dir="rtl"] .badge {
+    margin-right: 0;
+    margin-left: 12px;
+}
+
+html[dir="rtl"] .hint {
+    padding-left: 0;
+    padding-right: 8px;
+    border-left: none;
+    border-right: 2px solid #e9ecef;
+}
+
+html[dir="rtl"] body.dark .hint {
+    border-right-color: #2c2c44;
+}
+
+html[dir="rtl"] .advanced-pattern-section {
+    border-left: none;
+    border-right: 4px solid var(--primary-color);
+}
+
+/* افکت انتخاب رنگ */
+@keyframes colorSelected {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.08); }
+    100% { transform: scale(1); }
+}
+
+.color-box.selected {
+    animation: colorSelected 0.3s ease;
+}
+
+/* افکت نمایش بخش پیشرفته */
+@keyframes slideDown {
+    from { 
+        opacity: 0; 
+        transform: translateY(-20px); 
+    }
+    to { 
+        opacity: 1; 
+        transform: translateY(0); 
+    }
+}
+
+.advanced-pattern-section {
+    animation: slideDown 0.5s ease-out;
+}
+
+/* بهبود دکمه‌های رادیویی */
+input[type="radio"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    border: 2px solid #d1d8e0;
+    border-radius: 50%;
+    outline: none;
+    transition: var(--transition);
+    position: relative;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+input[type="radio"]:checked {
+    border-color: var(--primary-color);
+    background-color: #fff;
+}
+
+input[type="radio"]:checked::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: var(--primary-color);
+}
+
+body.dark input[type="radio"] {
+    border-color: #4a5568;
+    background-color: #1a1a2e;
+}
+
+body.dark input[type="radio"]:checked {
+    border-color: var(--primary-color);
+    background-color: #1a1a2e;
+}
+
+/* بهبود چک‌باکس */
+input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    border: 2px solid #d1d8e0;
+    border-radius: 4px;
+    outline: none;
+    transition: var(--transition);
+    position: relative;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+input[type="checkbox"]:checked {
+    border-color: var(--primary-color);
+    background-color: var(--primary-color);
+}
+
+input[type="checkbox"]:checked::after {
+    content: '✓';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+body.dark input[type="checkbox"] {
+    border-color: #4a5568;
+    background-color: #1a1a2e;
+}
+
+body.dark input[type="checkbox"]:checked {
+    border-color: var(--primary-color);
+    background-color: var(--primary-color);
+}
+
+/* Responsive styles for advanced settings */
+@media (max-width: 768px) {
+    .color-grid {
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 12px;
+    }
+    
+    .pattern-card {
+        padding: 20px;
+    }
+    
+    .preview-input {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .preview-input label {
+        min-width: auto;
+    }
+    
+    .preview-input input {
+        width: 100%;
+    }
 }

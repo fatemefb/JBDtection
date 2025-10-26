@@ -114,16 +114,163 @@
                                         <input type="text" id="cableExamples" name="cable_examples" placeholder="12P, 8P, 24 PAIR, 36T, 48 CORE...">
                                         <p class="hint" id="cable-examples-hint">حروف یا ترکیبی از حروف که نشان دهنده توضیحات کابل باشد (اعداد میتواند هر عددی باشند)</p>
                                     </div>
-                                    <div class="pattern-divider"></div>
-                                    <div class="pattern-group">
-                                        <label for="wireColorRule" id="wire-color-rule-label">شناسایی قاعده رنگ سیم :</label>
-                                        <input type="text" id="wireColorRule" name="wire_color_rule" placeholder="BK{number:02d}, WT{number:02d}">
-                                        <p class="hint" id="wire-color-rule-hint">قاعده رنگ سیم با استفاده از {number}:</p>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- 🆕 بخش تنظیمات پیشرفته ترمینال و سیم -->
+                        <div class="advanced-settings-toggle">
+                            <button type="button" id="toggleAdvancedBtn" class="toggle-advanced-btn">
+                                <i class="fas fa-chevron-down"></i>
+                                <span id="toggle-advanced-text">نمایش تنظیمات پیشرفته ترمینال و سیم</span>
+                            </button>
+                        </div>
+
+                        <div class="advanced-pattern-section" id="advancedPatternSection" style="display: none;">
+                            <h2><i class="fas fa-cog"></i> <span id="advanced-settings-title">تنظیمات پیشرفته</span></h2>
+                            
+                            <!-- الگوی ترمینال -->
+                            <div class="pattern-card">
+                                <h3><span class="badge badge-primary">1</span> <span id="terminal-pattern-title">الگوی ترمینال</span></h3>
+                                
+                                <div class="pattern-options">
+                                    <label class="pattern-option">
+                                        <input type="radio" name="terminal_pattern_type" value="two_terminal_scr" checked>
+                                        <div class="option-content">
+                                            <strong id="opt-two-scr">دو ترمینال + SCR</strong>
+                                            <span class="option-desc" id="opt-two-scr-desc">الگو: T{2*x-1}, T{2*x}, SCR</span>
+                                            <span class="option-example">مثال: T1, T2, SCR</span>
+                                        </div>
+                                    </label>
+                                    
+                                    <label class="pattern-option">
+                                        <input type="radio" name="terminal_pattern_type" value="two_terminal">
+                                        <div class="option-content">
+                                            <strong id="opt-two">دو ترمینال بدون SCR</strong>
+                                            <span class="option-desc" id="opt-two-desc">الگو: T{2*x-1}, T{2*x}</span>
+                                            <span class="option-example">مثال: T1, T2</span>
+                                        </div>
+                                    </label>
+                                    
+                                    <label class="pattern-option">
+                                        <input type="radio" name="terminal_pattern_type" value="terminal_scr_terminal">
+                                        <div class="option-content">
+                                            <strong id="opt-scr-between">ترمینال + SCR + ترمینال</strong>
+                                            <span class="option-desc" id="opt-scr-between-desc">الگو: T{2*x-1}, SCR, T{2*x}</span>
+                                            <span class="option-example">مثال: T1, SCR, T2</span>
+                                        </div>
+                                    </label>
+                                    
+                                    <label class="pattern-option">
+                                        <input type="radio" name="terminal_pattern_type" value="simple_number">
+                                        <div class="option-content">
+                                            <strong id="opt-simple">شماره ساده</strong>
+                                            <span class="option-desc" id="opt-simple-desc">الگو: {2*x-1}, {2*x}</span>
+                                            <span class="option-example">مثال: 1, 2</span>
+                                        </div>
+                                    </label>
+                                    
+                                    <label class="pattern-option">
+                                        <input type="radio" name="terminal_pattern_type" value="custom">
+                                        <div class="option-content">
+                                            <strong id="opt-custom-terminal">قانون دستی</strong>
+                                            <span class="option-desc" id="opt-custom-terminal-desc">وارد کردن الگوی سفارشی</span>
+                                        </div>
+                                    </label>
+                                </div>
+                                
+                                <div id="customTerminalInput" style="display: none;">
+                                    <label for="customTerminalPattern" id="custom-terminal-label">الگوی سفارشی (x = شماره تگ):</label>
+                                    <input type="text" id="customTerminalPattern" placeholder="T{2*x-1}, T{2*x}, SCR">
+                                    <p class="hint" id="custom-terminal-hint">از x برای شماره تگ استفاده کنید. مثال: T{2*x-1}, T{2*x}</p>
+                                </div>
+                                
+                                <div class="scr-toggle">
+                                    <label>
+                                        <input type="checkbox" id="includeSCR" checked>
+                                        <span id="include-scr-label">شامل شدن SCR در الگو</span>
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <!-- الگوی رنگ سیم -->
+                            <div class="pattern-card">
+                                <h3><span class="badge badge-success">2</span> <span id="wire-pattern-title">الگوی رنگ سیم</span></h3>
+                                
+                                <div class="pattern-options">
+                                    <label class="pattern-option">
+                                        <input type="radio" name="wire_pattern_type" value="bk_wt" checked>
+                                        <div class="option-content">
+                                            <strong>سیاه و سفید (BK/WT)</strong>
+                                            <span class="option-desc">الگو: BK{x:02d}, WT{x:02d}</span>
+                                            <span class="option-example">مثال: BK01, WT01</span>
+                                        </div>
+                                    </label>
+                                    
+                                    <label class="pattern-option">
+                                        <input type="radio" name="wire_pattern_type" value="black_white">
+                                        <div class="option-content">
+                                            <strong>Black و White</strong>
+                                            <span class="option-desc">الگو: Black{x:02d}, White{x:02d}</span>
+                                            <span class="option-example">مثال: Black01, White01</span>
+                                        </div>
+                                    </label>
+                                    
+                                    <label class="pattern-option">
+                                        <input type="radio" name="wire_pattern_type" value="single_color">
+                                        <div class="option-content">
+                                            <strong>فقط یک رنگ</strong>
+                                            <span class="option-desc">الگو: BK{x:02d}</span>
+                                            <span class="option-example">مثال: BK01</span>
+                                        </div>
+                                    </label>
+                                    
+                                    <label class="pattern-option">
+                                        <input type="radio" name="wire_pattern_type" value="multi_color">
+                                        <div class="option-content">
+                                            <strong>چند رنگ (انتخابی)</strong>
+                                            <span class="option-desc">رنگ‌های دلخواه شما</span>
+                                        </div>
+                                    </label>
+                                    
+                                    <label class="pattern-option">
+                                        <input type="radio" name="wire_pattern_type" value="custom">
+                                        <div class="option-content">
+                                            <strong>قانون دستی</strong>
+                                            <span class="option-desc">وارد کردن الگوی سفارشی</span>
+                                        </div>
+                                    </label>
+                                </div>
+                                
+                                <!-- انتخاب چند رنگ -->
+                                <div id="multiColorSelection" style="display: none;">
+                                    <label id="select-colors-label">انتخاب رنگ‌ها:</label>
+                                    <div class="color-grid" id="colorGrid">
+                                        <!-- رنگ‌ها با JavaScript اضافه می‌شوند -->
                                     </div>
-                                    <div class="pattern-group">
-                                        <label for="scrNumberRule" id="scr-number-rule-label">قاعده Terminal Number:</label>
-                                        <input type="text" id="scrNumberRule" name="scr_number_rule" placeholder="{number*2-1} {number*2} SCR">
-                                        <p class="hint" id="scr-number-rule-hint">تعداد SCR_Terminal_Number در میان Terminal_First_Number , Terminal_Seconde_Number</p>
+                                </div>
+                                
+                                <div id="customWireInput" style="display: none;">
+                                    <label for="customWirePattern" id="custom-wire-label">الگوی سفارشی (x = شماره تگ):</label>
+                                    <input type="text" id="customWirePattern" placeholder="BK{x:02d}, WT{x:02d}">
+                                    <p class="hint" id="custom-wire-hint">از x برای شماره تگ استفاده کنید. {x:02d} = 01, 02, ...</p>
+                                </div>
+                            </div>
+                            
+                            <!-- پیش‌نمایش -->
+                            <div class="preview-card">
+                                <h3><i class="fas fa-eye"></i> <span id="preview-title">پیش‌نمایش</span></h3>
+                                <div class="preview-input">
+                                    <label for="previewTagNumber" id="preview-tag-label">شماره تگ برای پیش‌نمایش:</label>
+                                    <input type="number" id="previewTagNumber" value="1" min="1">
+                                </div>
+                                <div class="preview-output">
+                                    <div class="preview-item">
+                                        <strong id="preview-terminal-label">ترمینال‌ها:</strong>
+                                        <span id="previewTerminal" class="preview-value">T1, T2, SCR</span>
+                                    </div>
+                                    <div class="preview-item">
+                                        <strong id="preview-wire-label">رنگ‌های سیم:</strong>
+                                        <span id="previewWire" class="preview-value">BK01, WT01</span>
                                     </div>
                                 </div>
                             </div>
@@ -215,10 +362,6 @@
                 'spare-examples-hint': 'حروف یا ترکیبی از حروف که نشان‌دهنده  Spare هستند',
                 'cable-examples-label': 'شناسایی توضیحات کابل ها:',
                 'cable-examples-hint': 'حروف یا ترکیبی از حروف که نشان دهنده توضیحات کابل باشد (اعداد میتواند هر عددی باشند)',
-                'wire-color-rule-label': 'شناسایی قاعده رنگ سیم :',
-                'wire-color-rule-hint': 'قاعده رنگ سیم با استفاده از {number}:',
-                'scr-number-rule-label': 'قاعده Terminal Number:',
-                'scr-number-rule-hint': 'تعداد SCR_Terminal_Number در میان Terminal_First_Number , Terminal_Seconde_Number',
                 'process-btn-text': 'شروع پردازش',
                 'preview-title': '<i class="fas fa-image"></i> پیش‌نمایش دیاگرام‌های آپلود شده',
                 'no-files-selected': 'هنوز فایلی انتخاب نشده است.',
@@ -247,7 +390,32 @@
                 'no-pdf-selected': 'لطفاً حداقل یک فایل PDF انتخاب کنید',
                 'no-excel-selected': 'لطفاً یک فایل Excel انتخاب کنید',
                 'direct-download-text': '✅ پردازش تکمیل شد. می‌توانید فایل خود را از اینجا دانلود کنید:',
-                'zip-download-text': 'دانلود فایل ZIP'
+                'zip-download-text': 'دانلود فایل ZIP',
+                'advanced-settings-title': 'تنظیمات پیشرفته',
+                'terminal-pattern-title': 'الگوی ترمینال',
+                'wire-pattern-title': 'الگوی رنگ سیم',
+                'preview-title': 'پیش‌نمایش',
+                'preview-tag-label': 'شماره تگ برای پیش‌نمایش:',
+                'preview-terminal-label': 'ترمینال‌ها:',
+                'preview-wire-label': 'رنگ‌های سیم:',
+                'opt-two-scr': 'دو ترمینال + SCR',
+                'opt-two-scr-desc': 'الگو: T{2*x-1}, T{2*x}, SCR',
+                'opt-two': 'دو ترمینال بدون SCR',
+                'opt-two-desc': 'الگو: T{2*x-1}, T{2*x}',
+                'opt-scr-between': 'ترمینال + SCR + ترمینال',
+                'opt-scr-between-desc': 'الگو: T{2*x-1}, SCR, T{2*x}',
+                'opt-simple': 'شماره ساده',
+                'opt-simple-desc': 'الگو: {2*x-1}, {2*x}',
+                'opt-custom-terminal': 'قانون دستی',
+                'opt-custom-terminal-desc': 'وارد کردن الگوی سفارشی',
+                'custom-terminal-label': 'الگوی سفارشی (x = شماره تگ):',
+                'custom-terminal-hint': 'از x برای شماره تگ استفاده کنید',
+                'include-scr-label': 'شامل شدن SCR در الگو',
+                'select-colors-label': 'انتخاب رنگ‌ها:',
+                'custom-wire-label': 'الگوی سفارشی (x = شماره تگ):',
+                'custom-wire-hint': 'از x برای شماره تگ استفاده کنید. {x:02d} = 01, 02, ...',
+                'toggle-advanced-text': 'نمایش تنظیمات پیشرفته ترمینال و سیم',
+                'hide-advanced-text': 'مخفی کردن تنظیمات پیشرفته'
             },
             'en': {
                 'title': 'JB Detection System',
@@ -270,10 +438,6 @@
                 'spare-examples-hint': 'Letters or combinations that indicate Spare',
                 'cable-examples-label': 'Cable Description Detection:',
                 'cable-examples-hint': 'Letters or combinations that indicate cable descriptions (numbers can be any value)',
-                'wire-color-rule-label': 'Wire Color Rule Detection:',
-                'wire-color-rule-hint': 'Wire color rule using {number}:',
-                'scr-number-rule-label': 'Terminal Number Rule:',
-                'scr-number-rule-hint': 'Number of SCR_Terminal_Number between Terminal_First_Number and Terminal_Second_Number',
                 'process-btn-text': 'Start Processing',
                 'preview-title': '<i class="fas fa-image"></i> Uploaded Diagrams Preview',
                 'no-files-selected': 'No file selected yet.',
@@ -302,9 +466,90 @@
                 'no-pdf-selected': 'Please select at least one PDF file',
                 'no-excel-selected': 'Please select an Excel file',
                 'direct-download-text': '✅ Processing completed. You can download your file here:',
-                'zip-download-text': 'Download ZIP File'
+                'zip-download-text': 'Download ZIP File',
+                'advanced-settings-title': 'Advanced Settings',
+                'terminal-pattern-title': 'Terminal Pattern',
+                'wire-pattern-title': 'Wire Color Pattern',
+                'preview-title': 'Preview',
+                'preview-tag-label': 'Tag number for preview:',
+                'preview-terminal-label': 'Terminals:',
+                'preview-wire-label': 'Wire Colors:',
+                'opt-two-scr': 'Two Terminals + SCR',
+                'opt-two-scr-desc': 'Pattern: T{2*x-1}, T{2*x}, SCR',
+                'opt-two': 'Two Terminals without SCR',
+                'opt-two-desc': 'Pattern: T{2*x-1}, T{2*x}',
+                'opt-scr-between': 'Terminal + SCR + Terminal',
+                'opt-scr-between-desc': 'Pattern: T{2*x-1}, SCR, T{2*x}',
+                'opt-simple': 'Simple Number',
+                'opt-simple-desc': 'Pattern: {2*x-1}, {2*x}',
+                'opt-custom-terminal': 'Custom Rule',
+                'opt-custom-terminal-desc': 'Enter custom pattern',
+                'custom-terminal-label': 'Custom pattern (x = tag number):',
+                'custom-terminal-hint': 'Use x for tag number',
+                'include-scr-label': 'Include SCR in pattern',
+                'select-colors-label': 'Select Colors:',
+                'custom-wire-label': 'Custom pattern (x = tag number):',
+                'custom-wire-hint': 'Use x for tag number. {x:02d} = 01, 02, ...',
+                'toggle-advanced-text': 'Show Advanced Settings',
+                'hide-advanced-text': 'Hide Advanced Settings'
             }
         };
+        // تکمیل ترجمه‌های ناقص
+        translations['fa']['wire-color-rule-label'] = 'قانون رنگ سیم:';
+        translations['fa']['scr-number-rule-label'] = 'قانون شماره SCR:';
+        translations['fa']['patterns-used'] = 'الگوهای استفاده شده:';
+        translations['fa']['terminal-pattern'] = 'الگوی ترمینال:';
+        translations['fa']['wire-color-pattern'] = 'الگوی رنگ سیم:';
+        translations['fa']['scr-status'] = 'وضعیت SCR:';
+        translations['fa']['scr-enabled'] = 'فعال';
+        translations['fa']['scr-disabled'] = 'غیرفعال';
+        translations['fa']['selected-colors'] = 'رنگ‌های انتخاب شده:';
+        translations['fa']['downloading'] = 'در حال دانلود...';
+
+        translations['en']['wire-color-rule-label'] = 'Wire Color Rule:';
+        translations['en']['scr-number-rule-label'] = 'SCR Number Rule:';
+        translations['en']['patterns-used'] = 'Patterns Used:';
+        translations['en']['terminal-pattern'] = 'Terminal Pattern:';
+        translations['en']['wire-color-pattern'] = 'Wire Color Pattern:';
+        translations['en']['scr-status'] = 'SCR Status:';
+        translations['en']['scr-enabled'] = 'Enabled';
+        translations['en']['scr-disabled'] = 'Disabled';
+        translations['en']['selected-colors'] = 'Selected Colors:';
+        translations['en']['downloading'] = 'Downloading...';
+        
+        const standardColors = [
+            { code: 'BK', name: 'Black', nameFA: 'سیاه', hex: '#000000' },
+            { code: 'WT', name: 'White', nameFA: 'سفید', hex: '#FFFFFF' },
+            { code: 'RD', name: 'Red', nameFA: 'قرمز', hex: '#FF0000' },
+            { code: 'BU', name: 'Blue', nameFA: 'آبی', hex: '#0000FF' },
+            { code: 'GN', name: 'Green', nameFA: 'سبز', hex: '#00FF00' },
+            { code: 'GNYE', name: 'Green/Yellow', nameFA: 'سبز/زرد', hex: '#90EE90' },
+            { code: 'YE', name: 'Yellow', nameFA: 'زرد', hex: '#FFFF00' },
+            { code: 'BN', name: 'Brown', nameFA: 'قهوه‌ای', hex: '#8B4513' },
+            { code: 'OR', name: 'Orange', nameFA: 'نارنجی', hex: '#FFA500' },
+            { code: 'PK', name: 'Pink', nameFA: 'صورتی', hex: '#FFC0CB' },
+            { code: 'VT', name: 'Violet', nameFA: 'بنفش', hex: '#8B00FF' }
+        ];
+
+        // الگوهای ترمینال
+        const terminalPatterns = {
+            'two_terminal_scr': 'T{2*x-1}, T{2*x}, SCR',
+            'two_terminal': 'T{2*x-1}, T{2*x}',
+            'terminal_scr_terminal': 'T{2*x-1}, SCR, T{2*x}',
+            'simple_number': '{2*x-1}, {2*x}'
+        };
+
+        // الگوهای رنگ سیم
+        const wirePatterns = {
+            'bk_wt': 'BK{x:02d}, WT{x:02d}',
+            'black_white': 'Black{x:02d}, White{x:02d}',
+            'single_color': 'BK{x:02d}'
+        };
+
+        // وضعیت فعلی
+        let selectedColors = ['Black', 'White'];
+        let currentTerminalPattern = 'two_terminal_scr';
+        let currentWirePattern = 'bk_wt';
 
         // Theme and language switch logic
         const themeBtn = document.getElementById('themeBtn');
@@ -346,10 +591,6 @@
             document.getElementById('spare-examples-hint').innerHTML = translations[lang]['spare-examples-hint'];
             document.getElementById('cable-examples-label').innerHTML = translations[lang]['cable-examples-label'];
             document.getElementById('cable-examples-hint').innerHTML = translations[lang]['cable-examples-hint'];
-            document.getElementById('wire-color-rule-label').innerHTML = translations[lang]['wire-color-rule-label'];
-            document.getElementById('wire-color-rule-hint').innerHTML = translations[lang]['wire-color-rule-hint'];
-            document.getElementById('scr-number-rule-label').innerHTML = translations[lang]['scr-number-rule-label'];
-            document.getElementById('scr-number-rule-hint').innerHTML = translations[lang]['scr-number-rule-hint'];
             document.getElementById('process-btn-text').innerHTML = translations[lang]['process-btn-text'];
             document.getElementById('preview-title').innerHTML = translations[lang]['preview-title'];
             document.getElementById('no-files-selected').innerHTML = translations[lang]['no-files-selected'];
@@ -361,6 +602,7 @@
             document.getElementById('log-title').innerHTML = translations[lang]['log-title'];
             document.getElementById('logOutput').textContent = translations[lang]['log-ready'];
             document.getElementById('footer-text').innerHTML = translations[lang]['footer-text'];
+            document.getElementById('toggle-advanced-text').textContent = translations[lang]['toggle-advanced-text'];
             
             // بخش دانلود
             if (document.getElementById('download-title')) {
@@ -394,7 +636,7 @@
         // Initialize theme and language
         setTheme(currentTheme);
         setLang(currentLang);
-
+        
         // Notification system
         function showNotification(message, type = 'info') {
             // Create notification element if it doesn't exist
@@ -502,6 +744,190 @@
             }
         });
 
+        document.getElementById('toggleAdvancedBtn').addEventListener('click', function() {
+            const advancedSection = document.getElementById('advancedPatternSection');
+            const btn = this;
+            const icon = btn.querySelector('i');
+            
+            if (advancedSection.style.display === 'none') {
+                advancedSection.style.display = 'block';
+                icon.classList.remove('fa-chevron-down');
+                icon.classList.add('fa-chevron-up');
+                document.getElementById('toggle-advanced-text').textContent = 
+                    currentLang === 'fa' ? translations[currentLang]['hide-advanced-text'] : translations[currentLang]['hide-advanced-text'];
+            } else {
+                advancedSection.style.display = 'none';
+                icon.classList.remove('fa-chevron-up');
+                icon.classList.add('fa-chevron-down');
+                document.getElementById('toggle-advanced-text').textContent = 
+                    currentLang === 'fa' ? translations[currentLang]['toggle-advanced-text'] : translations[currentLang]['toggle-advanced-text'];
+            }
+        });
+
+        // مدیریت تغییر الگوی ترمینال
+        document.querySelectorAll('input[name="terminal_pattern_type"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                const customInput = document.getElementById('customTerminalInput');
+                currentTerminalPattern = this.value;
+                
+                if (this.value === 'custom') {
+                    customInput.style.display = 'block';
+                } else {
+                    customInput.style.display = 'none';
+                }
+                
+                updatePreview();
+            });
+        });
+
+        // مدیریت تغییر الگوی سیم
+        document.querySelectorAll('input[name="wire_pattern_type"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                const multiColorDiv = document.getElementById('multiColorSelection');
+                const customWireDiv = document.getElementById('customWireInput');
+                currentWirePattern = this.value;
+                
+                multiColorDiv.style.display = 'none';
+                customWireDiv.style.display = 'none';
+                
+                if (this.value === 'multi_color') {
+                    multiColorDiv.style.display = 'block';
+                    initColorGrid();
+                } else if (this.value === 'custom') {
+                    customWireDiv.style.display = 'block';
+                }
+                
+                updatePreview();
+            });
+        });
+
+        // ایجاد گرید رنگ‌ها
+        function initColorGrid() {
+            const colorGrid = document.getElementById('colorGrid');
+            colorGrid.innerHTML = '';
+            
+            standardColors.forEach(color => {
+                const colorBox = document.createElement('div');
+                colorBox.className = 'color-box';
+                if (selectedColors.includes(color.name)) {
+                    colorBox.classList.add('selected');
+                }
+                
+                colorBox.innerHTML = `
+                    <div class="color-swatch" style="background-color: ${color.hex}; ${color.name === 'White' ? 'border: 1px solid #ccc;' : ''}"></div>
+                    <div class="color-info">
+                        <div class="color-name">${currentLang === 'fa' ? color.nameFA : color.name}</div>
+                        <div class="color-code">${color.code}</div>
+                    </div>
+                `;
+                
+                colorBox.addEventListener('click', () => toggleColor(color.name, colorBox));
+                colorGrid.appendChild(colorBox);
+            });
+        }
+
+        // تغییر وضعیت انتخاب رنگ
+        function toggleColor(colorName, element) {
+            if (selectedColors.includes(colorName)) {
+                selectedColors = selectedColors.filter(c => c !== colorName);
+                element.classList.remove('selected');
+            } else {
+                selectedColors.push(colorName);
+                element.classList.add('selected');
+            }
+            updatePreview();
+        }
+
+        // به‌روزرسانی پیش‌نمایش
+        function updatePreview() {
+            const tagNumber = parseInt(document.getElementById('previewTagNumber').value) || 1;
+            const includeSCR = document.getElementById('includeSCR').checked;
+            
+            // محاسبه ترمینال
+            let terminalPattern = '';
+            if (currentTerminalPattern === 'custom') {
+                terminalPattern = document.getElementById('customTerminalPattern').value || 'T{2*x-1}, T{2*x}';
+            } else {
+                terminalPattern = terminalPatterns[currentTerminalPattern];
+            }
+            
+            let terminalResult = terminalPattern.replace(/\{([^}]+)\}/g, (match, expr) => {
+                try {
+                    expr = expr.replace(/x/g, tagNumber.toString());
+                    return eval(expr).toString();
+                } catch (e) {
+                    return match;
+                }
+            });
+            
+            if (!includeSCR) {
+                terminalResult = terminalResult.replace(/,?\s*SCR\s*,?/g, '').replace(/,\s*,/g, ',').trim().replace(/^,|,$/g, '');
+            }
+            
+            // محاسبه رنگ سیم
+            let wireResult = '';
+            if (currentWirePattern === 'multi_color') {
+                wireResult = selectedColors.map(colorName => {
+                    const color = standardColors.find(c => c.name === colorName);
+                    return `${color.code}${tagNumber.toString().padStart(2, '0')}`;
+                }).join(', ');
+            } else if (currentWirePattern === 'custom') {
+                const customPattern = document.getElementById('customWirePattern').value || 'BK{x:02d}';
+                wireResult = customPattern.replace(/\{x:?(\d+)?d?\}/g, (match, width) => {
+                    return width ? tagNumber.toString().padStart(parseInt(width), '0') : tagNumber.toString();
+                });
+            } else {
+                const pattern = wirePatterns[currentWirePattern];
+                wireResult = pattern.replace(/\{x:?(\d+)?d?\}/g, (match, width) => {
+                    return width ? tagNumber.toString().padStart(parseInt(width), '0') : tagNumber.toString();
+                });
+            }
+            
+            // نمایش پیش‌نمایش
+            document.getElementById('previewTerminal').textContent = terminalResult || 'نامشخص';
+            document.getElementById('previewWire').textContent = wireResult || 'نامشخص';
+        }
+
+        // رویداد تغییر شماره تگ در پیش‌نمایش
+        document.getElementById('previewTagNumber').addEventListener('input', updatePreview);
+        document.getElementById('includeSCR').addEventListener('change', updatePreview);
+        document.getElementById('customTerminalPattern').addEventListener('input', updatePreview);
+        document.getElementById('customWirePattern').addEventListener('input', updatePreview);
+
+        // تابع دریافت کانفیگ نهایی برای ارسال به سرور
+        function getPatternConfig() {
+            let terminalPattern = '';
+            if (currentTerminalPattern === 'custom') {
+                terminalPattern = document.getElementById('customTerminalPattern').value || '';
+            } else {
+                terminalPattern = terminalPatterns[currentTerminalPattern] || '';
+            }
+            
+            let wireColorPattern = '';
+            if (currentWirePattern === 'multi_color') {
+                wireColorPattern = selectedColors.map(colorName => {
+                    const color = standardColors.find(c => c.name === colorName);
+                    return `${color.code}{x:02d}`;
+                }).join(', ');
+            } else if (currentWirePattern === 'custom') {
+                wireColorPattern = document.getElementById('customWirePattern').value || '';
+            } else {
+                wireColorPattern = wirePatterns[currentWirePattern] || '';
+            }
+            
+            return {
+                terminal_pattern: terminalPattern,
+                wire_color_pattern: wireColorPattern,
+                include_scr: document.getElementById('includeSCR').checked,
+                selected_colors: selectedColors
+            };
+        }
+
+        // مقداردهی اولیه
+        document.addEventListener('DOMContentLoaded', () => {
+            updatePreview();
+        });
+
         // Form submission handler
         document.getElementById('processForm').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -513,14 +939,12 @@
                 return;
             }
             
-            // اعتبارسنجی فایل‌های PDF
             const pdfFiles = document.getElementById('pdfInput').files;
             if (pdfFiles.length === 0) {
                 showNotification(translations[currentLang]['no-pdf-selected'], 'error');
                 return;
             }
             
-            // اعتبارسنجی فایل Excel
             const excelFile = document.getElementById('excelInput').files[0];
             if (!excelFile) {
                 showNotification(translations[currentLang]['no-excel-selected'], 'error');
@@ -528,31 +952,34 @@
             }
             
             const formData = new FormData();
-            // Add project name
             formData.append('project_name', projectName);
             
             // Add PDF files
             for (let i = 0; i < pdfFiles.length; i++) {
                 formData.append('pdf_files', pdfFiles[i]);
             }
-            // Add Excel file
             formData.append('excel_file', excelFile);
             
-            // الگوها
+            // الگوهای قدیمی (برای سازگاری)
             formData.append('jb_examples', document.getElementById('jbExamples').value);
             formData.append('mc_examples', document.getElementById('mcExamples').value);
             formData.append('spare_examples', document.getElementById('spareExamples').value);
             formData.append('cable_examples', document.getElementById('cableExamples').value);
-            formData.append('wire_color_rule', document.getElementById('wireColorRule').value);
-            formData.append('scr_number_rule', document.getElementById('scrNumberRule').value);
             
-            // Update UI to show processing state
+            // 🆕 الگوهای جدید ترمینال و سیم
+            const patternConfig = getPatternConfig();
+            formData.append('terminal_pattern', patternConfig.terminal_pattern);
+            formData.append('wire_color_pattern', patternConfig.wire_color_pattern);
+            formData.append('include_scr', patternConfig.include_scr);
+            formData.append('selected_colors', JSON.stringify(patternConfig.selected_colors));
+            
+            // Update UI
             document.getElementById('processButton').disabled = true;
             document.getElementById('processButton').innerHTML = translations[currentLang]['processing'];
             document.getElementById('logOutput').textContent = translations[currentLang]['processing-started'];
             document.getElementById('progressBar').style.width = '10%';
             
-            // پنهان کردن بخش دانلود قبلی (اگر وجود داشته باشد)
+            // پنهان کردن بخش دانلود قبلی
             document.getElementById('downloadBox').style.display = 'none';
             document.getElementById('downloadLinks').innerHTML = '';
             document.getElementById('directDownloadLink').style.display = 'none';
@@ -562,17 +989,33 @@
                     method: 'POST',
                     body: formData
                 });
+                
                 document.getElementById('progressBar').style.width = '70%';
                 const result = await response.json();
                 document.getElementById('progressBar').style.width = '100%';
                 
                 if (result.status === 'success') {
-                    document.getElementById('totalTags').textContent = (result.details?.results?.unmatched_pdf_tags?.length || 0) + (result.details?.results?.unmatched_excel_tags?.length || 0);
-                    document.getElementById('pagesProcessed').textContent = result.details?.output_files?.annotated_pdfs?.length || 0;
+                    document.getElementById('totalTags').textContent = 
+                        (result.details?.results?.unmatched_pdf_tags?.length || 0) + 
+                        (result.details?.results?.unmatched_excel_tags?.length || 0);
+                    document.getElementById('pagesProcessed').textContent = 
+                        result.details?.output_files?.annotated_pdfs?.length || 0;
                     
                     let logContent = translations[currentLang]['processing-success'];
                     
-                    // نمایش اطلاعات تگ‌های بدون تطابق
+                    // نمایش الگوهای استفاده شده
+                    if (result.details.patterns_used) {
+                        logContent += '\n📐 الگوهای استفاده شده:\n';
+                        logContent += `   • ترمینال: ${result.details.patterns_used.terminal_pattern}\n`;
+                        logContent += `   • رنگ سیم: ${result.details.patterns_used.wire_color_pattern}\n`;
+                        logContent += `   • SCR: ${result.details.patterns_used.include_scr ? 'فعال' : 'غیرفعال'}\n`;
+                        if (result.details.patterns_used.selected_colors.length > 0) {
+                            logContent += `   • رنگ‌ها: ${result.details.patterns_used.selected_colors.join(', ')}\n`;
+                        }
+                        logContent += '\n';
+                    }
+                    
+                    // نمایش تگ‌های بدون تطابق
                     logContent += translations[currentLang]['unmatched-excel-tags'];
                     const unmatchedExcelTags = result.details.results.unmatched_excel_tags || [];
                     if (unmatchedExcelTags.length === 0) {
@@ -582,6 +1025,7 @@
                             logContent += `   • ${tag}\n`;
                         });
                     }
+                    
                     logContent += translations[currentLang]['unmatched-pdf-tags'];
                     const unmatchedPdfTags = result.details.results.unmatched_pdf_tags || [];
                     if (unmatchedPdfTags.length === 0) {
@@ -591,39 +1035,39 @@
                             logContent += `   • ${tag}\n`;
                         });
                     }
+                    
                     document.getElementById('logOutput').textContent = logContent;
                     
                     // نمایش لینک‌های دانلود
                     showDownloadLinks(result.details.output_files);
                     
-                if (result.details.output_files.download_url) {
-                    // استفاده از آدرس فعلی سرور بدون تغییر پورت
-                    const apiBase = `${window.location.protocol}//${window.location.host}`;
-                    
-                    // استخراج مسیر نسبی از URL کامل
-                    let zipPath = result.details.output_files.zip_path;
-                    if (zipPath.startsWith('/home/devio/JB-outputs/')) {
-                        zipPath = zipPath.replace('/home/devio/JB-outputs/', '');
+                    if (result.details.output_files.download_url) {
+                        const apiBase = `${window.location.protocol}//${window.location.host}`;
+                        let zipPath = result.details.output_files.zip_path;
+                        if (zipPath.startsWith('/home/devio/JB-outputs/')) {
+                            zipPath = zipPath.replace('/home/devio/JB-outputs/', '');
+                        }
+                        document.getElementById('zipDownloadLink').href = 
+                            `${apiBase}/download?file=${encodeURIComponent(zipPath)}`;
+                        document.getElementById('directDownloadLink').style.display = 'block';
                     }
-                    
-                    document.getElementById('zipDownloadLink').href = `${apiBase}/download?file=${encodeURIComponent(zipPath)}`;
-                    document.getElementById('directDownloadLink').style.display = 'block';
-                }
                     
                     showNotification(translations[currentLang]['processing-success'], 'success');
                 } else {
-                    document.getElementById('logOutput').textContent = translations[currentLang]['error'] + 
-                        `${result.message}\n\n${JSON.stringify(result.details || {}, null, 2)}`;
+                    document.getElementById('logOutput').textContent = 
+                        translations[currentLang]['error'] + `${result.message}\n\n${JSON.stringify(result.details || {}, null, 2)}`;
                     showNotification(translations[currentLang]['error'] + result.message, 'error');
                 }
             } catch (error) {
                 document.getElementById('progressBar').style.width = '100%';
-                document.getElementById('logOutput').textContent = translations[currentLang]['error'] + `${error.message}\n`;
+                document.getElementById('logOutput').textContent = 
+                    translations[currentLang]['error'] + `${error.message}\n`;
                 showNotification(translations[currentLang]['error'] + error.message, 'error');
                 console.error('Error during form submission:', error);
             } finally {
                 document.getElementById('processButton').disabled = false;
-                document.getElementById('processButton').innerHTML = '<i class="fas fa-play"></i> <span id="process-btn-text">' + 
+                document.getElementById('processButton').innerHTML = 
+                    '<i class="fas fa-play"></i> <span id="process-btn-text">' + 
                     translations[currentLang]['process-btn-text'] + '</span>';
             }
         });
@@ -860,8 +1304,8 @@
             
             /* استایل جدید برای لوگو - بدون حاشیه و کاملاً گرد */
             .logo-icon {
-                width: 90px;
-                height: 90px;
+                width: 200px !important;
+                height: 200px !important;
                 display: flex;
                 align-items: center;
                 justify-content: center;

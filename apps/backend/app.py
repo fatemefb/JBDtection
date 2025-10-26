@@ -254,13 +254,29 @@ def process_files():
         # گزینه استفاده از GPU (اگر در دسترس باشد)
         use_gpu = request.form.get('use_gpu', 'false').lower() == 'true'
         
-        # دریافت الگوها از فرم
+        # دریافت الگوهای قدیمی از فرم (برای سازگاری)
         jb_examples = request.form.get('jb_examples', '').strip()
         mc_examples = request.form.get('mc_examples', '').strip()
         spare_examples = request.form.get('spare_examples', '').strip()
         cable_examples = request.form.get('cable_examples', '').strip()
-        wire_color_rule = request.form.get('wire_color_rule', '').strip()
-        scr_number_rule = request.form.get('scr_number_rule', '').strip()
+        
+        # 🆕 دریافت الگوهای جدید ترمینال و سیم
+        terminal_pattern = request.form.get('terminal_pattern', '').strip()
+        wire_color_pattern = request.form.get('wire_color_pattern', '').strip()
+        include_scr = request.form.get('include_scr', 'true').lower() == 'true'
+        
+        # 🆕 دریافت رنگ‌های انتخاب شده (به صورت JSON string)
+        selected_colors_json = request.form.get('selected_colors', '[]')
+        try:
+            selected_colors = json.loads(selected_colors_json)
+        except:
+            selected_colors = []
+        
+        logger.info(f"🆕 الگوهای دریافتی:")
+        logger.info(f"   Terminal Pattern: {terminal_pattern}")
+        logger.info(f"   Wire Color Pattern: {wire_color_pattern}")
+        logger.info(f"   Include SCR: {include_scr}")
+        logger.info(f"   Selected Colors: {selected_colors}")
         
         # ایجاد دایرکتوری خروجی پروژه
         project_output_dir = get_project_output_dir(project_name)
@@ -285,32 +301,47 @@ def process_files():
             temp_path = os.path.join(app.config['UPLOAD_FOLDER'], pdf.filename)
             pdf.save(temp_path)
             pdf_paths.append(temp_path)
-            logger.info(f"فایل PDF ذخیره شد: {pdf.filename} در مسیر {temp_path}")
+            logger.info(f"فایل PDF ذخیره شد: {pdf.filename}")
         
         # ذخیره فایل اکسل
         excel_path = os.path.join(app.config['UPLOAD_FOLDER'], excel_file.filename)
         excel_file.save(excel_path)
-        logger.info(f"فایل Excel ذخیره شد: {excel_file.filename} در مسیر {excel_path}")
+        logger.info(f"فایل Excel ذخیره شد: {excel_file.filename}")
         
-        # حالا که excel_path را داریم، می‌توانیم extractor را ایجاد کنیم
-        logger.info("در حال راه‌اندازی استخراج کننده مناسب برای سیستم عامل...")
+        # ایجاد extractor
+        logger.info("در حال راه‌اندازی استخراج کننده...")
         extractor = get_platform_specific_extractor(
             tesseract_path=DEFAULT_TESSERACT_PATH,
             excel_path=excel_path
         )
         
-        # تنظیم الگوها در extractor
+        # تنظیم الگوهای قدیمی (برای سازگاری)
         if hasattr(extractor, 'set_patterns'):
             extractor.set_patterns(
                 jb_examples=jb_examples,
                 mc_examples=mc_examples,
                 spare_examples=spare_examples,
-                cable_examples=cable_examples,
-                wire_color_rule=wire_color_rule,
-                scr_number_rule=scr_number_rule
+                cable_examples=cable_examples
             )
         
-        # نمایش اطلاعات GPU اگر در دسترس باشد
+        # 🆕 تنظیم الگوهای جدید ترمینال و سیم
+        if terminal_pattern or wire_color_pattern:
+            if hasattr(extractor, 'set_terminal_wire_patterns'):
+                pattern_config = {
+                    'terminal_pattern': terminal_pattern,
+                    'wire_color_pattern': wire_color_pattern,
+                    'include_scr': include_scr,
+                    'selected_colors': selected_colors
+                }
+                extractor.set_terminal_wire_patterns(pattern_config)
+                logger.info(f"✓ الگوهای ترمینال و سیم تنظیم شد")
+            else:
+                logger.warning("⚠️ Extractor does not support new pattern system")
+                # استفاده از روش قدیمی
+                if wire_color_pattern and hasattr(extractor, 'set_wire_color_rule'):
+                    extractor.set_wire_color_rule(wire_color_pattern)
+        
+        # نمایش اطلاعات GPU
         gpu_info = {}
         if hasattr(extractor, 'gpu_available'):
             gpu_info['gpu_available'] = extractor.gpu_available
@@ -320,8 +351,6 @@ def process_files():
                     logger.info(f"پردازش با استفاده از {extractor.gpu_type} GPU فعال شد")
                     if hasattr(extractor, 'enable_gpu'):
                         extractor.enable_gpu()
-                else:
-                    logger.info("پردازش GPU غیرفعال شده است (توسط کاربر)")
         
         # پردازش فایل‌ها
         logger.info(f"شروع پردازش {len(pdf_paths)} فایل PDF و Excel...")
@@ -336,28 +365,33 @@ def process_files():
         unmatched_excel_filename = generate_document_filename(project_name, "UnmatchedTags", "xlsx")
         unmatched_excel_path = os.path.join(project_output_dir, unmatched_excel_filename)
         
-        # ایجاد فایل اکسل برای تگ‌های تطبیق نیافته
         if hasattr(extractor, '_create_unmatched_tags_excel'):
             extractor._create_unmatched_tags_excel(unmatched_excel_tags, unmatched_pdf_tags, unmatched_excel_path)
-            logger.info(f"فایل Excel تگ‌های تطبیق نیافته ذخیره شد: {unmatched_excel_path}")
+            logger.info(f"فایل Excel تگ‌های تطبیق نیافته ذخیره شد")
         
         # ایجاد فایل گزارش
         report_filename = generate_document_filename(project_name, "Report", "json")
         report_path = os.path.join(project_output_dir, report_filename)
         
-        # ذخیره گزارش پردازش
-        with open(report_path, 'w') as f:
+        # 🆕 ذخیره گزارش با اطلاعات الگوها
+        with open(report_path, 'w', encoding='utf-8') as f:
             json.dump({
                 'project_name': project_name,
                 'processing_date': datetime.now().isoformat(),
                 'user': username,
+                'patterns': {
+                    'terminal_pattern': terminal_pattern,
+                    'wire_color_pattern': wire_color_pattern,
+                    'include_scr': include_scr,
+                    'selected_colors': selected_colors
+                },
                 'results': {
                     'unmatched_excel_tags': len(unmatched_excel_tags),
                     'unmatched_pdf_tags': len(unmatched_pdf_tags),
                     'pdf_count': len(pdf_paths),
                     'pdf_names': [os.path.basename(p) for p in pdf_paths]
                 }
-            }, f, indent=2)
+            }, f, indent=2, ensure_ascii=False)
         
         # لیست فایل‌های خروجی
         output_files = [output_excel_path, unmatched_excel_path, report_path]
@@ -370,10 +404,8 @@ def process_files():
                 output_files.append(pdf_path)
                 annotated_pdfs.append(pdf_path)
         
-        # ایجاد فایل ZIP
+        # ایجاد ZIP
         zip_path = create_zip_archive(project_name, output_files)
-        
-        # ایجاد URL دانلود
         download_url = get_download_url(zip_path)
         
         # پاکسازی فایل‌های موقت
@@ -381,7 +413,7 @@ def process_files():
             os.remove(path)
         os.remove(excel_path)
         
-        # آماده‌سازی پاسخ
+        # 🆕 پاسخ با اطلاعات الگوها
         response = {
             'status': 'success',
             'message': 'Processing completed successfully',
@@ -391,6 +423,12 @@ def process_files():
                     'pdf_count': len(pdf_paths),
                     'pdf_names': [os.path.basename(p) for p in pdf_paths],
                     'excel_file': excel_file.filename
+                },
+                'patterns_used': {
+                    'terminal_pattern': terminal_pattern or 'default',
+                    'wire_color_pattern': wire_color_pattern or 'default',
+                    'include_scr': include_scr,
+                    'selected_colors': selected_colors
                 },
                 'output_files': {
                     'excel_path': output_excel_path,
@@ -413,14 +451,11 @@ def process_files():
             }
         }
         
-        logger.info(f"پردازش با موفقیت به پایان رسید", extra={'user': username, 'results': {
-            'unmatched_excel_count': len(unmatched_excel_tags),
-            'unmatched_pdf_count': len(unmatched_pdf_tags)
-        }})
+        logger.info(f"✓ پردازش با موفقیت به پایان رسید")
         return jsonify(response)
     
     except Exception as e:
-        logger.error(f"خطا در پردازش فایل‌ها: {str(e)}", extra={'user': username})
+        logger.error(f"❌ خطا در پردازش: {str(e)}", extra={'user': username})
         logger.error(traceback.format_exc())
         return jsonify({
             'status': 'error',
