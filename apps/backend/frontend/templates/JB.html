@@ -400,22 +400,25 @@
                 'preview-wire-label': 'رنگ‌های سیم:',
                 'opt-two-scr': 'دو ترمینال + SCR',
                 'opt-two-scr-desc': 'الگو: T{2*x-1}, T{2*x}, SCR',
+                'opt-two-scr-example': 'مثال: T1, T2, SCR',
                 'opt-two': 'دو ترمینال بدون SCR',
                 'opt-two-desc': 'الگو: T{2*x-1}, T{2*x}',
+                'opt-two-example': 'مثال: T1, T2',
                 'opt-scr-between': 'ترمینال + SCR + ترمینال',
                 'opt-scr-between-desc': 'الگو: T{2*x-1}, SCR, T{2*x}',
+                'opt-scr-between-example': 'مثال: T1, SCR, T2',
                 'opt-simple': 'شماره ساده',
                 'opt-simple-desc': 'الگو: {2*x-1}, {2*x}',
+                'opt-simple-example': 'مثال: 1, 2',
                 'opt-custom-terminal': 'قانون دستی',
                 'opt-custom-terminal-desc': 'وارد کردن الگوی سفارشی',
                 'custom-terminal-label': 'الگوی سفارشی (x = شماره تگ):',
-                'custom-terminal-hint': 'از x برای شماره تگ استفاده کنید',
+                'custom-terminal-hint': 'از x برای شماره تگ استفاده کنید. مثال: T{2*x-1}, T{2*x}',
                 'include-scr-label': 'شامل شدن SCR در الگو',
                 'select-colors-label': 'انتخاب رنگ‌ها:',
                 'custom-wire-label': 'الگوی سفارشی (x = شماره تگ):',
                 'custom-wire-hint': 'از x برای شماره تگ استفاده کنید. {x:02d} = 01, 02, ...',
                 'toggle-advanced-text': 'نمایش تنظیمات پیشرفته ترمینال و سیم',
-                'hide-advanced-text': 'مخفی کردن تنظیمات پیشرفته'
             },
             'en': {
                 'title': 'JB Detection System',
@@ -476,46 +479,41 @@
                 'preview-wire-label': 'Wire Colors:',
                 'opt-two-scr': 'Two Terminals + SCR',
                 'opt-two-scr-desc': 'Pattern: T{2*x-1}, T{2*x}, SCR',
+                'opt-two-scr-example': 'Example: T1, T2, SCR',
                 'opt-two': 'Two Terminals without SCR',
                 'opt-two-desc': 'Pattern: T{2*x-1}, T{2*x}',
+                'opt-two-example': 'Example: T1, T2',
                 'opt-scr-between': 'Terminal + SCR + Terminal',
                 'opt-scr-between-desc': 'Pattern: T{2*x-1}, SCR, T{2*x}',
+                'opt-scr-between-example': 'Example: T1, SCR, T2',
                 'opt-simple': 'Simple Number',
                 'opt-simple-desc': 'Pattern: {2*x-1}, {2*x}',
+                'opt-simple-example': 'Example: 1, 2',
                 'opt-custom-terminal': 'Custom Rule',
                 'opt-custom-terminal-desc': 'Enter custom pattern',
                 'custom-terminal-label': 'Custom pattern (x = tag number):',
-                'custom-terminal-hint': 'Use x for tag number',
+                'custom-terminal-hint': 'Use x for tag number. Example: T{2*x-1}, T{2*x}',
                 'include-scr-label': 'Include SCR in pattern',
                 'select-colors-label': 'Select Colors:',
                 'custom-wire-label': 'Custom pattern (x = tag number):',
                 'custom-wire-hint': 'Use x for tag number. {x:02d} = 01, 02, ...',
-                'toggle-advanced-text': 'Show Advanced Settings',
-                'hide-advanced-text': 'Hide Advanced Settings'
-            }
+                'toggle-advanced-text': 'Show Advanced Terminal and Wire Settings',
+                'hide-advanced-text': 'Hide Advanced Terminal and Wire Settings',             
+                'bk-wt-option': 'BK01, WT01',
+                'bk-wt-pattern': 'Pattern: BK{x:02d}, WT{x:02d}',
+                'bk-wt-example': 'Example: BK01, WT01',
+                'black-white-option': 'Black و White',
+                'black-white-pattern': 'pattern: Black{x:02d}, White{x:02d}',
+                'black-white-example': 'example: Black01, White01',
+                'single-color-option': 'sibgle color only',
+                'single-color-pattern': 'pattern: BK{x:02d}',
+                'single-color-example': 'example: BK01',
+                'multi-color-option': 'multiple coloe (selectable)',
+                'multi-color-desc': 'your custom color',
+                'custom-wire-option': 'custom rule',
+                'custom-wire-desc': 'enter custom pattern'
+            },
         };
-        // تکمیل ترجمه‌های ناقص
-        translations['fa']['wire-color-rule-label'] = 'قانون رنگ سیم:';
-        translations['fa']['scr-number-rule-label'] = 'قانون شماره SCR:';
-        translations['fa']['patterns-used'] = 'الگوهای استفاده شده:';
-        translations['fa']['terminal-pattern'] = 'الگوی ترمینال:';
-        translations['fa']['wire-color-pattern'] = 'الگوی رنگ سیم:';
-        translations['fa']['scr-status'] = 'وضعیت SCR:';
-        translations['fa']['scr-enabled'] = 'فعال';
-        translations['fa']['scr-disabled'] = 'غیرفعال';
-        translations['fa']['selected-colors'] = 'رنگ‌های انتخاب شده:';
-        translations['fa']['downloading'] = 'در حال دانلود...';
-
-        translations['en']['wire-color-rule-label'] = 'Wire Color Rule:';
-        translations['en']['scr-number-rule-label'] = 'SCR Number Rule:';
-        translations['en']['patterns-used'] = 'Patterns Used:';
-        translations['en']['terminal-pattern'] = 'Terminal Pattern:';
-        translations['en']['wire-color-pattern'] = 'Wire Color Pattern:';
-        translations['en']['scr-status'] = 'SCR Status:';
-        translations['en']['scr-enabled'] = 'Enabled';
-        translations['en']['scr-disabled'] = 'Disabled';
-        translations['en']['selected-colors'] = 'Selected Colors:';
-        translations['en']['downloading'] = 'Downloading...';
         
         const standardColors = [
             { code: 'BK', name: 'Black', nameFA: 'سیاه', hex: '#000000' },

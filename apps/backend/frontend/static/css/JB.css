@@ -1300,18 +1300,18 @@ body.dark .file-item.error {
     gap: 15px;
 }
 
-/* استایل جدید برای لوگو - بدون پس‌زمینه و بزرگتر */
+
 .logo-icon {
-    width: 200px !important;  /* افزایش اندازه */
-    height: 200px !important; /* افزایش اندازه */
+    width: 200px !important; 
+    height: 200px !important; 
     display: flex;
     align-items: center;
     justify-content: center;
     transition: all 0.3s ease;
-    border-radius: 0; /* حذف گردی */
-    background: none; /* حذف پس‌زمینه */
-    box-shadow: none; /* حذف سایه */
-    padding: 0; /* حذف حاشیه داخلی */
+    border-radius: 0;
+    background: none; 
+    box-shadow: none; 
+    padding: 0; 
 }
 
 .logo-icon img {

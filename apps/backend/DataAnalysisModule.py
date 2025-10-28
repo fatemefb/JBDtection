@@ -1181,7 +1181,28 @@ class TagJBExtractor:
             logger.error(f"Error in assign_tag_numbers_by_position: {e}")
             logger.error(traceback.format_exc())
             return {}
+            
+    def clean_cable_description(self, text, mc_identifiers=None):
+        import re
 
+        if not text:
+            return text
+
+        # حذف دقیق نام‌های موجود در mc_identifiers
+        if mc_identifiers:
+            for mc in mc_identifiers:
+                pattern = re.escape(mc)
+                text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+
+        # حذف حالت عمومی MC + شماره (مثلاً MC12, MC-45, MC_33)
+        text = re.sub(r'\bMC[-_\s]?\d+\b', '', text, flags=re.IGNORECASE)
+
+        # پاک کردن فاصله‌های اضافی
+        text = re.sub(r'\s{2,}', ' ', text).strip()
+
+        return text
+
+        
     def extract_from_image(self, image: np.ndarray) -> 'Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str], Dict[str, Dict]]':
         """
         ✅ بازنویسی کامل: استخراج تگ‌ها با شماره‌گذاری بر اساس موقعیت عمودی
@@ -1497,7 +1518,8 @@ class TagJBExtractor:
             combined_text = ' '.join(nearby_words).upper()
             
             if combined_text:
-                raw_cable_descriptions.append(combined_text)
+                clean_text = self.clean_cable_description(combined_text, mc_identifiers)
+                raw_cable_descriptions.append(clean_text)
             
             for pattern in cable_patterns:
                 matches = pattern.findall(combined_text)
