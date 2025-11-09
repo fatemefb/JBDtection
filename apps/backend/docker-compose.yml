@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   jbdetection_v1:
     container_name: jbdetection_v1
@@ -12,7 +14,11 @@ services:
       - ./logs_v1:/home/devio/JB-logs
     environment:
       - PYTHONPATH=/app
-    user: "1000:1000"  # <-- اضافه شد
+      - FLASK_ENV=production
+      # افزایش timeout‌ها
+      - GUNICORN_TIMEOUT=3600
+      - GUNICORN_GRACEFUL_TIMEOUT=3600
+    user: "1000:1000"  
     cap_add:
       - SYS_ADMIN
       - DAC_READ_SEARCH
@@ -24,49 +30,28 @@ services:
         -b 0.0.0.0:5000
         --workers=2
         --threads=4
-        --timeout=2700
+        --timeout=3600
+        --graceful-timeout=3600
+        --keep-alive=5
         --max-requests=500
         --max-requests-jitter=50
+        --worker-class=sync
+        --log-level=info
+        --access-logfile=-
+        --error-logfile=-
     deploy:
       resources:
+        limits:
+          cpus: '2'
+          memory: 8G
         reservations:
           devices:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-
-  jbdetection_v2:
-    container_name: jbdetection_v2
-    build:
-      context: ../..
-      dockerfile: apps/backend/Dockerfile
-    image: jbdetection-image-v2:${IMAGE_TAG_V2:-test}
-    ports:
-      - "5001:5000"
-    volumes:
-      - ./outputs_v2:/home/devio/JB-outputs
-      - ./logs_v2:/home/devio/JB-logs
-    environment:
-      - PYTHONPATH=/app
-    user: "1000:1000"  # <-- اضافه شد
-    cap_add:
-      - SYS_ADMIN
-      - DAC_READ_SEARCH
-    security_opt:
-      - apparmor:unconfined
-    restart: unless-stopped
-    command: >
-      gunicorn apps.backend.app:app
-        -b 0.0.0.0:5001
-        --workers=2
-        --threads=4
-        --timeout=2700
-        --max-requests=500
-        --max-requests-jitter=50
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+# فعال‌سازی BuildKit در docker-compose
+x-buildkit:
+  environment:
+    DOCKER_BUILDKIT: 1
+    COMPOSE_DOCKER_CLI_BUILD: 1
+              

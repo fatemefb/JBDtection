@@ -1,33 +1,45 @@
 # ================================
-# STAGE 1: Build OpenCV + Tesseract with Leptonica
+# STAGE 1: Build OpenCV + Tesseract + Leptonica
 # ================================
 FROM nvidia/cuda:11.4.3-cudnn8-devel-ubuntu20.04 AS builder
-
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y \
-    build-essential cmake git g++ curl \
-    libgtk2.0-dev libavcodec-dev libavformat-dev libswscale-dev libv4l-dev \
-    liblapack-dev libopenblas-dev pkg-config \
-    python3.8 python3.8-dev python3-pip \
-    autoconf automake libtool \
-    libpng-dev libjpeg8-dev libtiff5-dev zlib1g-dev \
-    libicu-dev libpango1.0-dev libcairo2-dev libgif-dev \
-    libwebp-dev libopenjp2-7-dev \
-    libleptonica-dev libgomp1 tzdata
+# ✅ بازگرداندن مخازن رسمی اوبونتو + اطمینان از اتصال
+RUN rm -f /etc/apt/sources.list.d/*.list && \
+    echo "deb http://archive.ubuntu.com/ubuntu focal main restricted universe multiverse" > /etc/apt/sources.list && \
+    echo "deb http://archive.ubuntu.com/ubuntu focal-updates main restricted universe multiverse" >> /etc/apt/sources.list && \
+    echo "deb http://archive.ubuntu.com/ubuntu focal-security main restricted universe multiverse" >> /etc/apt/sources.list && \
+    echo "deb http://archive.ubuntu.com/ubuntu focal-backports main restricted universe multiverse" >> /etc/apt/sources.list && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* && \
+    apt-get update -o Acquire::Retries=5 -o Acquire::http::No-Cache=True -o Acquire::BrokenProxy=true && \
+    apt-get install -y --no-install-recommends \
+      software-properties-common ca-certificates apt-transport-https curl wget gnupg lsb-release && \
+    apt-get update && apt-get install -y \
+      build-essential cmake git g++ \
+      libgtk2.0-dev libavcodec-dev libavformat-dev libswscale-dev libv4l-dev \
+      liblapack-dev libopenblas-dev pkg-config \
+      python3.8 python3.8-dev python3-pip \
+      autoconf automake libtool \
+      libpng-dev libjpeg8-dev libtiff5-dev zlib1g-dev \
+      libicu-dev libpango1.0-dev libcairo2-dev libgif-dev \
+      libwebp-dev libopenjp2-7-dev \
+      libleptonica-dev libgomp1 tzdata && \                                     
+    rm -rf /var/lib/apt/lists/*
 
-# Set Python aliases
 RUN ln -sf /usr/bin/python3.8 /usr/bin/python && ln -sf /usr/bin/pip3 /usr/bin/pip
-
 RUN pip install --upgrade pip && pip install numpy
 
+# ---------------------
 # Leptonica
+# ---------------------
 WORKDIR /opt
 RUN git clone https://github.com/DanBloomberg/leptonica.git && \
     cd leptonica && mkdir build && cd build && \
     cmake .. && make -j"$(nproc)" && make install && ldconfig
 
+# ---------------------
 # OpenCV
+# ---------------------
 WORKDIR /opt
 RUN git clone https://github.com/opencv/opencv.git && \
     git clone https://github.com/opencv/opencv_contrib.git && \
@@ -60,7 +72,9 @@ RUN PYTHON_BIN=$(which python) && \
       .. && \
     make -j"$(nproc)" && make install && ldconfig
 
+# ---------------------
 # Tesseract
+# ---------------------
 WORKDIR /opt
 RUN git clone https://github.com/tesseract-ocr/tesseract.git && \
     cd tesseract && git checkout 5.3.3 && mkdir build
@@ -68,52 +82,62 @@ RUN git clone https://github.com/tesseract-ocr/tesseract.git && \
 WORKDIR /opt/tesseract/build
 RUN cmake .. && make -j"$(nproc)" && make install && ldconfig
 
-# Tesseract traineddata
+# دانلود traineddata
 RUN mkdir -p /usr/local/share/tessdata && \
     curl -L -o /usr/local/share/tessdata/eng.traineddata \
     https://github.com/tesseract-ocr/tessdata_best/raw/main/eng.traineddata
 
-ENV TESSDATA_PREFIX=/usr/local/share/
+ENV TESSDATA_PREFIX=/usr/local/share/tessdata
+ENV TESSERACT_PATH=/usr/local/bin/tesseract
 
 # ================================
-# STAGE 2: Final Runtime Container
+# STAGE 2: Runtime
 # ================================
-FROM nvidia/cuda:11.4.3-cudnn8-devel-ubuntu20.04 AS runtime
-
+FROM nvidia/cuda:11.4.3-cudnn8-runtime-ubuntu20.04 AS runtime
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y \
-    libgl1 libglib2.0-0 libsm6 libxext6 libxrender-dev \
-    libtesseract-dev libleptonica-dev \
-    python3.8 python3-pip python3-tk tzdata \
-    nano vim tree && \
-    ln -sf /usr/bin/python3.8 /usr/bin/python && ln -sf /usr/bin/pip3 /usr/bin/pip && \
-    rm -rf /var/lib/apt/lists/*
+RUN rm -f /etc/apt/sources.list.d/*.list && \
+    echo "deb http://archive.ubuntu.com/ubuntu focal main restricted universe multiverse" > /etc/apt/sources.list && \
+    echo "deb http://archive.ubuntu.com/ubuntu focal-updates main restricted universe multiverse" >> /etc/apt/sources.list && \
+    echo "deb http://archive.ubuntu.com/ubuntu focal-security main restricted universe multiverse" >> /etc/apt/sources.list && \
+    apt-get clean && apt-get update && \
+    apt-get install -y \
+      python3.8 python3-pip tzdata \
+      libpng16-16 libjpeg8 libtiff5 libwebp6 \
+      libopenjp2-7 zlib1g libleptonica-dev \
+      libgomp1 libicu66 libpango-1.0-0 libcairo2 \
+      libgl1 libglib2.0-0 python3-tk \
+      && rm -rf /var/lib/apt/lists/*
 
-# انتقال Tesseract + Leptonica + OpenCV
+RUN ln -sf /usr/bin/python3.8 /usr/bin/python && \
+    ln -sf /usr/bin/pip3 /usr/bin/pip
+
+# ✅ pip mirror
+RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
+    pip config set global.timeout 180
+
+# ✅ copy libraries from builder
 COPY --from=builder /usr/local /usr/local
 
-# اضافه کردن مسیر Tesseract به PATH
-ENV PATH="/usr/local/bin:${PATH}"
-ENV TESSDATA_PREFIX=/usr/local/share/tessdata
-
-# ایجاد دایرکتوری‌های مورد نیاز
+# ✅ Create output dirs
 RUN mkdir -p /home/devio/JB-outputs /home/devio/JB-logs && \
     chmod -R 777 /home/devio/JB-outputs /home/devio/JB-logs
 
-# نصب پکیج‌های پایتونی
+# ✅ ✅ CRITICAL: Required runtime ENV
+ENV TESSDATA_PREFIX=/usr/local/share/tessdata
+ENV TESSERACT_PATH=/usr/local/bin/tesseract
+ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+
 WORKDIR /app
+
 COPY apps/backend/requirements-linux.txt /app/
 RUN pip install --upgrade pip \
     && pip install --ignore-installed --prefer-binary --no-cache-dir -r requirements-linux.txt \
     && pip install gunicorn
 
-# کپی سورس‌ها
 COPY apps /app/apps
 
-# تنظیم حجم‌ها (volumes)
 VOLUME ["/home/devio/JB-outputs", "/home/devio/JB-logs"]
 
-# نقطه شروع اپلیکیشن
-CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "apps.backend.app:app"]
+CMD ["gunicorn --workers 1 --threads 4 --bind 0.0.0.0:5000 app:app"]
 

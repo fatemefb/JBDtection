@@ -61,22 +61,33 @@ class LoggedTagJBExtractor(LoggerMixin, TagJBExtractor):
         Returns:
             نتیجه استخراج شده از تصویر (ممکن است 5 یا 6 مقدار برگرداند)
         """
-        self.logger.info("Extracting information from image")
-        result = super().extract_from_image(image)
-        
-        # بررسی تعداد مقادیر برگشتی
-        if isinstance(result, tuple):
-            if len(result) == 5:
-                self.logger.info(f"Extracted 5 values: {len(result[0])} tags, {len(result[1])} JBs, {len(result[2])} MCs, {len(result[3])} cable descriptions, {len(result[4])} spare identifiers")
-            elif len(result) == 6:
-                self.logger.info(f"Extracted 6 values: {len(result[0])} tags, {len(result[1])} JBs, {len(result[2])} MCs, {len(result[3])} cable descriptions, {len(result[4])} spare identifiers, {len(result[5])} tag-to-number mappings")
+        try:
+            # فراخوانی متد اصلی
+            result = super().extract_from_image(image)
+            
+            # ✅ دریافت 9 مقدار
+            if len(result) >= 9:
+                tags, jb_identifiers, mc_identifiers, cable_descriptions, \
+                spare_identifiers, tag_to_number, raw_cable_descriptions, \
+                tag_match_info, all_ocr_tags = result[:9]
+                
+                self.logger.info(f"Extracted {len(tags)} matched tags and {len(all_ocr_tags)} OCR tags")
+                
+                # ✅ برگرداندن 9 مقدار
+                return (tags, jb_identifiers, mc_identifiers, cable_descriptions,
+                       spare_identifiers, tag_to_number, raw_cable_descriptions,
+                       tag_match_info, all_ocr_tags)
             else:
                 self.logger.warning(f"Unexpected number of values returned: {len(result)}")
-        else:
-            self.logger.warning(f"Unexpected return type from extract_from_image: {type(result)}")
-        
-        return result
-    
+                # fallback: اضافه کردن مقدار خالی
+                if len(result) == 8:
+                    return result + (set(),)  # اضافه کردن all_ocr_tags خالی
+                return result
+                
+        except Exception as e:
+            self.logger.error(f"Error in extract_from_image: {e}")
+            raise
+            
     def create_annotated_pdf(self, pdf_path, output_pdf_path):
         """
         ایجاد PDF حاشیه‌نویسی شده با ثبت لاگ

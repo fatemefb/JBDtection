@@ -16,13 +16,17 @@ import shutil
 from pathlib import Path
 import pytesseract
 import time
-import zipfile  # Added missing import for zipfile
-from datetime import datetime  
+import zipfile
 from multiprocessing import Pool, cpu_count
 import subprocess  
 import tkinter as tk
 import sys
+import uuid
+import threading
+from datetime import datetime, timedelta
+import copy
 
+import fcntl
 # اصلاح مسیرهای import
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(os.path.dirname(current_dir))
@@ -47,7 +51,6 @@ from apps.backend.utils.file_naming import (
     get_download_url
 )
 
-
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 app = Flask(
@@ -66,39 +69,237 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 # اطمینان از وجود دایرکتوری پایه
 os.makedirs(BASE_OUTPUT_DIR, exist_ok=True)
 
-# تنظیم مسیر پیش‌فرض Tesseract بر اساس سیستم عامل
-system = platform.system().lower()
-if system == 'windows':
-    DEFAULT_TESSERACT_PATH = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-elif system == 'linux':
-    # مسیرهای معمول Tesseract در لینوکس
-    linux_tesseract_paths = [
-        '/usr/bin/tesseract',
-        '/usr/local/bin/tesseract',
-        '/opt/tesseract/bin/tesseract'
-    ]
-    
-    DEFAULT_TESSERACT_PATH = None
-    for path in linux_tesseract_paths:
-        if os.path.exists(path):
-            DEFAULT_TESSERACT_PATH = path
-            break
-    
-    if DEFAULT_TESSERACT_PATH is None:
-        DEFAULT_TESSERACT_PATH = '/usr/bin/tesseract'  # مسیر پیش‌فرض اگر پیدا نشد
-elif system == 'darwin':  # macOS
-    DEFAULT_TESSERACT_PATH = '/usr/local/bin/tesseract'
-else:
-    DEFAULT_TESSERACT_PATH = 'tesseract'  # مسیر پیش‌فرض برای سایر سیستم‌های عامل
+# تنظیم مسیر پیش‌فرض Tesseract بر اساس محیط اجرا
+DEFAULT_TESSERACT_PATH = os.environ.get("TESSERACT_PATH", "/usr/local/bin/tesseract")
 
-# کاربران مجاز (در یک پروژه واقعی این اطلاعات باید در دیتابیس ذخیره شوند)
+os.environ["TESSDATA_PREFIX"] = "/usr/local/share/tessdata"
+os.environ["PATH"] = os.environ["PATH"] + ":/usr/local/bin"
+pytesseract.pytesseract.tesseract_cmd = "/usr/local/bin/tesseract"
+
+# کاربران مجاز
 VALID_USERS = {
     'admin': 'admin123',
-    'user': 'user123'
+    'user': 'user123',
+    'cpec':'cpec@123'
 }
+
 
 # ایجاد لاگر برای فایل اصلی
 logger = get_logger('app')
+
+# دایرکتوری ذخیره task‌ها
+TASKS_DIR = os.path.join(BASE_OUTPUT_DIR, '.tasks')
+os.makedirs(TASKS_DIR, exist_ok=True)
+
+# فایل قفل مشترک
+LOCK_FILE = os.path.join(TASKS_DIR, '.lock')
+
+class FileTaskManager:
+    """مدیریت task‌ها با استفاده از فایل (thread-safe و worker-safe)"""
+    
+    @staticmethod
+    def _get_task_file(task_id):
+        """دریافت مسیر فایل task"""
+        return os.path.join(TASKS_DIR, f"{task_id}.json")
+    
+    @staticmethod
+    def _get_lock():
+        """دریافت قفل سراسری با timeout"""
+        lock_file = open(LOCK_FILE, 'w')
+        # استفاده از LOCK_EX برای قفل انحصاری
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        return lock_file
+    
+    @staticmethod
+    def _release_lock(lock_file):
+        """آزادسازی قفل"""
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
+            lock_file.close()
+        except:
+            pass
+    
+    @staticmethod
+    def create_task(task_id, task_data):
+        """ایجاد یک task جدید با atomic write"""
+        lock_file = None
+        try:
+            lock_file = FileTaskManager._get_lock()
+            
+            task_data['created_at'] = datetime.now().isoformat()
+            task_file = FileTaskManager._get_task_file(task_id)
+            
+            # نوشتن atomic با tempfile
+            with tempfile.NamedTemporaryFile(
+                mode='w', 
+                delete=False, 
+                dir=TASKS_DIR,
+                suffix='.tmp',
+                encoding='utf-8'
+            ) as temp_file:
+                json.dump(task_data, temp_file, indent=2, ensure_ascii=False)
+                temp_name = temp_file.name
+            
+            # جایگزینی atomic
+            os.replace(temp_name, task_file)
+            logger.info(f"Task {task_id} created successfully")
+            return True
+                
+        except Exception as e:
+            logger.error(f"Error creating task {task_id}: {e}")
+            return False
+        finally:
+            if lock_file:
+                FileTaskManager._release_lock(lock_file)
+    
+    @staticmethod
+    def get_task(task_id):
+        """دریافت یک task"""
+        try:
+            task_file = FileTaskManager._get_task_file(task_id)
+            
+            if not os.path.exists(task_file):
+                return None
+            
+            with open(task_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Error getting task {task_id}: {e}")
+            return None
+    
+    @staticmethod
+    def update_task(task_id, updates):
+        """به‌روزرسانی یک task با atomic write"""
+        lock_file = None
+        max_retries = 3
+        
+        for attempt in range(max_retries):
+            try:
+                lock_file = FileTaskManager._get_lock()
+                task_file = FileTaskManager._get_task_file(task_id)
+                
+                if not os.path.exists(task_file):
+                    logger.warning(f"Task {task_id} file not found")
+                    return False
+                
+                # خواندن
+                with open(task_file, 'r', encoding='utf-8') as f:
+                    task_data = json.load(f)
+                
+                # به‌روزرسانی
+                task_data.update(updates)
+                
+                # نوشتن atomic
+                with tempfile.NamedTemporaryFile(
+                    mode='w',
+                    delete=False,
+                    dir=TASKS_DIR,
+                    suffix='.tmp',
+                    encoding='utf-8'
+                ) as temp_file:
+                    json.dump(task_data, temp_file, indent=2, ensure_ascii=False)
+                    temp_name = temp_file.name
+                
+                os.replace(temp_name, task_file)
+                
+                logger.info(f"Task {task_id} updated: status={updates.get('status', 'N/A')}, progress={updates.get('progress', 'N/A')}%")
+                return True
+                    
+            except Exception as e:
+                logger.error(f"Error updating task {task_id} (attempt {attempt + 1}): {e}")
+                if attempt < max_retries - 1:
+                    import time
+                    time.sleep(0.1)
+            finally:
+                if lock_file:
+                    FileTaskManager._release_lock(lock_file)
+        
+        return False
+    
+    @staticmethod
+    def delete_task(task_id):
+        """حذف یک task"""
+        lock_file = None
+        try:
+            lock_file = FileTaskManager._get_lock()
+            task_file = FileTaskManager._get_task_file(task_id)
+            
+            if os.path.exists(task_file):
+                os.remove(task_file)
+                logger.info(f"Task {task_id} deleted")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error deleting task {task_id}: {e}")
+            return False
+        finally:
+            if lock_file:
+                FileTaskManager._release_lock(lock_file)
+    
+    @staticmethod
+    def list_user_tasks(username):
+        """لیست task‌های یک کاربر"""
+        try:
+            tasks = {}
+            
+            for filename in os.listdir(TASKS_DIR):
+                if filename.endswith('.json') and not filename.startswith('.'):
+                    task_id = filename[:-5]
+                    task_data = FileTaskManager.get_task(task_id)
+                    
+                    if task_data and task_data.get('username') == username:
+                        tasks[task_id] = {
+                            'status': task_data.get('status'),
+                            'progress': task_data.get('progress', 0),
+                            'created_at': task_data.get('created_at'),
+                            'project_name': task_data.get('project_name'),
+                            'pdf_count': task_data.get('pdf_count', 0)
+                        }
+            
+            return tasks
+        except Exception as e:
+            logger.error(f"Error listing tasks for {username}: {e}")
+            return {}
+    
+    @staticmethod
+    def cleanup_old_tasks():
+        """حذف task‌های قدیمی‌تر از 24 ساعت"""
+        try:
+            current_time = datetime.now()
+            deleted_count = 0
+            
+            for filename in os.listdir(TASKS_DIR):
+                if filename.endswith('.json') and not filename.startswith('.'):
+                    task_id = filename[:-5]
+                    task_data = FileTaskManager.get_task(task_id)
+                    
+                    if task_data:
+                        try:
+                            created_at = datetime.fromisoformat(
+                                task_data.get('created_at', current_time.isoformat())
+                            )
+                            age = current_time - created_at
+                            
+                            if age > timedelta(hours=24):
+                                FileTaskManager.delete_task(task_id)
+                                deleted_count += 1
+                        except Exception as e:
+                            logger.error(f"Error processing task {task_id} for cleanup: {e}")
+            
+            if deleted_count > 0:
+                logger.info(f"Cleaned up {deleted_count} old task(s)")
+                
+        except Exception as e:
+            logger.error(f"Error in cleanup_old_tasks: {e}")
+
+# استفاده از FileTaskManager به جای دیکشنری TASKS
+TaskManager = FileTaskManager
+
+class TaskStatus:
+    PENDING = 'pending'
+    PROCESSING = 'processing'
+    COMPLETED = 'completed'
+    FAILED = 'failed'
 
 def get_platform_specific_extractor(tesseract_path=None, excel_path=None):
     """
@@ -117,7 +318,6 @@ def get_platform_specific_extractor(tesseract_path=None, excel_path=None):
        
     elif system == 'windows':
         try:
-            # در صورتی که پیاده‌سازی مخصوص ویندوز داشته باشید، می‌توانید اینجا import کنید
             logger.info("استفاده از استخراج کننده عمومی با قابلیت لاگینگ در ویندوز")
             return LoggedTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
         except ImportError as e:
@@ -135,16 +335,182 @@ def get_platform_specific_extractor(tesseract_path=None, excel_path=None):
             return LoggedTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
     
     else:
-        # سیستم عامل ناشناخته، از پیاده‌سازی عمومی استفاده می‌کنیم
         logger.info(f"سیستم عامل ناشناخته '{system}'، استفاده از استخراج کننده عمومی با قابلیت لاگینگ")
         return LoggedTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
 
+def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_config, username):
+    """پردازش task به صورت asynchronous با مدیریت بهتر وضعیت"""
+    
+    try:
+        # به‌روزرسانی وضعیت اولیه
+        TaskManager.update_task(task_id, {
+            'status': TaskStatus.PROCESSING,
+            'progress': 10,
+            'started_at': datetime.now().isoformat()
+        })
+        
+        logger.info(f"Task {task_id}: شروع پردازش برای پروژه {project_name}")
+        
+        # ایجاد دایرکتوری‌ها
+        project_output_dir = get_project_output_dir(project_name)
+        log_dir = get_log_dir(project_name)
+        annotated_pdf_dir = os.path.join(project_output_dir, "annotated_pdfs")
+        os.makedirs(annotated_pdf_dir, exist_ok=True)
+        
+        TaskManager.update_task(task_id, {'progress': 20})
+        
+        # تنظیم فایل‌های خروجی
+        output_excel_filename = generate_document_filename(project_name, "Excel", "xlsx")
+        output_excel_path = os.path.join(project_output_dir, output_excel_filename)
+        
+        # ایجاد extractor
+        logger.info(f"Task {task_id}: ایجاد extractor")
+        extractor = get_platform_specific_extractor(
+            tesseract_path=DEFAULT_TESSERACT_PATH,
+            excel_path=excel_path
+        )
+        
+        TaskManager.update_task(task_id, {'progress': 30})
+        
+        # تنظیم الگوها
+        if hasattr(extractor, 'set_patterns'):
+            jb_examples = pattern_config.get('jb_examples', '')
+            mc_examples = pattern_config.get('mc_examples', '')
+            spare_examples = pattern_config.get('spare_examples', '')
+            cable_examples = pattern_config.get('cable_examples', '')
+            
+            if jb_examples or mc_examples or spare_examples or cable_examples:
+                extractor.set_patterns(
+                    jb_examples=jb_examples,
+                    mc_examples=mc_examples,
+                    spare_examples=spare_examples,
+                    cable_examples=cable_examples
+                )
+        
+        terminal_pattern = pattern_config.get('terminal_pattern', '')
+        wire_color_pattern = pattern_config.get('wire_color_pattern', '')
+        
+        if terminal_pattern or wire_color_pattern:
+            if hasattr(extractor, 'set_terminal_wire_patterns'):
+                extractor.set_terminal_wire_patterns(pattern_config)
+                logger.info(f"Task {task_id}: الگوهای ترمینال و سیم تنظیم شد")
+        
+        TaskManager.update_task(task_id, {'progress': 40})
+        
+        # پردازش فایل‌ها
+        logger.info(f"Task {task_id}: شروع پردازش {len(pdf_paths)} فایل PDF")
+        unmatched_excel_tags, unmatched_pdf_tags = extractor.run_with_annotated_pdf(
+            pdf_paths=pdf_paths,
+            excel_path=excel_path,
+            output_excel_path=output_excel_path,
+            output_pdf_dir=annotated_pdf_dir
+        )
+        
+        TaskManager.update_task(task_id, {'progress': 80})
+        logger.info(f"Task {task_id}: پردازش PDF ها کامل شد")
+        
+        # ایجاد فایل تگ‌های تطبیق نیافته
+        unmatched_excel_filename = generate_document_filename(project_name, "UnmatchedTags", "xlsx")
+        unmatched_excel_path = os.path.join(project_output_dir, unmatched_excel_filename)
+        
+        if hasattr(extractor, '_create_unmatched_tags_excel'):
+            extractor._create_unmatched_tags_excel(unmatched_excel_tags, unmatched_pdf_tags, unmatched_excel_path)
+            logger.info(f"Task {task_id}: فایل تگ‌های تطبیق نیافته ذخیره شد")
+        
+        # ایجاد گزارش
+        report_filename = generate_document_filename(project_name, "Report", "json")
+        report_path = os.path.join(project_output_dir, report_filename)
+        
+        with open(report_path, 'w', encoding='utf-8') as f:
+            json.dump({
+                'project_name': project_name,
+                'processing_date': datetime.now().isoformat(),
+                'user': username,
+                'task_id': task_id,
+                'patterns': pattern_config,
+                'results': {
+                    'unmatched_excel_tags': len(unmatched_excel_tags),
+                    'unmatched_pdf_tags': len(unmatched_pdf_tags),
+                    'pdf_count': len(pdf_paths),
+                    'pdf_names': [os.path.basename(p) for p in pdf_paths]
+                }
+            }, f, indent=2, ensure_ascii=False)
+        
+        # جمع‌آوری فایل‌های خروجی
+        output_files = [output_excel_path, unmatched_excel_path, report_path]
+        annotated_pdfs = []
+        
+        for f in os.listdir(annotated_pdf_dir):
+            if f.startswith('annotated_'):
+                pdf_path = os.path.join(annotated_pdf_dir, f)
+                output_files.append(pdf_path)
+                annotated_pdfs.append(pdf_path)
+        
+        TaskManager.update_task(task_id, {'progress': 90})
+        
+        # ایجاد ZIP
+        logger.info(f"Task {task_id}: ایجاد فایل ZIP")
+        zip_path = create_zip_archive(project_name, output_files)
+        download_url = get_download_url(zip_path)
+        
+        # پاکسازی فایل‌های موقت
+        logger.info(f"Task {task_id}: پاکسازی فایل‌های موقت")
+        for path in pdf_paths:
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                except Exception as e:
+                    logger.warning(f"Task {task_id}: خطا در حذف {path}: {e}")
+        
+        if os.path.exists(excel_path):
+            try:
+                os.remove(excel_path)
+            except Exception as e:
+                logger.warning(f"Task {task_id}: خطا در حذف {excel_path}: {e}")
+        
+        # ذخیره نتایج نهایی
+        final_result = {
+            'status': TaskStatus.COMPLETED,
+            'progress': 100,
+            'completed_at': datetime.now().isoformat(),
+            'result': {
+                'output_files': {
+                    'excel_path': output_excel_path,
+                    'unmatched_excel_path': unmatched_excel_path,
+                    'report_path': report_path,
+                    'zip_path': zip_path,
+                    'download_url': download_url,
+                    'annotated_pdfs': annotated_pdfs
+                },
+                'results': {
+                    'unmatched_excel_tags': unmatched_excel_tags,
+                    'unmatched_pdf_tags': unmatched_pdf_tags,
+                    'unmatched_excel_count': len(unmatched_excel_tags),
+                    'unmatched_pdf_count': len(unmatched_pdf_tags)
+                },
+                'patterns_used': pattern_config
+            }
+        }
+        
+        TaskManager.update_task(task_id, final_result)
+        logger.info(f"Task {task_id}: پردازش با موفقیت تکمیل شد")
+        
+    except Exception as e:
+        logger.error(f"Task {task_id}: خطا در پردازش - {str(e)}")
+        logger.error(traceback.format_exc())
+        
+        TaskManager.update_task(task_id, {
+            'status': TaskStatus.FAILED,
+            'error': str(e),
+            'error_details': traceback.format_exc(),
+            'progress': 100,
+            'failed_at': datetime.now().isoformat()
+        })
+
 @app.route('/')
 def home():
-    # اگر کاربر قبلاً وارد شده باشد، مستقیماً به داشبورد هدایت می‌شود
     if 'username' in session:
         return redirect(url_for('dashboard'))
-    # در غیر این صورت به صفحه ورود هدایت می‌شود
     return render_template('login.html')
 
 @app.route('/login', methods=['POST'])
@@ -152,10 +518,8 @@ def login():
     username = request.form.get('username')
     password = request.form.get('password')
     
-    # بررسی اعتبار نام کاربری و رمز عبور
     if username in VALID_USERS and VALID_USERS[username] == password:
         session['username'] = username
-        # تنظیم لاگر با نام کاربری جدید
         global logger
         logger = get_logger('app', username)
         logger.info(f"کاربر {username} وارد سیستم شد")
@@ -167,17 +531,14 @@ def login():
 @app.route('/logout')
 def logout():
     username = session.get('username', 'anonymous')
-    # حذف اطلاعات کاربر از session
     session.pop('username', None)
     logger.info(f"کاربر {username} از سیستم خارج شد")
     return redirect(url_for('home'))
 
 @app.route('/dashboard')
 def dashboard():
-    # بررسی اینکه آیا کاربر وارد شده است یا خیر
     if 'username' not in session:
         return redirect(url_for('home'))
-    # نمایش صفحه داشبورد
     username = session.get('username')
     logger.info(f"کاربر {username} به داشبورد دسترسی پیدا کرد")
     return render_template('JB.html', username=username)
@@ -204,11 +565,9 @@ def system_info():
         'output_base_dir': BASE_OUTPUT_DIR
     }
     
-    # بررسی وضعیت GPU
     try:
         extractor = get_platform_specific_extractor(tesseract_path=DEFAULT_TESSERACT_PATH)
         
-        # اگر استخراج کننده مخصوص لینوکس باشد، اطلاعات GPU را اضافه می‌کنیم
         if hasattr(extractor, 'gpu_available'):
             system_info['gpu_available'] = extractor.gpu_available
             if extractor.gpu_available:
@@ -226,8 +585,36 @@ def system_info():
         'system_info': system_info
     })
 
+@app.route('/task-status/<task_id>', methods=['GET'])
+def get_task_status(task_id):
+    """دریافت وضعیت task"""
+    try:
+        task = TaskManager.get_task(task_id)
+        
+        if not task:
+            return jsonify({
+                'status': 'error',
+                'message': 'Task یافت نشد'
+            }), 404
+        
+        return jsonify({
+            'status': task.get('status', 'pending'),
+            'progress': task.get('progress', 0),
+            'result': task.get('result'),
+            'error': task.get('error'),
+            'project_name': task.get('project_name', ''),
+            'pdf_count': task.get('pdf_count', 0),
+            'started_at': task.get('started_at'),
+            'completed_at': task.get('completed_at')
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting task status: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 @app.route('/process', methods=['POST'])
 def process_files():
+    """شروع پردازش با مدیریت بهتر task"""
     if 'username' not in session:
         return jsonify({
             'status': 'error',
@@ -236,9 +623,9 @@ def process_files():
     
     username = session.get('username')
     logger.info(f"کاربر {username} درخواست پردازش فایل‌ها را ارسال کرد")
-        
+    
     try:
-        # دریافت نام پروژه (الزامی)
+        # دریافت نام پروژه
         project_name = request.form.get('project_name')
         if not project_name:
             logger.warning(f"کاربر {username} نام پروژه را وارد نکرد")
@@ -247,215 +634,93 @@ def process_files():
                 'message': 'لطفاً نام پروژه را وارد کنید'
             }), 400
         
-        # Get PDF and Excel files
+        # دریافت فایل‌ها
         pdf_files = request.files.getlist('pdf_files')
-        excel_file = request.files['excel_file']
+        excel_file = request.files.get('excel_file')
         
-        # گزینه استفاده از GPU (اگر در دسترس باشد)
-        use_gpu = request.form.get('use_gpu', 'false').lower() == 'true'
+        if not pdf_files or len(pdf_files) == 0:
+            return jsonify({
+                'status': 'error',
+                'message': 'لطفاً حداقل یک فایل PDF انتخاب کنید'
+            }), 400
         
-        # دریافت الگوهای قدیمی از فرم (برای سازگاری)
+        if not excel_file:
+            return jsonify({
+                'status': 'error',
+                'message': 'لطفاً یک فایل Excel انتخاب کنید'
+            }), 400
+        
+        # ذخیره فایل‌های موقت
+        pdf_paths = []
+        for pdf in pdf_files:
+            temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{uuid.uuid4()}_{secure_filename(pdf.filename)}")
+            pdf.save(temp_path)
+            pdf_paths.append(temp_path)
+            logger.info(f"فایل PDF ذخیره شد: {pdf.filename}")
+        
+        excel_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{uuid.uuid4()}_{secure_filename(excel_file.filename)}")
+        excel_file.save(excel_path)
+        logger.info(f"فایل Excel ذخیره شد: {excel_file.filename}")
+        
+        # دریافت الگوها
         jb_examples = request.form.get('jb_examples', '').strip()
         mc_examples = request.form.get('mc_examples', '').strip()
         spare_examples = request.form.get('spare_examples', '').strip()
         cable_examples = request.form.get('cable_examples', '').strip()
-        
-        # 🆕 دریافت الگوهای جدید ترمینال و سیم
         terminal_pattern = request.form.get('terminal_pattern', '').strip()
         wire_color_pattern = request.form.get('wire_color_pattern', '').strip()
         include_scr = request.form.get('include_scr', 'true').lower() == 'true'
         
-        # 🆕 دریافت رنگ‌های انتخاب شده (به صورت JSON string)
         selected_colors_json = request.form.get('selected_colors', '[]')
         try:
             selected_colors = json.loads(selected_colors_json)
         except:
             selected_colors = []
         
-        logger.info(f"🆕 الگوهای دریافتی:")
-        logger.info(f"   Terminal Pattern: {terminal_pattern}")
-        logger.info(f"   Wire Color Pattern: {wire_color_pattern}")
-        logger.info(f"   Include SCR: {include_scr}")
-        logger.info(f"   Selected Colors: {selected_colors}")
-        
-        # ایجاد دایرکتوری خروجی پروژه
-        project_output_dir = get_project_output_dir(project_name)
-        logger.info(f"دایرکتوری خروجی پروژه: {project_output_dir}")
-        
-        # ایجاد دایرکتوری لاگ پروژه
-        log_dir = get_log_dir(project_name)
-        logger.info(f"دایرکتوری لاگ پروژه: {log_dir}")
-        
-        # تنظیم نام فایل‌های خروجی
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_excel_filename = generate_document_filename(project_name, "Excel", "xlsx")
-        output_excel_path = os.path.join(project_output_dir, output_excel_filename)
-        
-        # ایجاد دایرکتوری برای PDF های حاشیه‌نویسی شده
-        annotated_pdf_dir = os.path.join(project_output_dir, "annotated_pdfs")
-        os.makedirs(annotated_pdf_dir, exist_ok=True)
-        
-        # ذخیره فایل‌ها در سرور
-        pdf_paths = []
-        for pdf in pdf_files:
-            temp_path = os.path.join(app.config['UPLOAD_FOLDER'], pdf.filename)
-            pdf.save(temp_path)
-            pdf_paths.append(temp_path)
-            logger.info(f"فایل PDF ذخیره شد: {pdf.filename}")
-        
-        # ذخیره فایل اکسل
-        excel_path = os.path.join(app.config['UPLOAD_FOLDER'], excel_file.filename)
-        excel_file.save(excel_path)
-        logger.info(f"فایل Excel ذخیره شد: {excel_file.filename}")
-        
-        # ایجاد extractor
-        logger.info("در حال راه‌اندازی استخراج کننده...")
-        extractor = get_platform_specific_extractor(
-            tesseract_path=DEFAULT_TESSERACT_PATH,
-            excel_path=excel_path
-        )
-        
-        # تنظیم الگوهای قدیمی (برای سازگاری)
-        if hasattr(extractor, 'set_patterns'):
-            extractor.set_patterns(
-                jb_examples=jb_examples,
-                mc_examples=mc_examples,
-                spare_examples=spare_examples,
-                cable_examples=cable_examples
-            )
-        
-        # 🆕 تنظیم الگوهای جدید ترمینال و سیم
-        if terminal_pattern or wire_color_pattern:
-            if hasattr(extractor, 'set_terminal_wire_patterns'):
-                pattern_config = {
-                    'terminal_pattern': terminal_pattern,
-                    'wire_color_pattern': wire_color_pattern,
-                    'include_scr': include_scr,
-                    'selected_colors': selected_colors
-                }
-                extractor.set_terminal_wire_patterns(pattern_config)
-                logger.info(f"✓ الگوهای ترمینال و سیم تنظیم شد")
-            else:
-                logger.warning("⚠️ Extractor does not support new pattern system")
-                # استفاده از روش قدیمی
-                if wire_color_pattern and hasattr(extractor, 'set_wire_color_rule'):
-                    extractor.set_wire_color_rule(wire_color_pattern)
-        
-        # نمایش اطلاعات GPU
-        gpu_info = {}
-        if hasattr(extractor, 'gpu_available'):
-            gpu_info['gpu_available'] = extractor.gpu_available
-            if extractor.gpu_available:
-                gpu_info['gpu_type'] = extractor.gpu_type
-                if use_gpu:
-                    logger.info(f"پردازش با استفاده از {extractor.gpu_type} GPU فعال شد")
-                    if hasattr(extractor, 'enable_gpu'):
-                        extractor.enable_gpu()
-        
-        # پردازش فایل‌ها
-        logger.info(f"شروع پردازش {len(pdf_paths)} فایل PDF و Excel...")
-        unmatched_excel_tags, unmatched_pdf_tags = extractor.run_with_annotated_pdf(
-            pdf_paths=pdf_paths,
-            excel_path=excel_path,
-            output_excel_path=output_excel_path,
-            output_pdf_dir=annotated_pdf_dir
-        )
-        
-        # ایجاد فایل اکسل برای تگ‌های تطبیق نیافته
-        unmatched_excel_filename = generate_document_filename(project_name, "UnmatchedTags", "xlsx")
-        unmatched_excel_path = os.path.join(project_output_dir, unmatched_excel_filename)
-        
-        if hasattr(extractor, '_create_unmatched_tags_excel'):
-            extractor._create_unmatched_tags_excel(unmatched_excel_tags, unmatched_pdf_tags, unmatched_excel_path)
-            logger.info(f"فایل Excel تگ‌های تطبیق نیافته ذخیره شد")
-        
-        # ایجاد فایل گزارش
-        report_filename = generate_document_filename(project_name, "Report", "json")
-        report_path = os.path.join(project_output_dir, report_filename)
-        
-        # 🆕 ذخیره گزارش با اطلاعات الگوها
-        with open(report_path, 'w', encoding='utf-8') as f:
-            json.dump({
-                'project_name': project_name,
-                'processing_date': datetime.now().isoformat(),
-                'user': username,
-                'patterns': {
-                    'terminal_pattern': terminal_pattern,
-                    'wire_color_pattern': wire_color_pattern,
-                    'include_scr': include_scr,
-                    'selected_colors': selected_colors
-                },
-                'results': {
-                    'unmatched_excel_tags': len(unmatched_excel_tags),
-                    'unmatched_pdf_tags': len(unmatched_pdf_tags),
-                    'pdf_count': len(pdf_paths),
-                    'pdf_names': [os.path.basename(p) for p in pdf_paths]
-                }
-            }, f, indent=2, ensure_ascii=False)
-        
-        # لیست فایل‌های خروجی
-        output_files = [output_excel_path, unmatched_excel_path, report_path]
-        
-        # اضافه کردن PDF های حاشیه‌نویسی شده
-        annotated_pdfs = []
-        for f in os.listdir(annotated_pdf_dir):
-            if f.startswith('annotated_'):
-                pdf_path = os.path.join(annotated_pdf_dir, f)
-                output_files.append(pdf_path)
-                annotated_pdfs.append(pdf_path)
-        
-        # ایجاد ZIP
-        zip_path = create_zip_archive(project_name, output_files)
-        download_url = get_download_url(zip_path)
-        
-        # پاکسازی فایل‌های موقت
-        for path in pdf_paths:
-            os.remove(path)
-        os.remove(excel_path)
-        
-        # 🆕 پاسخ با اطلاعات الگوها
-        response = {
-            'status': 'success',
-            'message': 'Processing completed successfully',
-            'details': {
-                'project_name': project_name,
-                'input_files': {
-                    'pdf_count': len(pdf_paths),
-                    'pdf_names': [os.path.basename(p) for p in pdf_paths],
-                    'excel_file': excel_file.filename
-                },
-                'patterns_used': {
-                    'terminal_pattern': terminal_pattern or 'default',
-                    'wire_color_pattern': wire_color_pattern or 'default',
-                    'include_scr': include_scr,
-                    'selected_colors': selected_colors
-                },
-                'output_files': {
-                    'excel_path': output_excel_path,
-                    'unmatched_excel_path': unmatched_excel_path,
-                    'report_path': report_path,
-                    'zip_path': zip_path,
-                    'download_url': download_url,
-                    'annotated_pdfs': annotated_pdfs
-                },
-                'results': {
-                    'unmatched_excel_tags': unmatched_excel_tags,
-                    'unmatched_pdf_tags': unmatched_pdf_tags,
-                    'unmatched_excel_count': len(unmatched_excel_tags),
-                    'unmatched_pdf_count': len(unmatched_pdf_tags)
-                },
-                'system': {
-                    'platform': platform.system(),
-                    'gpu_info': gpu_info
-                }
-            }
+        pattern_config = {
+            'jb_examples': jb_examples,
+            'mc_examples': mc_examples,
+            'spare_examples': spare_examples,
+            'cable_examples': cable_examples,
+            'terminal_pattern': terminal_pattern,
+            'wire_color_pattern': wire_color_pattern,
+            'include_scr': include_scr,
+            'selected_colors': selected_colors
         }
         
-        logger.info(f"✓ پردازش با موفقیت به پایان رسید")
-        return jsonify(response)
+        # ایجاد task
+        task_id = str(uuid.uuid4())
+        
+        TaskManager.create_task(task_id, {
+            'status': TaskStatus.PENDING,
+            'progress': 0,
+            'project_name': project_name,
+            'username': username,
+            'pdf_count': len(pdf_paths),
+            'pdf_names': [os.path.basename(p) for p in pdf_paths]
+        })
     
+        
+        logger.info(f"Task {task_id} ایجاد شد برای کاربر {username} - پروژه: {project_name}")
+        
+        # شروع پردازش در thread جداگانه
+        thread = threading.Thread(
+            target=process_task_async,
+            args=(task_id, pdf_paths, excel_path, project_name, pattern_config, username),
+            daemon=False  # تغییر به False برای اطمینان از تکمیل پردازش
+        )
+        thread.start()
+        
+        # برگرداندن task_id به کلاینت
+        return jsonify({
+            'status': 'success',
+            'message': 'پردازش آغاز شد',
+            'task_id': task_id,
+            'project_name': project_name
+        })
+        
     except Exception as e:
-        logger.error(f"❌ خطا در پردازش: {str(e)}", extra={'user': username})
+        logger.error(f"خطا در شروع پردازش: {str(e)}", extra={'user': username})
         logger.error(traceback.format_exc())
         return jsonify({
             'status': 'error',
@@ -481,13 +746,11 @@ def api_process():
     logger.info(f"کاربر {username} درخواست API پردازش فایل‌ها را ارسال کرد")
     
     try:
-        # دریافت داده‌ها از درخواست
         data = request.json
         pdf_paths = data.get('pdf_paths', [])
         excel_path = data.get('excel_path')
         project_name = data.get('project_name')
         
-        # اعتبارسنجی داده‌ها
         if not pdf_paths or not excel_path:
             return jsonify({
                 'status': 'error',
@@ -500,27 +763,20 @@ def api_process():
                 'message': 'نام پروژه الزامی است'
             }), 400
         
-        # ایجاد دایرکتوری خروجی پروژه
         project_output_dir = get_project_output_dir(project_name)
-        
-        # ایجاد دایرکتوری لاگ پروژه
         log_dir = get_log_dir(project_name)
         
-        # تنظیم نام فایل‌های خروجی
         output_excel_filename = generate_document_filename(project_name, "Excel", "xlsx")
         output_excel_path = os.path.join(project_output_dir, output_excel_filename)
         
-        # ایجاد دایرکتوری برای PDF های حاشیه‌نویسی شده
         annotated_pdf_dir = os.path.join(project_output_dir, "annotated_pdfs")
         os.makedirs(annotated_pdf_dir, exist_ok=True)
         
-        # ایجاد استخراج کننده
         extractor = get_platform_specific_extractor(
             tesseract_path=DEFAULT_TESSERACT_PATH,
             excel_path=excel_path
         )
         
-        # پردازش فایل‌ها
         unmatched_excel_tags, unmatched_pdf_tags = extractor.run_with_annotated_pdf(
             pdf_paths=pdf_paths,
             excel_path=excel_path,
@@ -528,18 +784,14 @@ def api_process():
             output_pdf_dir=annotated_pdf_dir
         )
         
-        # ایجاد فایل اکسل برای تگ‌های تطبیق نیافته
         unmatched_excel_filename = generate_document_filename(project_name, "UnmatchedTags", "xlsx")
         unmatched_excel_path = os.path.join(project_output_dir, unmatched_excel_filename)
         
-        # ایجاد فایل اکسل برای تگ‌های تطبیق نیافته
         if hasattr(extractor, '_create_unmatched_tags_excel'):
             extractor._create_unmatched_tags_excel(unmatched_excel_tags, unmatched_pdf_tags, unmatched_excel_path)
         
-        # لیست فایل‌های خروجی
         output_files = [output_excel_path, unmatched_excel_path]
         
-        # اضافه کردن PDF های حاشیه‌نویسی شده
         annotated_pdfs = []
         for f in os.listdir(annotated_pdf_dir):
             if f.startswith('annotated_'):
@@ -547,13 +799,9 @@ def api_process():
                 output_files.append(pdf_path)
                 annotated_pdfs.append(pdf_path)
         
-        # ایجاد فایل ZIP
         zip_path = create_zip_archive(project_name, output_files)
-        
-        # ایجاد URL دانلود
         download_url = get_download_url(zip_path)
         
-        # مثالی از پاسخ API پردازش
         response = {
             "status": "success",
             "message": "Processing completed successfully",
@@ -581,7 +829,6 @@ def api_process():
             'message': str(e)
         }), 500
 
-# تعریف مسیر پایه برای فایل‌های خروجی
 OUTPUT_DIRS = {
     "v1": "/home/devio/JB-outputs",
     "v2": "/home/devio/JB-outputs"
@@ -700,16 +947,79 @@ def download_all_pdfs():
         logger.error(f"خطا در دانلود همه PDF ها: {str(e)}", extra={'user': username})
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/status')
-def api_status():
+@app.route('/api/tasks', methods=['GET'])
+def list_tasks():
     """
-    بررسی وضعیت API
+    لیست همه task‌های کاربر فعلی
     """
+    if 'username' not in session:
+        return jsonify({
+            'status': 'error',
+            'message': 'لطفاً ابتدا وارد سیستم شوید'
+        }), 401
+        
+    username = session.get('username')
+    tasks = TaskManager.list_user_tasks(username)
+    
     return jsonify({
-        'status': 'online',
-        'version': '1.0',
-        'time': datetime.now().isoformat()
+        'status': 'success',
+        'tasks': tasks
     })
+
+@app.route('/api/task/<task_id>/delete', methods=['DELETE'])
+def delete_task(task_id):
+    """
+    حذف یک task از لیست
+    """
+    if 'username' not in session:
+        return jsonify({
+            'status': 'error',
+            'message': 'لطفاً ابتدا وارد سیستم شوید'
+        }), 401
+        
+    username = session.get('username')
+    task = TaskManager.get_task(task_id)
+    
+    if not task:
+        return jsonify({
+            'status': 'error',
+            'message': 'Task یافت نشد'
+        }), 404
+        
+    if task.get('username') != username:
+        return jsonify({
+            'status': 'error',
+            'message': 'شما مجاز به حذف این task نیستید'
+        }), 403
+        
+    success = TaskManager.delete_task(task_id)
+    
+    if success:
+        return jsonify({
+            'status': 'success',
+            'message': 'Task با موفقیت حذف شد'
+        })
+    else:
+        return jsonify({
+            'status': 'error',
+            'message': 'خطا در حذف task'
+        }), 500
+
+# cleanup function
+def cleanup_old_tasks():
+    """حذف task‌های قدیمی"""
+    TaskManager.cleanup_old_tasks()
+
+# اجرای cleanup هر ساعت
+import atexit
+from apscheduler.schedulers.background import BackgroundScheduler
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(func=cleanup_old_tasks, trigger="interval", hours=2)
+scheduler.start()
+
+# خاموش کردن scheduler هنگام خروج
+atexit.register(lambda: scheduler.shutdown())
 
 if __name__ == '__main__':
     # Print startup message

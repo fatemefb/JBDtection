@@ -42,14 +42,16 @@ class VectorMatcher:
         self.tag_vectors = {}  # Dictionary to store tag vectors
         self.similarity_threshold = similarity_threshold
         self.tag_patterns = {}  # Store tag patterns for quick lookup
+        self.reference_tags = []  # ✅ Added: store reference tags separately
         # Initialize tracking variables
         self.match_attempts = 0
         self.successful_matches = 0
         self.match_scores = []
         self.required_columns = {
-        'generated_excel': ['JB', 'MC', 'Tag/SPARE'],
-        'io_list': ['Tag No', 'Tag']  # حداقل یکی از این ستون‌ها باید وجود داشته باشد
-    }
+            'generated_excel': ['JB', 'MC', 'Tag/SPARE'],
+            'io_list': ['Tag No', 'Tag']
+        }
+
     def add_reference_tag(self, tag: str) -> None:
         """Add a reference tag and create a vector for it."""
         if not tag or not isinstance(tag, str):
@@ -58,10 +60,13 @@ class VectorMatcher:
         tag = str(tag).upper().strip()
         if not tag:
             return
-            
+
+        # ✅ store both in reference_tags and tag_vectors
+        if tag not in self.reference_tags:
+            self.reference_tags.append(tag)
         self.tag_vectors[tag] = self.create_tag_vector(tag)
         logging.info(f"Reference tag added: {tag}")
-    
+
     def create_tag_vector(self, tag: str) -> 'Dict[str, float]':
         """Create an enhanced feature vector for a tag."""
         tag = str(tag).upper().strip()
@@ -1202,14 +1207,14 @@ class TagJBExtractor:
 
         return text
 
-        
+
     def extract_from_image(self, image: np.ndarray) -> 'Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str], Dict[str, Dict]]':
         """
         ✅ بازنویسی کامل: استخراج تگ‌ها با شماره‌گذاری بر اساس موقعیت عمودی
         
         Returns:
             Tuple of (tags, jb_identifiers, mc_identifiers, cable_descriptions, 
-                    spare_identifiers, tag_to_number, raw_cable_descriptions, tag_match_info)
+                    spare_identifiers, tag_to_number, raw_cable_descriptions, tag_match_info,all_ocr_tags)
         """
         # ============================================================
         # مقداردهی اولیه
@@ -1603,8 +1608,8 @@ class TagJBExtractor:
             self.all_spares = spare_identifiers
         
         return (tags, jb_identifiers, mc_identifiers, cable_descriptions, 
-                spare_identifiers, tag_to_number, raw_cable_descriptions, tag_match_info)
-
+                spare_identifiers, tag_to_number, raw_cable_descriptions, 
+                tag_match_info, all_ocr_tags)
 
     def get_similarity_reports(self) -> 'List[Dict[str, Any]]':
         """
@@ -2015,7 +2020,7 @@ class TagJBExtractor:
         return new_tags
 
 
-    def process_pdf_page(self, page_info: 'Tuple[fitz.Page, str, int]') -> 'Tuple[int, Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str], Dict[str, Dict]]':
+    def process_pdf_page(self, page_info: 'Tuple[fitz.Page, str, int]') -> 'Tuple[int, Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str], Dict[str, Dict], Set[str]]':
         """
         ✅ بازنویسی: پردازش یک صفحه PDF با شماره‌گذاری بر اساس موقعیت
         """
@@ -2033,43 +2038,48 @@ class TagJBExtractor:
             image = cv2.imread(image_path)
             if image is None:
                 logger.error(f"Failed to load image for page {page_num + 1}")
-                return page_num + 1, set(), set(), set(), [], [], {}, [], {}
+                return page_num + 1, set(), set(), set(), [], [], {}, [], {}, set()
             
-            # استخراج با شماره‌گذاری بر اساس موقعیت
             result = self.extract_from_image(image)
             
-            # Handle different return formats
-            if len(result) >= 8:
-                tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions, tag_match_info = result[:8]
-            else:
-                logger.error(f"Unexpected result format: {len(result)} values")
-                tags, jb_identifiers, mc_identifiers = set(), set(), set()
-                cable_descriptions, spare_identifiers = [], []
-                tag_to_number, raw_cable_descriptions, tag_match_info = {}, [], {}
+            # ❌ اگر این خطوط هست:
+            logger.debug(f"Page {page_num + 1} - raw result: {result} (len={len(result)})")
             
-            # Clean up temporary image file
-            try:
-                os.remove(image_path)
-            except:
-                pass
+            # ❌ و بعد این:
+            if len(result) != 9:
+                logger.warning(f"Unexpected number of values returned: {len(result)}")  # ⚠️
             
+            # ✅ FIX: باید اینطوری باشد:
+            if len(result) != 9:
+                logger.error(f"❌ Expected 9 values, got {len(result)}")
+                return page_num + 1, set(), set(), set(), [], [], {}, [], {}, set()
+            
+            # ✅ Unpack
+            (tags, jb_identifiers, mc_identifiers, cable_descriptions, 
+            spare_identifiers, tag_to_number, raw_cable_descriptions, 
+            tag_match_info, all_ocr_tags) = result
+                
             logger.info(f"✅ Page {page_num + 1}: {len(tags)} tags numbered by position")
             
-            return page_num + 1, tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions, tag_match_info
-            
+        # ✅ Return 10 values
+            return (page_num + 1, tags, jb_identifiers, mc_identifiers, 
+                    cable_descriptions, spare_identifiers, tag_to_number, 
+                    raw_cable_descriptions, tag_match_info, all_ocr_tags)     
+               
         except Exception as e:
             logger.error(f"Error processing page {page_num + 1}: {e}")
             logger.error(traceback.format_exc())
-            return page_num + 1, set(), set(), set(), [], [], {}, [], {}
+            return page_num + 1, set(), set(), set(), [], [], {}, [], {}, set()
 
-    def process_pdf(self, pdf_path: str) -> 'Dict[int, Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str], Dict[str, Dict]]]':
+
+    def process_pdf(self, pdf_path: str) -> 'Dict[int, Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str], Dict[str, Dict] ,Set[str]]]':
         """
         Process all pages in a PDF file.
         
         Returns:
             Dictionary mapping page numbers to Tuples of (tags, jb_identifiers, mc_identifiers, 
                                                         cable_descriptions, spare_identifiers, 
-                                                        tag_to_number, raw_cable_descriptions, tag_match_info)
+                                                        tag_to_number, raw_cable_descriptions, tag_match_info , all_ocr_tags)
         """
         results = {}
         
@@ -2120,45 +2130,32 @@ class TagJBExtractor:
                         logger.error(f"Failed to load image for page {page_num + 1}")
                         continue
                     
-                    # 🆕 Extract tags with match info (8 مقدار)
                     extract_result = self.extract_from_image(image)
                     
-                    if len(extract_result) >= 8:
-                        tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions, tag_match_info = extract_result[:8]
-                    elif len(extract_result) >= 7:
-                        tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions , tag_match_info = extract_result[:7]
-                        tag_match_info = {}
-                    else:
-                        logger.error(f"Unexpected extract result length: {len(extract_result)}")
+                    # ✅ DEBUG: چک کردن
+                    logger.info(f"   📊 extract_result length: {len(extract_result)}")
+                    if len(extract_result) >= 9:
+                        logger.info(f"   📊 all_ocr_tags at index 8: {extract_result[8]}")
+                    
+                    if len(extract_result) != 9:
+                        logger.error(f"❌ Expected 9 values, got {len(extract_result)}")
                         continue
                     
-                    # 🆕 Store results with match info (8 مقدار)
-                    results[page_num + 1] = (tags, jb_identifiers, mc_identifiers, 
-                                            cable_descriptions, spare_identifiers, 
-                                            tag_to_number, raw_cable_descriptions, 
-                                            tag_match_info)
+                    # ✅ Unpack ساده
+                    (tags, jb_identifiers, mc_identifiers, cable_descriptions, 
+                    spare_identifiers, tag_to_number, raw_cable_descriptions, 
+                    tag_match_info, all_ocr_tags) = extract_result
                     
-                    # Print results
-                    print(f"Page {page_num + 1}:")
-                    print(f"  Tags found ({len(tags)}): {', '.join(sorted(tags))}")
-                    if tag_match_info:
-                        exact_count = sum(1 for info in tag_match_info.values() if info.get('match_type') == 'exact')
-                        similar_count = sum(1 for info in tag_match_info.values() if info.get('match_type') == 'similar')
-                        print(f"  Match types: {exact_count} exact, {similar_count} similar")
-                    print(f"  JB identifiers found ({len(jb_identifiers)}): {', '.join(sorted(jb_identifiers))}")
-                    print(f"  MC identifiers found ({len(mc_identifiers)}): {', '.join(sorted(mc_identifiers))}")
+                    logger.info(f"✅ Page {page_num + 1}: {len(tags)} matched, {len(all_ocr_tags)} OCR tags")
                     
-                    # Clean up
-                    try:
-                        os.remove(image_path)
-                    except:
-                        pass
-                        
+                    # ✅ ذخیره کامل
+                    results[page_num + 1] = extract_result
+                    
                 except Exception as e:
                     logger.error(f"Error processing page {page_num + 1}: {e}")
                     continue
-        
-        return results
+            
+            return results
 
     def process_multiple_pdfs(self, pdf_paths: 'List[str]') -> 'Dict[int, Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str]]]':
         """
@@ -2198,153 +2195,6 @@ class TagJBExtractor:
         
         logger.info(f"Combined results: {len(combined_results)} total pages from {len(pdf_paths)} PDFs")
         return combined_results
-
-
-    def process_excel_with_io_list(self, intermediate_excel_path: str, excel_path: str, output_path: str) -> 'Tuple[pd.DataFrame, List[str], List[str]]':
-        """
-        ترکیب داده‌های فایل intermediate با فایل IO List و ایجاد فایل اکسل نهایی.
-        این تابع تمام ستون‌های IO List را حفظ می‌کند و ستون‌های جدید از فایل intermediate را به آن اضافه می‌کند.
-        
-        Args:
-            intermediate_excel_path: مسیر فایل اکسل intermediate
-            excel_path: مسیر فایل اکسل IO List
-            output_path: مسیر فایل اکسل خروجی
-            
-        Returns:
-            Tuple of (final_df, unmatched_io_tags, unmatched_tags)
-        """
-        try:
-            # خواندن فایل‌های اکسل
-            intermediate_df = pd.read_excel(intermediate_excel_path)
-            io_list_df = pd.read_excel(excel_path)
-            
-            logger.info(f"Loaded intermediate Excel with {len(intermediate_df)} rows and {len(intermediate_df.columns)} columns")
-            logger.info(f"Loaded IO List Excel with {len(io_list_df)} rows and {len(io_list_df.columns)} columns")
-            
-            # نام ستون تگ در هر دو فایل
-            intermediate_tag_col = 'Tag/SPARE'
-            io_list_tag_col = 'Tag No'  # نام ستون تگ در IO List
-            
-            # استخراج لیست تگ‌ها از هر دو فایل
-            intermediate_tags = list(str(tag).strip().upper() for tag in intermediate_df[intermediate_tag_col] if pd.notna(tag))
-            io_list_tags = list(str(tag).strip().upper() for tag in io_list_df[io_list_tag_col] if pd.notna(tag))
-            
-            # تطبیق تگ‌ها با استفاده از مکانیزم کاندید تگ
-            logger.info(f"Finding tag candidates for {len(intermediate_tags)} PDF tags with {len(io_list_tags)} IO List tags")
-            
-            # ایجاد دیکشنری برای نگاشت تگ‌های PDF به تگ‌های IO List
-            pdf_to_io_tag_map = {}
-            
-            # برای هر تگ PDF، کاندیداهای مشابه در IO List را پیدا کن
-            for pdf_tag in intermediate_tags:
-                # پیدا کردن کاندیداها
-                candidates = []
-                for io_tag in io_list_tags:
-                    similarity = self.calculate_tag_similarity(pdf_tag, io_tag)
-                    if similarity >= 0.8:  # حد آستانه شباهت
-                        candidates.append((io_tag, similarity))
-                
-                # مرتب‌سازی کاندیداها بر اساس امتیاز شباهت
-                candidates.sort(key=lambda x: x[1], reverse=True)
-                
-                # انتخاب بهترین کاندیدا
-                if candidates:
-                    best_match, best_similarity = candidates[0]
-                    pdf_to_io_tag_map[pdf_tag] = best_match
-                    logger.info(f"Matched PDF tag '{pdf_tag}' to IO tag '{best_match}' with similarity {best_similarity:.2f}")
-            
-            logger.info(f"Found {len(pdf_to_io_tag_map)} tag matches")
-            
-            # یافتن تگ‌های تطبیق نیافته
-            matched_pdf_tags = set(pdf_to_io_tag_map.keys())
-            matched_io_tags = set(pdf_to_io_tag_map.values())
-            
-            unmatched_tags = list(set(intermediate_tags) - matched_pdf_tags)
-            unmatched_io_tags = list(set(io_list_tags) - matched_io_tags)
-            
-            logger.info(f"Unmatched PDF tags: {len(unmatched_tags)}")
-            logger.info(f"Unmatched IO List tags: {len(unmatched_io_tags)}")
-            
-            # ایجاد کپی از IO List برای حفظ تمام ستون‌های آن
-            final_df = io_list_df.copy()
-            
-            # ستون‌های intermediate که می‌خواهیم اضافه کنیم
-            intermediate_columns_to_add = [
-                'PDF_Name', 'Page', 'JB', 'MC', 'Tag_Number', 
-                'Wire_Code_1', 'Wire_Code_2', 'Terminal_First_Number', 'Terminal_Second_Number', 'SCR_Terminal_Number', 'Cable_code',
-                'Cable_Description', 'Type', 'Tag_Number_Status'
-            ]
-            
-            # فقط ستون‌هایی که در intermediate وجود دارند را اضافه کنیم
-            intermediate_columns_to_add = [col for col in intermediate_columns_to_add if col in intermediate_df.columns]
-            
-            # اضافه کردن ستون‌های جدید به final_df
-            for col in intermediate_columns_to_add:
-                if col not in final_df.columns:
-                    final_df[col] = None
-            
-            # تطبیق داده‌ها با استفاده از دیکشنری pdf_to_io_tag_map
-            for idx, row in final_df.iterrows():
-                io_tag = str(row[io_list_tag_col]).strip().upper() if pd.notna(row[io_list_tag_col]) else ""
-                
-                # جستجو در تگ‌های PDF که تطبیق داده شده‌اند
-                pdf_tag = None
-                for pdf_t, io_t in pdf_to_io_tag_map.items():
-                    if str(io_t).strip().upper() == io_tag:
-                        pdf_tag = pdf_t
-                        break
-                
-                if pdf_tag:
-                    # پیدا کردن اطلاعات تگ در intermediate_df
-                    matching_rows = intermediate_df[intermediate_df[intermediate_tag_col].apply(
-                        lambda x: str(x).strip().upper() == pdf_tag if pd.notna(x) else False
-                    )]
-                    
-                    if not matching_rows.empty:
-                        # اگر تگ در intermediate پیدا شد، اطلاعات را به final_df اضافه کن
-                        for col in intermediate_columns_to_add:
-                            final_df.at[idx, col] = matching_rows.iloc[0][col]
-            
-            # اضافه کردن تگ‌های intermediate که در IO List نیستند به final_df
-            if unmatched_tags:
-                # فیلتر کردن ردیف‌های intermediate_df که تگ‌های آن‌ها در IO List نیستند
-                unmatched_rows = intermediate_df[intermediate_df[intermediate_tag_col].apply(
-                    lambda x: str(x).strip().upper() in unmatched_tags if pd.notna(x) else False
-                )]
-                
-                # ایجاد دیتافریم جدید با ستون‌های final_df
-                new_rows = pd.DataFrame(columns=final_df.columns)
-                
-                # اضافه کردن ردیف‌های جدید
-                for _, row in unmatched_rows.iterrows():
-                    new_row = pd.Series(index=final_df.columns)
-                    
-                    # کپی مقادیر از ستون‌های intermediate
-                    for col in intermediate_columns_to_add:
-                        new_row[col] = row[col]
-                    
-                    # تنظیم مقدار ستون تگ در IO List
-                    new_row[io_list_tag_col] = row[intermediate_tag_col]
-                    
-                    # اضافه کردن ردیف جدید به new_rows
-                    new_rows = pd.concat([new_rows, pd.DataFrame([new_row])], ignore_index=True)
-                
-                # اضافه کردن ردیف‌های جدید به final_df
-                final_df = pd.concat([final_df, new_rows], ignore_index=True)
-            
-            # ذخیره دیتافریم نهایی به عنوان فایل اکسل
-            final_df.to_excel(output_path, index=False)
-            
-            logger.info(f"Combined Excel file saved to: {output_path}")
-            logger.info(f"Final Excel has {len(final_df)} rows and {len(final_df.columns)} columns")
-            
-            return final_df, unmatched_io_tags, unmatched_tags
-            
-        except Exception as e:
-            logger.error(f"Error processing Excel files: {e}")
-            logger.error(traceback.format_exc())
-            return pd.DataFrame(), [], []
-
         
     def calculate_vector_similarity(self, vec1: 'List[float]', vec2: 'List[float]') -> float:
             """Calculate improved similarity between two vectors"""
@@ -2381,7 +2231,7 @@ class TagJBExtractor:
                 logger.error(f"Error in similarity calculation: {e}")
                 return 0.0
 
-    def run(self, pdf_paths: 'List[str]', excel_path: str, output_excel_path: str, intermediate_excel_path: str) -> 'Tuple[List[str], List[str], List[str]]':
+    def run(self, pdf_paths: 'List[str]', excel_path: str, output_excel_path: str, intermediate_excel_path: str, all_ocr_tags:'Set[str]') -> 'Tuple[List[str], List[str], List[str]]':
         """
         Run the complete process with parallel processing support.
         
@@ -2418,7 +2268,8 @@ class TagJBExtractor:
         final_df, unmatched_io_tags, unmatched_tags = self.process_excel_with_io_list(
             intermediate_excel_path, 
             excel_path,  # FIXED: Use excel_path instead of pdf_paths
-            output_excel_path)
+            output_excel_path,
+            all_ocr_tags)
         
         # Save updated Excel
         final_df.to_excel(output_excel_path, index=False)
@@ -2428,7 +2279,7 @@ class TagJBExtractor:
 
     def draw_bounding_boxes(self, image, tags=None, jb_identifiers=None, mc_identifiers=None,
                         cable_descriptions=None, spare_identifiers=None, tag_to_number=None,
-                        tag_match_info=None):
+                        tag_match_info=None ):
         """
         ✅ بازنویسی کامل: رسم باندینگ باکس‌ها با شماره‌های صحیح (بر اساس موقعیت عمودی)
         """
@@ -2837,12 +2688,19 @@ class TagJBExtractor:
                         # استخراج با شماره‌گذاری بر اساس موقعیت
                         result = self.extract_from_image(image)
                         
-                        if len(result) >= 8:
-                            tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions, tag_match_info = result[:8]
-                        else:
+                        # ✅ FIX: چک بدون warning
+                        if len(result) != 9:
+                            logger.error(f"❌ Expected 9 values, got {len(result)}")
+                            # استفاده از مقادیر پیش‌فرض
                             tags, jb_identifiers, mc_identifiers = set(), set(), set()
                             cable_descriptions, spare_identifiers = [], []
                             tag_to_number, raw_cable_descriptions, tag_match_info = {}, [], {}
+                            all_ocr_tags = set()
+                        else:
+                            # ✅ Unpack عادی
+                            (tags, jb_identifiers, mc_identifiers, cable_descriptions, 
+                            spare_identifiers, tag_to_number, raw_cable_descriptions, 
+                            tag_match_info, all_ocr_tags) = result
                         
                         # رسم bounding boxes
                         try:
@@ -2858,7 +2716,7 @@ class TagJBExtractor:
                             logger.error(f"Error drawing bounding boxes on page {page_num + 1}: {e}")
                             annotated_image = image.copy()
                             page_tag_numbers = tag_to_number
-                        
+                            continue
                         # Add info overlay
                         try:
                             info_text = [
@@ -2883,6 +2741,7 @@ class TagJBExtractor:
                                             
                         except Exception as e:
                             logger.error(f"Error adding overlay to page {page_num + 1}: {e}")
+                            
                         
                         # Save annotated image and add to PDF
                         try:
@@ -2943,56 +2802,177 @@ class TagJBExtractor:
                     pdf_document.close()
                 except:
                     pass
-
-    # اصلاح تابع _create_unmatched_tags_excel برای رفع خطای فایل Excel
-    def _create_unmatched_tags_excel(self, unmatched_excel_tags: 'List[str]', unmatched_pdf_tags: 'List[str]', output_path: str):
+    def process_unmatched_tags(self, unmatched_pdf_tags: List[str], io_tags: Set[str]) -> Dict[str, str]:
         """
-        ایجاد فایل اکسل برای تگ‌های تطبیق نیافته
+        پردازش و اصلاح تگ‌های موجود در PDF که در IO List وجود ندارند
         
         Args:
-            unmatched_excel_tags: لیست تگ‌های اکسل که در PDF پیدا نشده‌اند
-            unmatched_pdf_tags: لیست تگ‌های PDF که در اکسل پیدا نشده‌اند
-            output_path: مسیر فایل خروجی
+            unmatched_pdf_tags: لیست تگ‌های PDF که در IO List نیستند
+            io_tags: مجموعه تگ‌های IO List
+            
+        Returns:
+            دیکشنری {تگ اصلی: تگ اصلاح شده} یا {تگ اصلی: تگ اصلی} اگر اصلاح نشود
+        """
+        corrections = {}
+        io_tags_upper = {tag.strip().upper() for tag in io_tags if tag and not pd.isna(tag)}
+        
+        # تنظیمات fuzzy matching
+        fuzzy_threshold = 0.85  # آستانه شباهت برای fuzzy matching
+        
+        logger.info(f"🔍 Processing {len(unmatched_pdf_tags)} unmatched PDF tags...")
+        
+        for tag in unmatched_pdf_tags:
+            original_tag = tag
+            corrected_tag = None
+            
+            # مرحله 1: اعمال تصحیحات OCR استاندارد
+            fixed_tag = self.fix_common_ocr_errors(tag)
+            if fixed_tag.upper() in io_tags_upper:
+                # تگ اصلاح شده در IO List وجود دارد
+                corrected_tag = fixed_tag
+                logger.info(f"✅ OCR fix matched: '{original_tag}' -> '{corrected_tag}'")
+                corrections[original_tag] = corrected_tag
+                continue
+            
+            # مرحله 2: بررسی الگوهای خاص UZSO/UZSC با شماره‌های متفاوت
+            if re.match(r'^[UuVv][ZzSs2][Ss5][O0oCcGg][-_]?\d+$', tag.upper()):
+                # استخراج پیشوند و شماره
+                prefix_match = re.match(r'^([UuVv][ZzSs2][Ss5][O0oCcGg])[-_]?(\d+)$', tag.upper())
+                if prefix_match:
+                    prefix = prefix_match.group(1)
+                    number = prefix_match.group(2)
+                    
+                    # تصحیح پیشوند
+                    if re.match(r'[UuVv][ZzSs2][Ss5][O0oD]', prefix):
+                        corrected_prefix = "UZSO"
+                    else:
+                        corrected_prefix = "UZSC"
+                    
+                    # بررسی شماره‌های مشابه در IO List
+                    number_pattern = r'^' + corrected_prefix + r'[-_]?(\d+)$'
+                    potential_matches = []
+                    
+                    for io_tag in io_tags_upper:
+                        num_match = re.match(number_pattern, io_tag)
+                        if num_match:
+                            io_number = num_match.group(1)
+                            # محاسبه فاصله Levenshtein بین شماره‌ها
+                            distance = Levenshtein.distance(number, io_number)
+                            if distance <= 2:  # حداکثر 2 کاراکتر اختلاف
+                                similarity = 1.0 - (distance / max(len(number), len(io_number)))
+                                potential_matches.append((io_tag, similarity))
+                    
+                    if potential_matches:
+                        # انتخاب بهترین تطبیق
+                        best_match = max(potential_matches, key=lambda x: x[1])
+                        if best_match[1] >= fuzzy_threshold:
+                            corrected_tag = best_match[0]
+                            logger.info(f"✅ Number correction: '{original_tag}' -> '{corrected_tag}' (score: {best_match[1]:.3f})")
+                            corrections[original_tag] = corrected_tag
+                            continue
+            
+            # مرحله 3: جستجوی fuzzy match در کل IO List
+            best_match = None
+            best_score = 0
+            
+            for io_tag in io_tags_upper:
+                # محاسبه شباهت با استفاده از Levenshtein distance
+                distance = Levenshtein.distance(fixed_tag.upper(), io_tag)
+                max_len = max(len(fixed_tag), len(io_tag))
+                similarity = 1.0 - (distance / max_len) if max_len > 0 else 0
+                
+                if similarity > best_score and similarity >= fuzzy_threshold:
+                    best_score = similarity
+                    best_match = io_tag
+            
+            if best_match:
+                corrected_tag = best_match
+                logger.info(f"✅ Fuzzy match: '{original_tag}' -> '{corrected_tag}' (score: {best_score:.3f})")
+                corrections[original_tag] = corrected_tag
+                continue
+            
+            # اگر هیچ اصلاحی انجام نشد، تگ اصلی را برگردان
+            corrections[original_tag] = original_tag
+            logger.debug(f"⚠️ No correction found for: '{original_tag}'")
+        
+        # آمار اصلاحات
+        corrected_count = sum(1 for k, v in corrections.items() if k != v)
+        logger.info(f"✅ Corrected {corrected_count}/{len(unmatched_pdf_tags)} unmatched tags")
+        
+        return corrections
+
+    def _create_unmatched_tags_excel(self, unmatched_pdf_tags: 'List[str]', 
+                                    unmatched_io_tags: 'List[str]', 
+                                    output_path: str):
+        """
+        ایجاد فایل اکسل برای تگ‌های تطبیق نیافته با فرمت بهتر
         """
         try:
-            # بررسی مسیر فایل خروجی
-            if not output_path or not output_path.strip():
-                output_path = "unmatched_tags.xlsx"  # مسیر پیش‌فرض
+            logger.info("="*70)
+            logger.info("📝 Creating Unmatched Tags Excel Report")
+            logger.info("="*70)
             
-            # اطمینان از پسوند صحیح
+            # بررسی مسیر
+            if not output_path or not output_path.strip():
+                output_path = "unmatched_tags.xlsx"
+            
             if not output_path.endswith('.xlsx'):
                 output_path = output_path + '.xlsx'
             
-            # ایجاد دیتافریم برای تگ‌های تطبیق نیافته
-            excel_tags_df = pd.DataFrame({"Tag": unmatched_excel_tags, "Source": "Excel", "Status": "Not found in PDF"})
-            pdf_tags_df = pd.DataFrame({"Tag": unmatched_pdf_tags, "Source": "PDF", "Status": "Not found in Excel"})
+            # اطمینان از وجود دایرکتوری
+            output_dir = os.path.dirname(os.path.abspath(output_path))
+            if output_dir:
+                os.makedirs(output_dir, exist_ok=True)
             
-            # ترکیب دو دیتافریم
-            unmatched_df = pd.concat([excel_tags_df, pdf_tags_df], ignore_index=True)
+            # ایجاد داده‌ها
+            data = []
             
-            # اگر دیتافریم خالی است، ستون‌های مناسب را اضافه کن
-            if unmatched_df.empty:
-                unmatched_df = pd.DataFrame(columns=["Tag", "Source", "Status"])
+            # تگ‌های PDF که در IO نیستند
+            for tag in sorted(unmatched_pdf_tags):
+                data.append({
+                    'Tag': tag,
+                    'Source': 'PDF',
+                    'Status': 'Not found in IO List',
+                    'Severity': 'WARNING',
+                    'Action': 'Add to IO List or verify tag correctness'
+                })
             
-            # اطمینان از وجود دایرکتوری مسیر خروجی
-            os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+            # تگ‌های IO که در PDF نیستند
+            for tag in sorted(unmatched_io_tags):
+                data.append({
+                    'Tag': tag,
+                    'Source': 'IO List',
+                    'Status': 'Not found in PDF',
+                    'Severity': 'INFO',
+                    'Action': 'Check if tag should be in PDF'
+                })
             
-            # ذخیره به فایل اکسل
+            # ایجاد دیتافریم
+            if data:
+                unmatched_df = pd.DataFrame(data)
+                logger.info(f"✅ Created unmatched report with {len(data)} rows")
+                logger.info(f"   - PDF tags not in IO: {len(unmatched_pdf_tags)}")
+                logger.info(f"   - IO tags not in PDF: {len(unmatched_io_tags)}")
+            else:
+                # اگر همه تطبیق داشتند
+                unmatched_df = pd.DataFrame([{
+                    'Tag': 'N/A',
+                    'Source': 'N/A',
+                    'Status': '✅ All tags matched successfully!',
+                    'Severity': 'SUCCESS',
+                    'Action': 'No action needed'
+                }])
+                logger.info("✅ All tags matched! Creating success report.")
+            
+            # ذخیره
             unmatched_df.to_excel(output_path, index=False)
-            logger.info(f"Unmatched tags Excel file created with {len(unmatched_df)} rows")
+            logger.info(f"✅ Unmatched tags Excel saved to: {output_path}")
+            logger.info("="*70)
             
         except Exception as e:
-            logger.error(f"Error creating unmatched tags Excel file: {e}")
+            logger.error(f"❌ Error creating unmatched tags Excel: {e}")
             logger.error(traceback.format_exc())
             
-            try:
-                # تلاش مجدد با مسیر ساده‌تر
-                simple_path = "unmatched_tags.xlsx"
-                pd.DataFrame(columns=["Tag", "Source", "Status"]).to_excel(simple_path, index=False)
-                logger.info(f"Created simple unmatched tags file at: {simple_path}")
-            except:
-                logger.error("Failed to create even a simple Excel file")
-        
     def run_with_annotated_pdf(self, pdf_paths: 'List[str]', excel_path: str, output_excel_path: str, output_pdf_dir: str, 
                             create_zip: bool = True, zip_path: str = None) -> 'Tuple[List[str], List[str]]':
         """
@@ -3001,167 +2981,378 @@ class TagJBExtractor:
         
         Args:
             pdf_paths: List of PDF file paths
-            excel_path: Input Excel file path
+            excel_path: Input Excel file path (IO List)
             output_excel_path: Output Excel file path
             output_pdf_dir: Directory path for storing processed PDFs
             create_zip: Whether to create a ZIP archive of all output files
             zip_path: Path for the ZIP archive (if None, will use output_pdf_dir + '.zip')
             
         Returns:
-            Tuple of (unmatched_excel_tags, unmatched_pdf_tags)
+            Tuple of (unmatched_io_tags, unmatched_pdf_tags)
         """
         import zipfile
         import os
         
-        # Build tag vectors from Excel first
-        start_time = time.time()
-        self.build_tag_vectors_from_excel(excel_path)
-        logger.info(f"Using tag patterns with {len(self.tag_patterns)} patterns")
+        try:
+            logger.info("="*80)
+            logger.info("🚀 STARTING COMPLETE PROCESSING WITH ANNOTATED PDFs")
+            logger.info("="*80)
+            
+            # ============================================================
+            # مرحله 1: مقداردهی اولیه و بارگذاری داده‌ها
+            # ============================================================
+            start_time = time.time()
+            
+            # Build tag vectors from Excel first
+            logger.info("📚 Step 1: Building tag vectors from IO List...")
+            self.build_tag_vectors_from_excel(excel_path)
+            logger.info(f"✅ Loaded {len(self.tag_patterns)} tag patterns from IO List")
+            
+            # خواندن تگ‌های IO List
+            io_tags = set()
+            if excel_path and os.path.exists(excel_path):
+                try:
+                    io_df = pd.read_excel(excel_path)
+                    if 'Tag No' in io_df.columns:
+                        io_tags = set(str(tag).strip().upper() for tag in io_df['Tag No'] if pd.notna(tag) and str(tag).strip())
+                        logger.info(f"✅ Loaded {len(io_tags)} tags from IO List")
+                        logger.info(f"   Sample IO tags: {list(io_tags)[:5]}")
+                except Exception as e:
+                    logger.error(f"❌ Error reading IO List: {e}")
+            
+            # Create output PDF directory
+            os.makedirs(output_pdf_dir, exist_ok=True)
+            logger.info(f"📁 Output directory: {output_pdf_dir}")
+            
+            # ============================================================
+            # مرحله 2: پردازش PDF ها
+            # ============================================================
+            all_similarity_reports = []
+            master_tag_numbers = {}
+            all_pdf_results = {}
+            output_files = []
+            
+            all_pdf_tags = set()  # 🆕 جمع‌آوری تمام تگ‌های PDF
+            all_pdf_ocr_tags = set()  # 🆕 تگ‌های خام OCR (همه تگ‌های شناسایی شده)
 
-        # 🆕 خواندن تگ‌های IO List
-        io_tags = set()
-        if excel_path:
+            logger.info("\n" + "="*80)
+            logger.info(f"📄 Step 2: Processing {len(pdf_paths)} PDF file(s)...")
+            logger.info("="*80)
+
+            for pdf_idx, pdf_path in enumerate(pdf_paths):
+                pdf_filename = os.path.basename(pdf_path)
+                logger.info(f"\n{'─'*80}")
+                logger.info(f"📄 Processing PDF {pdf_idx + 1}/{len(pdf_paths)}: {pdf_filename}")
+                logger.info(f"{'─'*80}")
+                
+                try:
+                    # Process PDF
+                    logger.info(f"   🔍 Extracting tags from PDF pages...")
+                    pdf_result = self.process_pdf(pdf_path)
+                    
+                    if not pdf_result:
+                        logger.warning(f"   ⚠️ No results from PDF: {pdf_filename}")
+                        continue
+                    
+                    # Store PDF results
+                    all_pdf_results[pdf_filename] = pdf_result
+
+                    # ✅ FIX: جمع‌آوری all_ocr_tags از pdf_result
+                    logger.info(f"   📊 Collecting OCR tags from {len(pdf_result)} pages...")
+                    
+                    # ✅ جمع‌آوری تگ‌ها
+                    for page_num, page_data in pdf_result.items():
+                        if isinstance(page_data, tuple):
+                            # تگ‌های matched
+                            if len(page_data) > 0:
+                                tags = page_data[0]
+                                if isinstance(tags, set):
+                                    all_pdf_tags.update(tags)
+                                elif isinstance(tags, list):
+                                    all_pdf_tags.update(tags)
+                            
+                            # ✅ FIX: تگ‌های OCR (index 8)
+                            if len(page_data) >= 9:
+                                ocr_tags = page_data[8]
+                                if ocr_tags:  # چک کنیم خالی نباشد
+                                    if isinstance(ocr_tags, set):
+                                        all_pdf_ocr_tags.update(ocr_tags)  # ✅ استفاده از متغیر صحیح
+                                        logger.info(f"      Page {page_num}: collected {len(ocr_tags)} OCR tags")
+                                    elif isinstance(ocr_tags, list):
+                                        all_pdf_ocr_tags.update(ocr_tags)  # ✅ استفاده از متغیر صحیح
+                                        logger.info(f"      Page {page_num}: collected {len(ocr_tags)} OCR tags")
+                                else:
+                                    logger.warning(f"      Page {page_num}: ocr_tags is empty or None!")
+                            else:
+                                logger.warning(f"      Page {page_num}: page_data has only {len(page_data)} elements (expected 9)")
+                    
+                    logger.info(f"   ✅ PDF {pdf_filename}: {len(all_pdf_tags)} matched, {len(all_pdf_ocr_tags)} OCR total")
+                    
+                    # Create annotated PDF
+                    output_pdf_path = os.path.join(output_pdf_dir, f"annotated_{pdf_filename}")
+                    logger.info(f"   🎨 Creating annotated PDF...")
+                    
+                    pdf_tag_numbers = self.create_annotated_pdf(pdf_path, output_pdf_path)
+                    master_tag_numbers.update(pdf_tag_numbers)
+                    
+                    output_files.append(output_pdf_path)
+                    logger.info(f"   ✅ Annotated PDF saved: {output_pdf_path}")
+                    
+                except Exception as e:
+                    logger.error(f"   ❌ Error processing PDF {pdf_filename}: {e}")
+                    logger.error(traceback.format_exc())
+                    continue
+            
+            # ✅ لاگ نهایی
+            logger.info(f"\n✅ All PDFs processed:")
+            logger.info(f"   - Total matched tags: {len(all_pdf_tags)}")
+            logger.info(f"   - Total OCR tags: {len(all_pdf_ocr_tags)}")  # ✅ نام صحیح
+            logger.info(f"   - Sample OCR tags: {list(all_pdf_ocr_tags)[:10]}")
+
+            # ✅ چک کردن خالی بودن
+            if not all_pdf_ocr_tags:
+                logger.error("❌ CRITICAL: all_pdf_ocr_tags is empty after processing all PDFs!")
+                logger.error("   This means page_data[8] was empty or missing in all pages")
+            
+            # ============================================================
+            # مرحله 3: ایجاد فایل اکسل میانی
+            # ============================================================
+            logger.info("\n" + "="*80)
+            logger.info("📊 Step 3: Creating intermediate Excel file...")
+            logger.info("="*80)
+            
+            intermediate_excel_path = os.path.join(output_pdf_dir, "JB_Wiring_Diagram_Intermediate.xlsx")
+            
             try:
-                df = pd.read_excel(excel_path)
-                if 'Tag No' in df.columns:
-                    io_tags = set(str(tag).strip().upper() for tag in df['Tag No'] 
-                                if pd.notna(tag))
-                    logger.info(f"Loaded {len(io_tags)} tags from IO List")
+                self.add_wire_colors_and_scr_to_dataframe(
+                    pd.DataFrame(), 
+                    master_tag_numbers, 
+                    intermediate_excel_path, 
+                    all_pdf_results,
+                    io_tags
+                )
+                output_files.append(intermediate_excel_path)
+                logger.info(f"✅ Intermediate Excel saved: {intermediate_excel_path}")
             except Exception as e:
-                logger.error(f"Error loading IO List: {e}")
-        
-        # Create output PDF directory if it doesn't exist
-        os.makedirs(output_pdf_dir, exist_ok=True)
-        
-        # Store all similarity reports for detailed analysis
-        all_similarity_reports = []
-        
-        # Master Dictionary to store tag-to-number mappings from all PDFs
-        master_tag_numbers = {}
-        
-        # Dictionary to store all PDF processing results
-        all_pdf_results = {}
-        
-        # لیست فایل‌های خروجی برای اضافه کردن به ZIP
-        output_files = []
-        
-        # Process each PDF file
-        for pdf_idx, pdf_path in enumerate(pdf_paths):
-            pdf_filename = os.path.basename(pdf_path)
-            logger.info(f"Processing PDF {pdf_idx + 1}/{len(pdf_paths)}: {pdf_filename}")
+                logger.error(f"❌ Error creating intermediate Excel: {e}")
+                logger.error(traceback.format_exc())
             
-            # Process PDF to extract tags and JBs
-            pdf_result = self.process_pdf(pdf_path)
+            # ============================================================
+            # مرحله 4: ترکیب با IO List (در صورت وجود)
+            # ============================================================
+            logger.info("\n" + "="*80)
+            logger.info("🔗 Step 4: Combining with IO List...")
+            logger.info("="*80)
             
-            # Store PDF results with the PDF filename as key
-            all_pdf_results[pdf_filename] = pdf_result
-            
-            # Create annotated PDF with vector matching results and get tag numbers
-            output_pdf_path = os.path.join(output_pdf_dir, f"annotated_{pdf_filename}")
-            pdf_tag_numbers = self.create_annotated_pdf(pdf_path, output_pdf_path)
-            master_tag_numbers.update(pdf_tag_numbers)
-            
-            # اضافه کردن PDF حاشیه‌گذاری شده به لیست فایل‌های خروجی
-            output_files.append(output_pdf_path)
-            
-            # Update master tag numbers Dictionary
-            master_tag_numbers.update(pdf_tag_numbers)
-            
-            # Collect similarity reports from this PDF
-            all_similarity_reports.extend(self.similarity_reports)
-            
-            # Generate per-PDF statistics
-            pdf_stats = self.get_processing_stats()
-            logger.info(f"PDF {pdf_filename} statistics:")
-            for key, value in pdf_stats.items():
-                logger.info(f"  {key}: {value}")
-        
-        # نام‌گذاری مناسب فایل‌های اکسل
-        # فایل اکسل میانی با نام مشخص JB Wiring Diagram
-        intermediate_excel_path = os.path.join(output_pdf_dir, "JB_Wiring_Diagram_Intermediate.xlsx")
-        
-        # Pass all_pdf_results to add_wire_colors_and_scr_to_dataframe
-        self.add_wire_colors_and_scr_to_dataframe(
-            pd.DataFrame(), 
-            master_tag_numbers, 
-            intermediate_excel_path, 
-            all_pdf_results,
-            io_tags  # 🆕 ارسال تگ‌های IO
-        )  
-        
-        # اضافه کردن فایل اکسل میانی به لیست فایل‌های خروجی
-        output_files.append(intermediate_excel_path)
-        
-        # If IO List is provided, process and combine both Excel files
-        if excel_path:
-            # نام‌گذاری فایل اکسل نهایی با پسوند مناسب
-            if not output_excel_path.endswith(".xlsx"):
-                output_excel_path = output_excel_path.replace(".xls", ".xlsx") if output_excel_path.endswith(".xls") else f"{output_excel_path}.xlsx"
-            
-            # اگر نام فایل خروجی مشخص نشده، یک نام پیش‌فرض تعیین کنیم
-            if not os.path.basename(output_excel_path):
-                output_excel_path = os.path.join(output_pdf_dir, "JB_Wiring_Diagram_Final.xlsx")
-            
-            final_df, unmatched_io_tags, unmatched_tags = self.process_excel_with_io_list(
-                intermediate_excel_path, 
-                excel_path, 
-                output_excel_path
-            )
-            logger.info(f"Combined Excel file with IO List saved to: {output_excel_path}")
-            
-            # اضافه کردن فایل اکسل نهایی به لیست فایل‌های خروجی
-            output_files.append(output_excel_path)
-            
-            # For function output
-            unmatched_excel_tags = unmatched_io_tags
-            unmatched_pdf_tags = unmatched_tags
-            
-            # ایجاد فایل اکسل برای تگ‌های تطبیق نیافته
-            unmatched_excel_path = os.path.join(output_pdf_dir, "JB_Wiring_Diagram_Unmatched_Tags.xlsx")
-            self._create_unmatched_tags_excel(unmatched_excel_tags, unmatched_pdf_tags, unmatched_excel_path)
-            logger.info(f"Unmatched tags Excel file saved to: {unmatched_excel_path}")
-            
-            # اضافه کردن فایل اکسل تگ‌های تطبیق نیافته به لیست فایل‌های خروجی
-            output_files.append(unmatched_excel_path)
-        else:
-            # If no IO List, just copy the intermediate file to the output path
-            # نام‌گذاری فایل اکسل نهایی با پسوند مناسب
-            if not output_excel_path.endswith(".xlsx"):
-                output_excel_path = output_excel_path.replace(".xls", ".xlsx") if output_excel_path.endswith(".xls") else f"{output_excel_path}.xlsx"
-                
-            # اگر نام فایل خروجی مشخص نشده، یک نام پیش‌فرض تعیین کنیم
-            if not os.path.basename(output_excel_path):
-                output_excel_path = os.path.join(output_pdf_dir, "JB_Wiring_Diagram_Final.xlsx")
-                
-            shutil.copy2(intermediate_excel_path, output_excel_path)
-            logger.info(f"Excel file saved to: {output_excel_path}")
-            
-            # اضافه کردن فایل اکسل نهایی به لیست فایل‌های خروجی
-            output_files.append(output_excel_path)
-            
-            # For function output
-            unmatched_excel_tags = []
             unmatched_pdf_tags = []
+            unmatched_io_tags = []
             
-            # ایجاد فایل اکسل خالی برای تگ‌های تطبیق نیافته
+            if excel_path and os.path.exists(excel_path):
+                try:
+                    # نام‌گذاری فایل اکسل نهایی
+                    if not output_excel_path.endswith(".xlsx"):
+                        output_excel_path = output_excel_path.replace(".xls", ".xlsx") if output_excel_path.endswith(".xls") else f"{output_excel_path}.xlsx"
+                    
+                    if not os.path.basename(output_excel_path):
+                        output_excel_path = os.path.join(output_pdf_dir, "JB_Wiring_Diagram_Final.xlsx")
+                    
+                    logger.info(f"   📊 Sending {len(all_pdf_ocr_tags)} OCR tags to process_excel_with_io_list")
+                    # 🆕 ارسال all_ocr_tags به متد
+                    final_df, unmatched_io_tags, unmatched_pdf_tags = self.process_excel_with_io_list(
+                        intermediate_excel_path, 
+                        excel_path, 
+                        output_excel_path,
+                        all_pdf_ocr_tags 
+                    )
+                                
+                    output_files.append(output_excel_path)
+                    logger.info(f"✅ Final Excel saved: {output_excel_path}")
+                    logger.info(f"   📊 Total rows: {len(final_df)}")
+                    logger.info(f"   ⚠️ Unmatched PDF tags: {len(unmatched_pdf_tags)}")
+                    logger.info(f"   ⚠️ Unmatched IO tags: {len(unmatched_io_tags)}")
+                    
+                except Exception as e:
+                    logger.error(f"❌ Error combining with IO List: {e}")
+                    logger.error(traceback.format_exc())
+                    
+                    # Fallback: copy intermediate to output
+                    shutil.copy2(intermediate_excel_path, output_excel_path)
+                    output_files.append(output_excel_path)
+                    logger.warning(f"⚠️ Copied intermediate to output (fallback)")
+            else:
+                # اگر IO List نباشد
+                logger.warning("⚠️ No IO List provided, using intermediate as final")
+                
+                if not output_excel_path.endswith(".xlsx"):
+                    output_excel_path = output_excel_path.replace(".xls", ".xlsx") if output_excel_path.endswith(".xls") else f"{output_excel_path}.xlsx"
+                
+                if not os.path.basename(output_excel_path):
+                    output_excel_path = os.path.join(output_pdf_dir, "JB_Wiring_Diagram_Final.xlsx")
+                
+                shutil.copy2(intermediate_excel_path, output_excel_path)
+                output_files.append(output_excel_path)
+                logger.info(f"✅ Final Excel saved: {output_excel_path}")
+                
+                # 🆕 محاسبه unmatched از روی all_pdf_tags
+                unmatched_pdf_tags = sorted(list(all_pdf_tags - io_tags)) if io_tags else []
+                unmatched_io_tags = sorted(list(io_tags - all_pdf_tags)) if io_tags else []
+            
+            # ============================================================
+            # 🆕 مرحله 5: ایجاد فایل Unmatched Tags (همیشه)
+            # ============================================================
+            logger.info("\n" + "="*80)
+            logger.info("📝 Step 5: Creating Unmatched Tags Report...")
+            logger.info("="*80)
+
             unmatched_excel_path = os.path.join(output_pdf_dir, "JB_Wiring_Diagram_Unmatched_Tags.xlsx")
-            self._create_unmatched_tags_excel([], [], unmatched_excel_path)
-            logger.info(f"Empty unmatched tags Excel file saved to: {unmatched_excel_path}")
+
+            try:
+                # فقط OCR tags که در IO List نیستند
+                ocr_only_unmatched = set()
+                if all_pdf_ocr_tags:
+                    ocr_only_unmatched = all_pdf_ocr_tags - io_tags  # ✅ فقط از OCR کم شود
+
+                # تگ‌های IO که اصلاً در PDF پیدا نشده‌اند
+                io_only_tags = io_tags - all_pdf_ocr_tags
+
+                logger.info(f"   📊 OCR-only unmatched: {len(ocr_only_unmatched)}")
+                logger.info(f"   📊 IO-only tags: {len(io_only_tags)}")
+
+                # نمونه
+                if ocr_only_unmatched:
+                    logger.info(f"      Sample OCR-only: {list(ocr_only_unmatched)[:5]}")
+                if io_only_tags:
+                    logger.info(f"      Sample IO-only: {list(io_only_tags)[:5]}")
+
+                # ایجاد Excel
+                unmatched_data = []
+
+                # 1. تگ‌های OCR که در IO List نیستند
+                for tag in sorted(ocr_only_unmatched):
+                    unmatched_data.append({
+                        'Tag': tag,
+                        'Source': 'PDF (OCR)',
+                        'Status': 'Found in PDF but not in IO List',
+                        'Severity': 'WARNING',
+                        'Action': 'Verify tag correctness or add to IO List',
+                        'Match_Type': 'Not Matched'
+                    })
+
+                # 2. تگ‌های IO که در PDF نیستند
+                for tag in sorted(io_only_tags):
+                    unmatched_data.append({
+                        'Tag': tag,
+                        'Source': 'IO List',
+                        'Status': 'In IO List but not found in PDF',
+                        'Severity': 'INFO',
+                        'Action': 'Check if tag should appear in PDF',
+                        'Match_Type': 'N/A'
+                    })
+
+                # ذخیره Excel
+                if unmatched_data:
+                    unmatched_df = pd.DataFrame(unmatched_data)
+                    logger.info(f"   ✅ Created report with {len(unmatched_data)} unmatched tags")
+                else:
+                    unmatched_df = pd.DataFrame([{
+                        'Tag': 'N/A',
+                        'Source': 'N/A',
+                        'Status': '✅ All tags matched successfully!',
+                        'Severity': 'SUCCESS',
+                        'Action': 'No action needed',
+                        'Match_Type': 'N/A'
+                    }])
+                    logger.info("   ✅ All tags matched!")
+
+                unmatched_df.to_excel(unmatched_excel_path, index=False)
+                output_files.append(unmatched_excel_path)
+
+                logger.info(f"✅ Unmatched tags Excel saved: {unmatched_excel_path}")
+                logger.info(f"   📄 File contains {len(unmatched_df)} rows")
+
+            except Exception as e:
+                logger.error(f"❌ Error creating unmatched tags Excel: {e}")
+                logger.error(traceback.format_exc())
+
+                # ایجاد فایل خالی در صورت خطا
+                try:
+                    empty_df = pd.DataFrame(columns=['Tag', 'Source', 'Status', 'Severity', 'Action', 'Match_Type'])
+                    empty_df.loc[0] = ['ERROR', 'SYSTEM', f'Error creating report: {str(e)}', 'ERROR', 'Check logs', 'N/A']
+                    empty_df.to_excel(unmatched_excel_path, index=False)
+                    output_files.append(unmatched_excel_path)
+                    logger.warning(f"⚠️ Created error report at: {unmatched_excel_path}")
+                except:
+                    logger.error(f"❌ Could not create error report file")
+            # ============================================================
+            # مرحله 6: ایجاد ZIP (اختیاری)
+            # ============================================================
+            if create_zip:
+                logger.info("\n" + "="*80)
+                logger.info("📦 Step 6: Creating ZIP archive...")
+                logger.info("="*80)
+                
+                try:
+                    if zip_path is None:
+                        zip_path = output_pdf_dir.rstrip('/\\') + '.zip'
+                    
+                    # حذف فایل ZIP قبلی در صورت وجود
+                    if os.path.exists(zip_path):
+                        os.remove(zip_path)
+                        logger.info(f"   🗑️ Removed existing ZIP: {zip_path}")
+                    
+                    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                        for file_path in output_files:
+                            if os.path.exists(file_path):
+                                arcname = os.path.basename(file_path)
+                                zipf.write(file_path, arcname=arcname)
+                                logger.info(f"   ✅ Added to ZIP: {arcname}")
+                    
+                    logger.info(f"✅ ZIP archive created: {zip_path}")
+                    logger.info(f"   📦 Contains {len(output_files)} files")
+                    
+                except Exception as e:
+                    logger.error(f"❌ Error creating ZIP archive: {e}")
+                    logger.error(traceback.format_exc())
             
-            # اضافه کردن فایل اکسل تگ‌های تطبیق نیافته به لیست فایل‌های خروجی
-            output_files.append(unmatched_excel_path)
+            # ============================================================
+            # مرحله 7: گزارش نهایی
+            # ============================================================
+            self.processing_time = time.time() - start_time
+            
+            logger.info("\n" + "="*80)
+            logger.info("📊 FINAL SUMMARY")
+            logger.info("="*80)
+            
+            stats = self.get_processing_stats()
+            logger.info(f"⏱️  Total processing time: {self.processing_time:.2f} seconds")
+            logger.info(f"📄 PDFs processed: {len(pdf_paths)}")
+            logger.info(f"🏷️  Total unique PDF tags: {len(all_pdf_tags)}")
+            logger.info(f"🏷️  Total IO List tags: {len(io_tags)}")
+            logger.info(f"✅ Tags numbered: {len(master_tag_numbers)}")
+            logger.info(f"⚠️  Unmatched PDF tags: {len(unmatched_pdf_tags)}")
+            logger.info(f"⚠️  Unmatched IO tags: {len(unmatched_io_tags)}")
+            logger.info(f"📁 Output files created: {len(output_files)}")
+            
+            logger.info("\n📂 Output Files:")
+            for i, file_path in enumerate(output_files, 1):
+                file_size = os.path.getsize(file_path) / 1024  # KB
+                logger.info(f"   {i}. {os.path.basename(file_path)} ({file_size:.1f} KB)")
+            
+            logger.info("\n" + "="*80)
+            logger.info("✅ PROCESSING COMPLETED SUCCESSFULLY")
+            logger.info("="*80 + "\n")
+            
+            return list(io_only_tags), list(ocr_only_unmatched)
+            
+        except Exception as e:
+            logger.error("="*80)
+            logger.error("❌ CRITICAL ERROR IN run_with_annotated_pdf")
+            logger.error("="*80)
+            logger.error(f"Error: {e}")
+            logger.error(traceback.format_exc())
+            logger.error("="*80)
+            return [], []
         
-        # Generate summary statistics
-        self.processing_time = time.time() - start_time
-        stats = self.get_processing_stats()
-        
-        logger.info(f"Processing completed in {self.processing_time:.2f} seconds")
-        logger.info(f"Summary statistics: {stats}")
-        logger.info(f"Reports and tag numbers saved to: {reports_path}")
-        logger.info(f"Total tags numbered: {len(master_tag_numbers)}")
-        
-        return unmatched_excel_tags, unmatched_pdf_tags
-    
     def set_wire_color_rule(self, rule):
         """
         تنظیم قانون تولید رنگ سیم
@@ -3791,19 +3982,23 @@ class TagJBExtractor:
                 logger.error(f"Invalid page_results type: {type(page_results)}")
                 return
             
-            if len(page_results) < 8:
-                logger.error(f"Insufficient data: {len(page_results)} items")
+            # ✅ FIX: انتظار 9 مقدار
+            if len(page_results) < 9:
+                logger.error(f"Insufficient data: expected 9, got {len(page_results)}")
                 return
             
-            # استخراج داده‌ها
+            # ✅ FIX: استخراج 9 مقدار
             tags = page_results[0] if len(page_results) > 0 else set()
             jb_identifiers = page_results[1] if len(page_results) > 1 else set()
             mc_identifiers = page_results[2] if len(page_results) > 2 else set()
             cable_descriptions = page_results[3] if len(page_results) > 3 else []
             spare_identifiers = page_results[4] if len(page_results) > 4 else []
-            page_tag_to_number = page_results[5] if len(page_results) > 5 else {}
+            page_tag_to_number = page_results[5] if len(page_results) > 5 else {}  # ✅ FIX: این متغیر!
             raw_cable_descriptions = page_results[6] if len(page_results) > 6 else []
             tag_match_info = page_results[7] if len(page_results) > 7 else {}
+            all_ocr_tags = page_results[8] if len(page_results) > 8 else set()
+            
+            logger.debug(f"Page {page_num} - OCR tags: {len(all_ocr_tags)}")
             
             # تبدیل به لیست
             if isinstance(tags, set):
@@ -3815,7 +4010,7 @@ class TagJBExtractor:
             if isinstance(spare_identifiers, set):
                 spare_identifiers = list(spare_identifiers)
             
-            logger.debug(f"Page {page_num} - Tags: {len(tags)}, JBs: {len(jb_identifiers)}, MCs: {len(mc_identifiers)}")
+            logger.debug(f"Page {page_num} - Tags: {len(tags)}, JBs: {len(jb_identifiers)}, MCs: {len(mc_identifiers)}, OCR tags: {len(all_ocr_tags)}")
             
             # بررسی شرط multiple JB
             if len(jb_identifiers) > 1:
@@ -3826,7 +4021,7 @@ class TagJBExtractor:
             # پردازش تگ‌ها با استفاده از شماره‌های از قبل تعیین شده
             # ============================================================
             for tag in tags:
-                # شماره تگ از tag_to_number که بر اساس موقعیت تعیین شده
+                # ✅ FIX: استفاده از page_tag_to_number که حالا تعریف شده
                 tag_number = page_tag_to_number.get(tag) or tag_to_number.get(tag)
                 
                 if not tag_number:
@@ -3876,7 +4071,7 @@ class TagJBExtractor:
                 }
                 
                 new_df_data.append(row_data)
-                logger.debug(f"Added tag: {tag} with number #{tag_number} (position-based)")
+                logger.debug(f"✅ Added tag: {tag} with number #{tag_number}")
             
             # ============================================================
             # پردازش SPAREs
@@ -3918,117 +4113,125 @@ class TagJBExtractor:
                 }
                 
                 new_df_data.append(row_data)
-                logger.debug(f"Added SPARE: {spare} with number #{spare_number} (position-based)")
+                logger.debug(f"✅ Added SPARE: {spare} with number #{spare_number}")
+                
+            logger.info(f"✅ Page {page_num} processed: {len([d for d in new_df_data if d.get('Page') == page_num])} rows added")
         
         except Exception as e:
             logger.error(f"Error processing page {page_num}: {e}")
             logger.error(traceback.format_exc())
 
-    def process_excel_with_io_list(self, intermediate_excel_path: str, excel_path: str, output_path: str) -> 'Tuple[pd.DataFrame, List[str], List[str]]':
+    def process_excel_with_io_list(self, intermediate_excel_path: str, excel_path: str, 
+                                output_path: str, 
+                                all_ocr_tags: 'Set[str]' = None) -> 'Tuple[pd.DataFrame, List[str], List[str]]':
         """
-        ترکیب داده‌های فایل intermediate با فایل IO List و ایجاد فایل اکسل نهایی.
-        این تابع تمام ستون‌های IO List را حفظ می‌کند و ستون‌های جدید از فایل intermediate را به آن اضافه می‌کند.
-        
-        Args:
-            intermediate_excel_path: مسیر فایل اکسل intermediate
-            excel_path: مسیر فایل اکسل IO List
-            output_path: مسیر فایل اکسل خروجی
-            
-        Returns:
-            Tuple of (final_df, unmatched_io_tags, unmatched_tags)
+        ترکیب intermediate Excel با IO List و محاسبه unmatched فقط از OCR tags.
         """
         try:
-            # خواندن فایل‌های اکسل
+            # ====== خواندن فایل‌ها ======
             intermediate_df = pd.read_excel(intermediate_excel_path)
             io_list_df = pd.read_excel(excel_path)
-            
-            logger.info(f"Loaded intermediate Excel with {len(intermediate_df)} rows and {len(intermediate_df.columns)} columns")
-            logger.info(f"Loaded IO List Excel with {len(io_list_df)} rows and {len(io_list_df.columns)} columns")
-            
-            # نام ستون تگ در هر دو فایل
+
             intermediate_tag_col = 'Tag/SPARE'
-            io_list_tag_col = 'Tag No'  # نام ستون تگ در IO List
+            io_list_tag_col = 'Tag No'
+
+            # نگاشت UPPER -> Original برای intermediate
+            intermediate_map_upper_to_original = {str(v).strip().upper(): str(v).strip() 
+                                                for v in intermediate_df[intermediate_tag_col] if pd.notna(v)}
+            # نگاشت UPPER -> Original برای IO List
+            io_map_upper_to_original = {str(v).strip().upper(): str(v).strip() 
+                                    for v in io_list_df[io_list_tag_col] if pd.notna(v)}
+
+            intermediate_tags_upper = set(intermediate_map_upper_to_original.keys())
+            io_tags_upper = set(io_map_upper_to_original.keys())
             
-            # استخراج لیست تگ‌ها از هر دو فایل
-            intermediate_tags = set(str(tag).strip().upper() for tag in intermediate_df[intermediate_tag_col] if pd.notna(tag))
-            io_list_tags = set(str(tag).strip().upper() for tag in io_list_df[io_list_tag_col] if pd.notna(tag))
+            # ====== اطلاعات دیباگ ======
+            logger.info(f"IO List tags count: {len(io_tags_upper)}")
+            logger.info(f"Intermediate tags count: {len(intermediate_tags_upper)}")
             
-            # یافتن تگ‌های تطبیق نیافته
-            unmatched_io_tags = list(io_list_tags - intermediate_tags)  # تگ‌های IO List که در intermediate نیستند
-            unmatched_tags = list(intermediate_tags - io_list_tags)  # تگ‌های intermediate که در IO List نیستند
+            # اگر all_ocr_tags خالی است، از page_results استفاده کنیم
+            if not all_ocr_tags and hasattr(self, 'page_results'):
+                logger.warning("all_ocr_tags is empty, trying to reconstruct from page_results")
+                reconstructed_ocr_tags = set()
+                for page_num, page_data in self.page_results.items():
+                    if isinstance(page_data, tuple) and len(page_data) > 0:
+                        page_tags = page_data[0]
+                        reconstructed_ocr_tags.update(page_tags)
+                
+                if reconstructed_ocr_tags:
+                    all_ocr_tags = reconstructed_ocr_tags
+                    logger.info(f"Reconstructed {len(all_ocr_tags)} OCR tags from page_results")
             
-            logger.info(f"Unmatched IO List tags: {len(unmatched_io_tags)}")
-            logger.info(f"Unmatched intermediate tags: {len(unmatched_tags)}")
+            if all_ocr_tags:
+                logger.info(f"all_ocr_tags received: {len(all_ocr_tags)} tags")
+                # نمایش نمونه‌ای از تگ‌های OCR
+                sample_tags = list(all_ocr_tags)[:10] if len(all_ocr_tags) > 10 else list(all_ocr_tags)
+                logger.info(f"Sample OCR tags: {sample_tags}")
+            else:
+                logger.warning("all_ocr_tags is None or empty! Using intermediate_tags_upper as fallback")
+                all_ocr_tags = intermediate_tags_upper
+                logger.info(f"Using {len(all_ocr_tags)} intermediate tags as fallback")
+
+            # ====== محاسبه unmatched فقط از OCR ======
+            ocr_upper = set(str(tag).strip().upper() for tag in all_ocr_tags if tag and str(tag).strip())
+            unmatched_pdf_tags_upper = ocr_upper - io_tags_upper
             
-            # ایجاد کپی از IO List برای حفظ تمام ستون‌های آن
+            logger.info(f"Unmatched OCR tags count: {len(unmatched_pdf_tags_upper)}")
+            
+            # نمایش نمونه‌ای از تگ‌های unmatched
+            sample_unmatched = list(unmatched_pdf_tags_upper)[:10] if len(unmatched_pdf_tags_upper) > 10 else list(unmatched_pdf_tags_upper)
+            logger.info(f"Sample unmatched OCR tags: {sample_unmatched}")
+            
+            # محاسبه تگ‌های IO List که در OCR نیستند
+            unmatched_io_tags_upper = io_tags_upper - ocr_upper
+            
+            logger.info(f"Unmatched IO List tags count: {len(unmatched_io_tags_upper)}")
+
+            # ====== ایجاد final DataFrame ======
             final_df = io_list_df.copy()
-            
-            # ستون‌های intermediate که می‌خواهیم اضافه کنیم
-            intermediate_columns_to_add = [
-                'PDF_Name', 'Page', 'JB', 'MC', 'Tag_Number', 
-                'Wire_Code_1', 'Wire_Code_2', 'Terminal_First_Number', 'Terminal_Second_Number', 'SCR_Terminal_Number', 'Cable_code',
-                'Cable_Description', 'Type', 'Tag_Number_Status'
-            ]
-            
-            # فقط ستون‌هایی که در intermediate وجود دارند را اضافه کنیم
-            intermediate_columns_to_add = [col for col in intermediate_columns_to_add if col in intermediate_df.columns]
-            
-            # اضافه کردن ستون‌های جدید به final_df
+            intermediate_columns_to_add = [col for col in intermediate_df.columns if col != intermediate_tag_col]
             for col in intermediate_columns_to_add:
                 if col not in final_df.columns:
                     final_df[col] = None
-            
-            # تطبیق داده‌ها بر اساس تگ
+
+            # پر کردن matched rows از intermediate
+            intermediate_df_indexed = intermediate_df.copy()
+            intermediate_df_indexed['_TAG_UPPER_HELPER_'] = intermediate_df_indexed[intermediate_tag_col].apply(lambda x: str(x).strip().upper() if pd.notna(x) else "")
+            pdf_to_io_map = intermediate_tags_upper.intersection(io_tags_upper)
             for idx, row in final_df.iterrows():
                 io_tag = str(row[io_list_tag_col]).strip().upper() if pd.notna(row[io_list_tag_col]) else ""
-                
-                # جستجوی تگ در intermediate_df
-                matching_rows = intermediate_df[intermediate_df[intermediate_tag_col].apply(
-                    lambda x: str(x).strip().upper() == io_tag if pd.notna(x) else False
-                )]
-                
-                if not matching_rows.empty:
-                    # اگر تگ در intermediate پیدا شد، اطلاعات را به final_df اضافه کن
-                    for col in intermediate_columns_to_add:
-                        final_df.at[idx, col] = matching_rows.iloc[0][col]
-            
-            # اضافه کردن تگ‌های intermediate که در IO List نیستند به final_df
-            if unmatched_tags:
-                # فیلتر کردن ردیف‌های intermediate_df که تگ‌های آن‌ها در IO List نیستند
-                unmatched_rows = intermediate_df[intermediate_df[intermediate_tag_col].apply(
-                    lambda x: str(x).strip().upper() in unmatched_tags if pd.notna(x) else False
-                )]
-                
-                # ایجاد دیتافریم جدید با ستون‌های final_df
-                new_rows = pd.DataFrame(columns=final_df.columns)
-                
-                # اضافه کردن ردیف‌های جدید
-                for _, row in unmatched_rows.iterrows():
-                    new_row = pd.Series(index=final_df.columns)
-                    
-                    # کپی مقادیر از ستون‌های intermediate
-                    for col in intermediate_columns_to_add:
-                        new_row[col] = row[col]
-                    
-                    # تنظیم مقدار ستون تگ در IO List
-                    new_row[io_list_tag_col] = row[intermediate_tag_col]
-                    
-                    # اضافه کردن ردیف جدید به new_rows
-                    new_rows = pd.concat([new_rows, pd.DataFrame([new_row])], ignore_index=True)
-                
-                # اضافه کردن ردیف‌های جدید به final_df
-                final_df = pd.concat([final_df, new_rows], ignore_index=True)
-            
-            # ذخیره دیتافریم نهایی به عنوان فایل اکسل
+                if io_tag in pdf_to_io_map:
+                    match_row = intermediate_df_indexed[intermediate_df_indexed['_TAG_UPPER_HELPER_'] == io_tag]
+                    if not match_row.empty:
+                        src_row = match_row.iloc[0]
+                        for col in intermediate_columns_to_add:
+                            final_df.at[idx, col] = src_row.get(col, None)
+
+            # ذخیره Excel نهایی
             final_df.to_excel(output_path, index=False)
+
+            # تبدیل unmatched به original case
+            unmatched_pdf_tags_original = []
+            for tag_upper in unmatched_pdf_tags_upper:
+                found = False
+                if all_ocr_tags:
+                    for ocr_tag in all_ocr_tags:
+                        if str(ocr_tag).strip().upper() == tag_upper:
+                            unmatched_pdf_tags_original.append(str(ocr_tag).strip())
+                            found = True
+                            break
+                if not found:
+                    unmatched_pdf_tags_original.append(tag_upper)
+
+            unmatched_io_tags_original = [io_map_upper_to_original.get(tag, tag) for tag in unmatched_io_tags_upper]
             
-            logger.info(f"Combined Excel file saved to: {output_path}")
-            logger.info(f"Final Excel has {len(final_df)} rows and {len(final_df.columns)} columns")
-            
-            return final_df, unmatched_io_tags, unmatched_tags
-            
+            logger.info(f"Final unmatched OCR tags count: {len(unmatched_pdf_tags_original)}")
+            logger.info(f"Final unmatched IO List tags count: {len(unmatched_io_tags_original)}")
+
+            return final_df, sorted(unmatched_io_tags_original), sorted(unmatched_pdf_tags_original)
+
         except Exception as e:
-            logger.error(f"Error processing Excel files: {e}")
+            logger.error(f"❌ Error in process_excel_with_io_list: {e}")
             logger.error(traceback.format_exc())
             return pd.DataFrame(), [], []
 
@@ -4508,7 +4711,7 @@ class TagJBExtractor:
                 logger.error(f"❌ FAIL: extract_from_image returned {len(result)} values, expected 8")
                 return False
             
-            tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions, tag_match_info = result
+            tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions, tag_match_info , all_ocr_tags = result
             
             logger.info(f"✅ extract_from_image returned 8 values")
             logger.info(f"   - tags: {len(tags)}")
@@ -4541,7 +4744,7 @@ class TagJBExtractor:
                 annotated_image, updated_tag_numbers = self.draw_bounding_boxes(
                     test_image, tags, jb_identifiers, mc_identifiers,
                     cable_descriptions, spare_identifiers, tag_to_number,
-                    tag_match_info  # پارامتر هشتم
+                    tag_match_info ,all_ocr_tags
                 )
                 logger.info(f"✅ draw_bounding_boxes executed successfully")
             except Exception as e:
@@ -4622,7 +4825,7 @@ class TagJBExtractor:
     
     def fix_common_ocr_errors(self, tag: str) -> str:
         """
-        ✅ COMPLETE FIX: تشخیص قوی UZSO/UZSC با الگوهای گسترده OCR
+        ✅ ENHANCED: تشخیص قوی UZSO/UZSC با الگوهای گسترده‌تر OCR
         """
         if not tag:
             return tag
@@ -4636,13 +4839,33 @@ class TagJBExtractor:
         # الگوهای ممکن OCR:
         # - UZSO, UZS0, UZ50, UZSO, UZSo, VZS0, VZSO, U2SO, UZS (بدون O)
         # - UZSC, UZSC, U2SC, VZSC, UZS (بدون C)
+        # - U250, U25C (حروف به جای اعداد)
         
         # Pattern 1: حالت کامل با خطاهای احتمالی
-        uzso_pattern_full = r'^[UuVv][ZzSs2]?[Ss5]?[O0oDd][-_]?(\d+)$'
-        uzsc_pattern_full = r'^[UuVv][ZzSs2]?[Ss5]?[CcGg][-_]?(\d+)$'
+        uzso_pattern_full = r'^[UuVv][ZzSs2]?[Ss5]?[O0oDdQq][-_]?(\d+)$'
+        uzsc_pattern_full = r'^[UuVv][ZzSs2]?[Ss5]?[CcGgQq][-_]?(\d+)$'
         
         # Pattern 2: حالت ناقص (فقط UZS یا UZ + شماره)
         uzs_pattern_incomplete = r'^[UuVv][ZzSs2][Ss5]?[-_]?(\d+)$'
+        
+        # Pattern 3: حالت با اعداد به جای حروف
+        number_as_letter_pattern = r'^[UuVv]2[Ss5]?[O0oDdCcGgQq]?[-_]?(\d+)$'
+        
+        # بررسی Pattern 3: اعداد به جای حروف
+        match_number_as_letter = re.match(number_as_letter_pattern, tag_upper)
+        if match_number_as_letter:
+            number = match_number_as_letter.group(1)
+            # تشخیص نوع (UZSO یا UZSC) بر اساس آخرین حرف
+            last_char = re.search(r'([O0oDdCcGgQq])', tag_upper)
+            if last_char:
+                char = last_char.group(1)
+                if char in 'O0oDdQq':
+                    return self._resolve_uzso_uzsc('UZSO', number, original_tag)
+                else:
+                    return self._resolve_uzso_uzsc('UZSC', number, original_tag)
+            else:
+                # اگر حرف آخر تشخیص داده نشد، از context استفاده کن
+                return self._resolve_uzso_uzsc('UZSO', number, original_tag)  # پیش‌فرض UZSO
         
         # بررسی Pattern 1: UZSO
         match_uzso = re.match(uzso_pattern_full, tag_upper)
@@ -4696,16 +4919,16 @@ class TagJBExtractor:
             return self.fix_common_ocr_errors(tag_no_space)  # بازگشتی
         
         # حالت خاص: اعداد درون پیشوند (مثلاً "UZ5O" به جای "UZSO")
-        if re.match(r'^[UuVv][ZzSs2]5[O0oDd][-_]?(\d+)$', tag_upper):
+        if re.match(r'^[UuVv][ZzSs2]5[O0oDdQq][-_]?(\d+)$', tag_upper):
             number = re.search(r'(\d+)$', tag_upper).group(1)
             return self._resolve_uzso_uzsc('UZSO', number, original_tag)
         
-        if re.match(r'^[UuVv][ZzSs2]5[CcGg][-_]?(\d+)$', tag_upper):
+        if re.match(r'^[UuVv][ZzSs2]5[CcGgQq][-_]?(\d+)$', tag_upper):
             number = re.search(r'(\d+)$', tag_upper).group(1)
             return self._resolve_uzso_uzsc('UZSC', number, original_tag)
         
         # ============================================================
-        # بقیه تصحیحات OCR عمومی (بدون تغییر)
+        # 🔧 FIX 3: اصلاح اعداد و حروف مشابه
         # ============================================================
         parts = re.split(r'(-)', tag)
         fixed_parts = []
@@ -4717,9 +4940,15 @@ class TagJBExtractor:
                 
             sub = p
             
+            # اصلاح اعداد و حروف مشابه
             if re.search(r'\d', sub):
-                sub = sub.replace('O', '0').replace('I', '1').replace('Q', '0')
+                sub = sub.replace('O', '0').replace('o', '0').replace('I', '1').replace('l', '1').replace('Q', '0')
             
+            # اصلاح حروف
+            sub = sub.replace('0', 'O', 1) if sub.startswith('U') and len(sub) >= 3 and sub[2] == '0' else sub
+            sub = sub.replace('5', 'S', 1) if sub.startswith('U') and len(sub) >= 2 and sub[1] == '5' else sub
+            
+            # حذف فضاهای خالی
             sub = re.sub(r'\s+', '', sub)
             fixed_parts.append(sub)
         
