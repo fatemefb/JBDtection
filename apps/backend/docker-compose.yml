@@ -49,9 +49,47 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+  jbdetection_test:
+    container_name: jbdetection_test
+    build:
+      context: ../..
+      dockerfile: apps/backend/Dockerfile
+    image: jbdetection-image-test:${IMAGE_TAG:-test}
+    ports:
+      - "5001:5000"
+    volumes:
+      - ./outputs_test:/home/devio/JB-outputs
+      - ./logs_test:/home/devio/JB-logs
+    environment:
+      - PYTHONPATH=/app
+      - FLASK_ENV=development
+      - GUNICORN_TIMEOUT=3600
+      - GUNICORN_GRACEFUL_TIMEOUT=3600
+    user: "1000:1000"
+    cap_add:
+      - SYS_ADMIN
+      - DAC_READ_SEARCH
+    security_opt:
+      - apparmor:unconfined
+    restart: unless-stopped
+    command: >
+      gunicorn apps.backend.app:app
+        -b 0.0.0.0:5000
+        --workers=1
+        --threads=2
+        --timeout=3600
+        --graceful-timeout=3600
+        --keep-alive=5
+        --max-requests=200
+        --max-requests-jitter=20
+        --worker-class=sync
+        --log-level=debug
+        --access-logfile=-
+        --error-logfile=-
+
 # فعال‌سازی BuildKit در docker-compose
 x-buildkit:
   environment:
     DOCKER_BUILDKIT: 1
     COMPOSE_DOCKER_CLI_BUILD: 1
-              
