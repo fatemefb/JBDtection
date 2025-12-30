@@ -8,41 +8,92 @@
     <link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.png') }}" type="image/png">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/favicon.png') }}">
     <link rel="name" href="{{ url_for('static', filename='images/JBD.png') }}" type="image/png">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/home.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/JB.css') }}">
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Vazirmatn:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 </head>
-<body>
-    <div class="container">
-        <header>
-            <!-- هدر اصلی با لوگو و عنوان بزرگ -->
-            <div class="main-header">
-                <div class="logo-title-container">
-                    <div class="logo-icon">
-                        <img src="{{ url_for('static', filename='images/favicon.png') }}" alt="JB Detection" width="80" height="80">
-                    </div>
-                    <!-- تغییر: استفاده از تصویر به جای متن -->
-                    <div class="main-title">
-                        <img src="{{ url_for('static', filename='images/JBD.png') }}" alt="JBDtection System" class="title-image">
+<body class="home-body dashboard-body">
+    <div class="home-shell">
+        <aside class="side-panel" id="sidePanel">
+            <div class="side-header">
+                <div class="brand">
+                    <img src="{{ url_for('static', filename='images/favicon.png') }}" alt="JB Detection" class="brand-logo">
+                    <div>
+                        <span id="nav-kicker" class="brand-kicker">JBDtection Suite</span>
+                        <h1 id="nav-brand" class="brand-title">JBDtection</h1>
                     </div>
                 </div>
-                <div class="header-content">
-                    <p id="subtitle">سیستم پیشرفته شناسایی و تطابق تگ‌های PDF و Excel</p>
-                </div>
+                <button class="icon-btn" id="collapseBtn" aria-label="Toggle menu">
+                    <i class="fas fa-bars"></i>
+                </button>
             </div>
-            
-            <!-- نوار ناوبری با کنترل‌ها -->
-            <div class="main-nav">
-                <div class="nav-controls">
+            <nav class="side-nav">
+                <a class="nav-item" href="/home">
+                    <i class="fas fa-house"></i>
+                    <span id="nav-home">خانه</span>
+                </a>
+                <a class="nav-item active" href="/dashboard">
+                    <i class="fas fa-chart-line"></i>
+                    <span id="nav-jb">JB Detection</span>
+                </a>
+                <a class="nav-item" href="/io-assignment">
+                    <i class="fas fa-project-diagram"></i>
+                    <span id="nav-io">IO Assignment</span>
+                </a>
+                <button class="nav-item disabled" type="button">
+                    <i class="fas fa-folder-open"></i>
+                    <span id="nav-reports">Reports</span>
+                </button>
+                <button class="nav-item disabled" type="button">
+                    <i class="fas fa-gear"></i>
+                    <span id="nav-settings">Settings</span>
+                </button>
+            </nav>
+            <div class="side-footer">
+                <div class="user-pill">
+                    <i class="fas fa-user"></i>
+                    <span>{{ username }}</span>
+                </div>
+                <a class="logout-link" href="/logout">
+                    <i class="fas fa-right-from-bracket"></i>
+                    <span id="nav-logout">خروج</span>
+                </a>
+            </div>
+        </aside>
+
+        <main class="home-main dashboard-main">
+        <header class="app-header">
+            <div class="app-topbar">
+                <div class="brand-area">
+                    <button class="icon-btn hamburger" id="menuToggle" aria-label="Toggle menu" aria-expanded="false">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <div class="brand">
+                        <img src="{{ url_for('static', filename='images/favicon.png') }}" alt="JB Detection" class="brand-logo">
+                        <div class="brand-text">
+                            <span id="brand-kicker" class="brand-kicker">پلتفرم تحلیل اتصالات و تگ‌ها</span>
+                            <h1 id="title">JB Detection System</h1>
+                            <p id="subtitle" class="brand-subtitle">سیستم پیشرفته شناسایی و تطابق تگ‌های PDF و Excel</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <div class="icon-group">
+                        <button class="icon-btn" id="settingsBtn" title="Settings" aria-label="Settings">
+                            <i class="fas fa-gear"></i>
+                        </button>
+                        <button class="icon-btn" id="notifyBtn" title="Notifications" aria-label="Notifications">
+                            <i class="fas fa-bell"></i>
+                        </button>
+                    </div>
                     <div class="lang-switch">
                         <button id="faBtn" class="lang-btn active">فارسی</button>
                         <button id="enBtn" class="lang-btn">English</button>
                     </div>
-
                     <div class="theme-switch">
                         <button id="themeBtn" class="theme-btn"><i class="fas fa-moon"></i></button>
                     </div>
-                    
                     <div class="user-info">
                         <span id="username-display">{{ username }}</span>
                         <a href="/logout" class="logout-btn" title="خروج از سیستم">
@@ -51,12 +102,34 @@
                     </div>
                 </div>
             </div>
+            <nav class="app-tabs" id="appTabs">
+                <button class="tab-item active">
+                    <i class="fas fa-chart-line"></i>
+                    <span id="tab-dashboard">داشبورد</span>
+                </button>
+                <button class="tab-item">
+                    <i class="fas fa-cloud-arrow-up"></i>
+                    <span id="tab-upload">بارگذاری</span>
+                </button>
+                <button class="tab-item">
+                    <i class="fas fa-sliders"></i>
+                    <span id="tab-pattern">الگوها</span>
+                </button>
+                <button class="tab-item">
+                    <i class="fas fa-square-poll-vertical"></i>
+                    <span id="tab-results">نتایج</span>
+                </button>
+                <button class="tab-item">
+                    <i class="fas fa-file-lines"></i>
+                    <span id="tab-reports">گزارش‌ها</span>
+                </button>
+            </nav>
         </header>
         
-        <main>
+        <div class="dashboard-content">
             <div class="dashboard">
                 
-                <section class="upload-section">
+                <section class="upload-section panel">
                     <h2 id="upload-title"><i class="fas fa-file-upload"></i> بارگذاری فایل‌ها</h2>
                     <form id="processForm">
                         <!-- بخش اطلاعات پروژه -->
@@ -282,13 +355,13 @@
                         </div>
                     </form>
                 </section>
-                <section class="diagram-preview-section">
+                <section class="diagram-preview-section panel">
                     <h2 id="preview-title-2"><i class="fas fa-image"></i> پیش‌نمایش دیاگرام‌های آپلود شده</h2>
                     <div id="diagramPreview" class="diagram-preview-container">
                         <p id="no-files-selected">هنوز فایلی انتخاب نشده است.</p>
                     </div>
                 </section>
-                <section class="results-section">
+                <section class="results-section panel">
                     <h2 id="results-title"><i class="fas fa-chart-bar"></i> نتایج پردازش</h2>
                     <div class="results-container">
                         <div class="progress-box">
@@ -331,11 +404,12 @@
                     </div>
                 </section>
             </div>
-        </main>
+        </div>
 
         <footer>
             <p id="footer-text">&copy; 2025 JB Detection System. All rights reserved.</p>
         </footer>
+        </main>
     </div>
 
     <script>
@@ -343,7 +417,23 @@
         const translations = {
             'fa': {
                 'title': 'سیستم تشخیص JB',
+                'brand-kicker': 'بهینه‌سازی IO و تطابق تگ‌ها',
+                'nav-kicker': 'پلتفرم یکپارچه',
+                'nav-brand': 'JBDtection',
+                'nav-home': 'خانه',
+                'nav-jb': 'JB Detection',
+                'nav-io': 'IO Assignment',
+                'nav-reports': 'گزارش‌ها',
+                'nav-settings': 'تنظیمات',
+                'nav-logout': 'خروج',
                 'subtitle': 'سیستم پیشرفته شناسایی و تطابق تگ‌های PDF و Excel',
+                'tab-dashboard': 'داشبورد',
+                'tab-upload': 'بارگذاری',
+                'tab-pattern': 'الگوها',
+                'tab-results': 'نتایج',
+                'tab-reports': 'گزارش‌ها',
+                'settings-toast': 'تنظیمات به‌زودی در دسترس خواهد بود.',
+                'notify-toast': 'اعلان جدیدی وجود ندارد.',
                 'project-name-label': 'نام پروژه:',
                 'projectName':'نام پروژه را وارد کنید',
                 'project-name-placeholder': 'نام پروژه را وارد کنید...',
@@ -448,7 +538,23 @@
             },
             'en': {
                 'title': 'JB Detection System',
+                'brand-kicker': 'IO optimization and tag alignment',
+                'nav-kicker': 'Unified platform',
+                'nav-brand': 'JBDtection',
+                'nav-home': 'Home',
+                'nav-jb': 'JB Detection',
+                'nav-io': 'IO Assignment',
+                'nav-reports': 'Reports',
+                'nav-settings': 'Settings',
+                'nav-logout': 'Logout',
                 'subtitle': 'Advanced PDF and Excel Tag Detection and Matching System',
+                'tab-dashboard': 'Dashboard',
+                'tab-upload': 'Uploads',
+                'tab-pattern': 'Patterns',
+                'tab-results': 'Results',
+                'tab-reports': 'Reports',
+                'settings-toast': 'Settings will be available soon.',
+                'notify-toast': 'No new notifications.',
                 'project-name-label': 'Project Name:', 
                 'projectName':'enter project name...',
                 'project-name-placeholder': 'Enter project name...',
@@ -583,7 +689,7 @@
         let currentTerminalPattern = 'two_terminal_scr';
         let currentWirePattern = 'bk_wt';
         let currentLang = localStorage.getItem('lang') || 'fa';
-        let currentTheme = localStorage.getItem('theme') || 'light';
+        let currentTheme = localStorage.getItem('theme') || 'dark';
 
         // Theme and language switch logic
         const themeBtn = document.getElementById('themeBtn');
@@ -602,6 +708,7 @@
             enBtn.classList.toggle('active', lang === 'en');
             document.documentElement.dir = lang === 'fa' ? 'rtl' : 'ltr';
             currentLang = lang;
+            document.title = translations[lang]['title'];
 
             // Update all text elements
             Object.keys(translations[lang]).forEach(key => {
@@ -646,6 +753,39 @@
             setTimeout(() => {
                 notification.classList.remove('show');
             }, 3000);
+        }
+
+        const menuToggle = document.getElementById('menuToggle');
+        const appTabs = document.getElementById('appTabs');
+        const settingsBtn = document.getElementById('settingsBtn');
+        const notifyBtn = document.getElementById('notifyBtn');
+        const collapseBtn = document.getElementById('collapseBtn');
+        const sidePanel = document.getElementById('sidePanel');
+
+        if (menuToggle && appTabs) {
+            menuToggle.addEventListener('click', () => {
+                const isOpen = appTabs.classList.toggle('open');
+                menuToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+            });
+        }
+
+        if (collapseBtn && sidePanel) {
+            collapseBtn.addEventListener('click', () => {
+                sidePanel.classList.toggle('collapsed');
+                document.body.classList.toggle('menu-collapsed');
+            });
+        }
+
+        if (settingsBtn) {
+            settingsBtn.addEventListener('click', () => {
+                showNotification(translations[currentLang]['settings-toast'], 'info');
+            });
+        }
+
+        if (notifyBtn) {
+            notifyBtn.addEventListener('click', () => {
+                showNotification(translations[currentLang]['notify-toast'], 'info');
+            });
         }
 
         // PDF file input handler

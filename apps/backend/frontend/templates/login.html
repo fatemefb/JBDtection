@@ -237,8 +237,8 @@
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success') {
-                // هدایت به صفحه داشبورد
-                window.location.href = '/dashboard';
+                // هدایت به صفحه خانه
+                window.location.href = '/home';
             } else {
                 errorMessage.textContent = translations[currentLang]['error-invalid'];
                 

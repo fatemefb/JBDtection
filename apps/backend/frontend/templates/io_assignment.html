@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IO Assignment</title>
+    <link rel="icon" href="{{ url_for('static', filename='images/favicon.png') }}" type="image/png">
+    <link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.png') }}" type="image/png">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/favicon.png') }}">
+    <link rel="name" href="{{ url_for('static', filename='images/JBD.png') }}" type="image/png">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/home.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/io_assignment.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Vazirmatn:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+<body class="home-body io-body">
+    <div class="home-shell">
+        <aside class="side-panel" id="sidePanel">
+            <div class="side-header">
+                <div class="brand">
+                    <img src="{{ url_for('static', filename='images/favicon.png') }}" alt="JB Detection" class="brand-logo">
+                    <div>
+                        <span id="nav-kicker" class="brand-kicker">JBDtection Suite</span>
+                        <h1 id="nav-brand" class="brand-title">JBDtection</h1>
+                    </div>
+                </div>
+                <button class="icon-btn" id="collapseBtn" aria-label="Toggle menu">
+                    <i class="fas fa-bars"></i>
+                </button>
+            </div>
+            <nav class="side-nav">
+                <a class="nav-item" href="/home">
+                    <i class="fas fa-house"></i>
+                    <span id="nav-home">خانه</span>
+                </a>
+                <a class="nav-item" href="/dashboard">
+                    <i class="fas fa-chart-line"></i>
+                    <span id="nav-jb">JB Detection</span>
+                </a>
+                <a class="nav-item active" href="/io-assignment">
+                    <i class="fas fa-project-diagram"></i>
+                    <span id="nav-io">IO Assignment</span>
+                </a>
+                <button class="nav-item disabled" type="button">
+                    <i class="fas fa-folder-open"></i>
+                    <span id="nav-reports">Reports</span>
+                </button>
+                <button class="nav-item disabled" type="button">
+                    <i class="fas fa-gear"></i>
+                    <span id="nav-settings">Settings</span>
+                </button>
+            </nav>
+            <div class="side-footer">
+                <div class="user-pill">
+                    <i class="fas fa-user"></i>
+                    <span>{{ username }}</span>
+                </div>
+                <a class="logout-link" href="/logout">
+                    <i class="fas fa-right-from-bracket"></i>
+                    <span id="nav-logout">خروج</span>
+                </a>
+            </div>
+        </aside>
+
+        <main class="home-main io-main">
+            <header class="io-header">
+                <div class="header-stack">
+                    <span id="io-kicker" class="header-kicker">IO Assignment</span>
+                    <h2 id="io-title">Cabinet Configuration & Optimization</h2>
+                    <p id="io-subtitle">تنظیم ظرفیت‌ها، بارگذاری فایل ورودی و دریافت خروجی بهینه‌سازی.</p>
+                </div>
+                <div class="header-actions">
+                    <div class="icon-group">
+                        <button class="icon-btn" id="settingsBtn" title="Settings" aria-label="Settings">
+                            <i class="fas fa-gear"></i>
+                        </button>
+                        <button class="icon-btn" id="notifyBtn" title="Notifications" aria-label="Notifications">
+                            <i class="fas fa-bell"></i>
+                        </button>
+                    </div>
+                    <div class="lang-switch">
+                        <button id="faBtn" class="lang-btn active">فارسی</button>
+                        <button id="enBtn" class="lang-btn">English</button>
+                    </div>
+                    <div class="theme-switch">
+                        <button id="themeBtn" class="theme-btn"><i class="fas fa-moon"></i></button>
+                    </div>
+                </div>
+            </header>
+
+            <div class="dashboard">
+                <section class="panel io-config">
+                    <h2 class="section-heading">
+                        <i class="fas fa-sliders"></i>
+                        <span id="config-title">CABINET CONFIGURATION INPUT</span>
+                    </h2>
+                    <div class="section-title">
+                        <div class="config-controls">
+                            <label id="type-count-label" for="typeCount">SELECT NUMBER OF CABINET TYPES</label>
+                            <select id="typeCount">
+                                <option value="1">1</option>
+                                <option value="2">2</option>
+                                <option value="3" selected>3</option>
+                            </select>
+                            <button class="primary-btn small" id="confirmTypes">CONFIRM</button>
+                        </div>
+                    </div>
+
+                    <div class="tab-row">
+                        <button class="tab-btn active" data-type="1">TYPE 1</button>
+                        <button class="tab-btn" data-type="2">TYPE 2</button>
+                        <button class="tab-btn" data-type="3">TYPE 3</button>
+                    </div>
+
+                    <div class="config-grid">
+                        <div class="config-card">
+                            <h4 id="channels-title">BOARD CHANNEL CAPACITIES (GLOBAL)</h4>
+                            <div class="channel-grid">
+                                <div class="channel-group">
+                                    <span>BARRIER</span>
+                                    <label>AI <input type="number" id="ch-barrier-ai" value="16"></label>
+                                    <label>AO <input type="number" id="ch-barrier-ao" value="16"></label>
+                                    <label>DI <input type="number" id="ch-barrier-di" value="16"></label>
+                                    <label>DO <input type="number" id="ch-barrier-do" value="16"></label>
+                                </div>
+                                <div class="channel-group">
+                                    <span>TERMINAL</span>
+                                    <label>AI <input type="number" id="ch-terminal-ai" value="16"></label>
+                                    <label>AO <input type="number" id="ch-terminal-ao" value="16"></label>
+                                    <label>DI <input type="number" id="ch-terminal-di" value="16"></label>
+                                    <label>DO <input type="number" id="ch-terminal-do" value="16"></label>
+                                </div>
+                                <div class="channel-group">
+                                    <span>RELAY</span>
+                                    <label>AI <input type="number" id="ch-relay-ai" value="32"></label>
+                                    <label>AO <input type="number" id="ch-relay-ao" value="32"></label>
+                                    <label>DI <input type="number" id="ch-relay-di" value="32"></label>
+                                    <label>DO <input type="number" id="ch-relay-do" value="32"></label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="config-card">
+                            <h4 id="access-title">ACCESS CONFIGURATION</h4>
+                            <div class="access-grid">
+                                <div class="toggle-card">
+                                    <span id="front-access-label">FRONT ACCESS</span>
+                                    <div class="toggle-row">
+                                        <label>QTY <input type="number" id="qty-type1-front" value="2" min="0"></label>
+                                        <label>QTY <input type="number" id="qty-type2-front" value="2" min="0"></label>
+                                        <label>QTY <input type="number" id="qty-type3-front" value="2" min="0"></label>
+                                    </div>
+                                </div>
+                                <div class="toggle-card">
+                                    <span id="rear-access-label">REAR ACCESS</span>
+                                    <div class="toggle-row">
+                                        <label>QTY <input type="number" id="qty-type1-rear" value="2" min="0"></label>
+                                        <label>QTY <input type="number" id="qty-type2-rear" value="2" min="0"></label>
+                                        <label>QTY <input type="number" id="qty-type3-rear" value="2" min="0"></label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="limits-grid">
+                        <div class="limits-panel active" data-type="1">
+                            <div class="limit-block" id="limits-type1-front">
+                                <h4>FRONT LIMITS (TYPE 1)</h4>
+                                <div class="limit-row">
+                                    <label>Max Total Boards (%) <input type="number" data-key="Max_Total_Boards" value="100"></label>
+                                    <label>Max Rail Terminals <input type="number" data-key="Max rail terminals" value="800"></label>
+                                </div>
+                                <div class="limit-grid">
+                                    <label>Barrier AI <input type="number" data-key="Barrier Board (AI)" value="14.2"></label>
+                                    <label>Barrier AO <input type="number" data-key="Barrier Board (AO)" value="14.2"></label>
+                                    <label>Barrier DI <input type="number" data-key="Barrier Board (DI)" value="10"></label>
+                                    <label>Barrier DO <input type="number" data-key="Barrier Board (DO)" value="10"></label>
+                                    <label>Terminal AI <input type="number" data-key="Terminal Board (AI)" value="14.2"></label>
+                                    <label>Terminal AO <input type="number" data-key="Terminal Board (AO)" value="14.2"></label>
+                                    <label>Terminal DI <input type="number" data-key="Terminal Board (DI)" value="7.1"></label>
+                                    <label>Terminal DO <input type="number" data-key="Terminal Board (DO)" value="8.3"></label>
+                                    <label>Relay AI <input type="number" data-key="Relay Board AI capacity" value="14.2"></label>
+                                    <label>Relay AO <input type="number" data-key="Relay Board AO capacity" value="14.2"></label>
+                                    <label>Relay DI <input type="number" data-key="Relay Board DI capacity" value="16.6"></label>
+                                    <label>Relay DO <input type="number" data-key="Relay Board DO capacity" value="16.6"></label>
+                                </div>
+                            </div>
+                            <div class="limit-block" id="limits-type1-rear">
+                                <h4>REAR LIMITS (TYPE 1)</h4>
+                                <div class="limit-row">
+                                    <label>Max Total Boards (%) <input type="number" data-key="Max_Total_Boards" value="100"></label>
+                                    <label>Max Rail Terminals <input type="number" data-key="Max rail terminals" value="800"></label>
+                                </div>
+                                <div class="limit-grid">
+                                    <label>Barrier AI <input type="number" data-key="Barrier Board (AI)" value="20"></label>
+                                    <label>Barrier AO <input type="number" data-key="Barrier Board (AO)" value="20"></label>
+                                    <label>Barrier DI <input type="number" data-key="Barrier Board (DI)" value="12.5"></label>
+                                    <label>Barrier DO <input type="number" data-key="Barrier Board (DO)" value="12.5"></label>
+                                    <label>Terminal AI <input type="number" data-key="Terminal Board (AI)" value="20"></label>
+                                    <label>Terminal AO <input type="number" data-key="Terminal Board (AO)" value="20"></label>
+                                    <label>Terminal DI <input type="number" data-key="Terminal Board (DI)" value="12.5"></label>
+                                    <label>Terminal DO <input type="number" data-key="Terminal Board (DO)" value="12.5"></label>
+                                    <label>Relay AI <input type="number" data-key="Relay Board AI capacity" value="25"></label>
+                                    <label>Relay AO <input type="number" data-key="Relay Board AO capacity" value="25"></label>
+                                    <label>Relay DI <input type="number" data-key="Relay Board DI capacity" value="33.3"></label>
+                                    <label>Relay DO <input type="number" data-key="Relay Board DO capacity" value="33.3"></label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="limits-panel" data-type="2">
+                            <div class="limit-block" id="limits-type2-front">
+                                <h4>FRONT LIMITS (TYPE 2)</h4>
+                                <div class="limit-row">
+                                    <label>Max Total Boards (%) <input type="number" data-key="Max_Total_Boards" value="100"></label>
+                                    <label>Max Rail Terminals <input type="number" data-key="Max rail terminals" value="800"></label>
+                                </div>
+                                <div class="limit-grid">
+                                    <label>Barrier AI <input type="number" data-key="Barrier Board (AI)" value="14.2"></label>
+                                    <label>Barrier AO <input type="number" data-key="Barrier Board (AO)" value="14.2"></label>
+                                    <label>Barrier DI <input type="number" data-key="Barrier Board (DI)" value="10"></label>
+                                    <label>Barrier DO <input type="number" data-key="Barrier Board (DO)" value="10"></label>
+                                    <label>Terminal AI <input type="number" data-key="Terminal Board (AI)" value="14.2"></label>
+                                    <label>Terminal AO <input type="number" data-key="Terminal Board (AO)" value="14.2"></label>
+                                    <label>Terminal DI <input type="number" data-key="Terminal Board (DI)" value="7.1"></label>
+                                    <label>Terminal DO <input type="number" data-key="Terminal Board (DO)" value="8.3"></label>
+                                    <label>Relay AI <input type="number" data-key="Relay Board AI capacity" value="14.2"></label>
+                                    <label>Relay AO <input type="number" data-key="Relay Board AO capacity" value="14.2"></label>
+                                    <label>Relay DI <input type="number" data-key="Relay Board DI capacity" value="16.6"></label>
+                                    <label>Relay DO <input type="number" data-key="Relay Board DO capacity" value="16.6"></label>
+                                </div>
+                            </div>
+                            <div class="limit-block" id="limits-type2-rear">
+                                <h4>REAR LIMITS (TYPE 2)</h4>
+                                <div class="limit-row">
+                                    <label>Max Total Boards (%) <input type="number" data-key="Max_Total_Boards" value="100"></label>
+                                    <label>Max Rail Terminals <input type="number" data-key="Max rail terminals" value="800"></label>
+                                </div>
+                                <div class="limit-grid">
+                                    <label>Barrier AI <input type="number" data-key="Barrier Board (AI)" value="14.2"></label>
+                                    <label>Barrier AO <input type="number" data-key="Barrier Board (AO)" value="14.2"></label>
+                                    <label>Barrier DI <input type="number" data-key="Barrier Board (DI)" value="20"></label>
+                                    <label>Barrier DO <input type="number" data-key="Barrier Board (DO)" value="20"></label>
+                                    <label>Terminal AI <input type="number" data-key="Terminal Board (AI)" value="14.2"></label>
+                                    <label>Terminal AO <input type="number" data-key="Terminal Board (AO)" value="14.2"></label>
+                                    <label>Terminal DI <input type="number" data-key="Terminal Board (DI)" value="7.1"></label>
+                                    <label>Terminal DO <input type="number" data-key="Terminal Board (DO)" value="8.3"></label>
+                                    <label>Relay AI <input type="number" data-key="Relay Board AI capacity" value="14.2"></label>
+                                    <label>Relay AO <input type="number" data-key="Relay Board AO capacity" value="14.2"></label>
+                                    <label>Relay DI <input type="number" data-key="Relay Board DI capacity" value="16.6"></label>
+                                    <label>Relay DO <input type="number" data-key="Relay Board DO capacity" value="16.6"></label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="limits-panel" data-type="3">
+                            <div class="limit-block" id="limits-type3-front">
+                                <h4>FRONT LIMITS (TYPE 3)</h4>
+                                <div class="limit-row">
+                                    <label>Max Total Boards (%) <input type="number" data-key="Max_Total_Boards" value="100"></label>
+                                    <label>Max Rail Terminals <input type="number" data-key="Max rail terminals" value="800"></label>
+                                </div>
+                                <div class="limit-grid">
+                                    <label>Barrier AI <input type="number" data-key="Barrier Board (AI)" value="14.2"></label>
+                                    <label>Barrier AO <input type="number" data-key="Barrier Board (AO)" value="14.2"></label>
+                                    <label>Barrier DI <input type="number" data-key="Barrier Board (DI)" value="20"></label>
+                                    <label>Barrier DO <input type="number" data-key="Barrier Board (DO)" value="20"></label>
+                                    <label>Terminal AI <input type="number" data-key="Terminal Board (AI)" value="14.2"></label>
+                                    <label>Terminal AO <input type="number" data-key="Terminal Board (AO)" value="14.2"></label>
+                                    <label>Terminal DI <input type="number" data-key="Terminal Board (DI)" value="7.1"></label>
+                                    <label>Terminal DO <input type="number" data-key="Terminal Board (DO)" value="8.3"></label>
+                                    <label>Relay AI <input type="number" data-key="Relay Board AI capacity" value="14.2"></label>
+                                    <label>Relay AO <input type="number" data-key="Relay Board AO capacity" value="14.2"></label>
+                                    <label>Relay DI <input type="number" data-key="Relay Board DI capacity" value="16.6"></label>
+                                    <label>Relay DO <input type="number" data-key="Relay Board DO capacity" value="16.6"></label>
+                                </div>
+                            </div>
+                            <div class="limit-block" id="limits-type3-rear">
+                                <h4>REAR LIMITS (TYPE 3)</h4>
+                                <div class="limit-row">
+                                    <label>Max Total Boards (%) <input type="number" data-key="Max_Total_Boards" value="100"></label>
+                                    <label>Max Rail Terminals <input type="number" data-key="Max rail terminals" value="800"></label>
+                                </div>
+                                <div class="limit-grid">
+                                    <label>Barrier AI <input type="number" data-key="Barrier Board (AI)" value="16.6"></label>
+                                    <label>Barrier AO <input type="number" data-key="Barrier Board (AO)" value="16.6"></label>
+                                    <label>Barrier DI <input type="number" data-key="Barrier Board (DI)" value="10"></label>
+                                    <label>Barrier DO <input type="number" data-key="Barrier Board (DO)" value="10"></label>
+                                    <label>Terminal AI <input type="number" data-key="Terminal Board (AI)" value="20"></label>
+                                    <label>Terminal AO <input type="number" data-key="Terminal Board (AO)" value="20"></label>
+                                    <label>Terminal DI <input type="number" data-key="Terminal Board (DI)" value="10"></label>
+                                    <label>Terminal DO <input type="number" data-key="Terminal Board (DO)" value="10"></label>
+                                    <label>Relay AI <input type="number" data-key="Relay Board AI capacity" value="20"></label>
+                                    <label>Relay AO <input type="number" data-key="Relay Board AO capacity" value="20"></label>
+                                    <label>Relay DI <input type="number" data-key="Relay Board DI capacity" value="25"></label>
+                                    <label>Relay DO <input type="number" data-key="Relay Board DO capacity" value="25"></label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="config-actions">
+                        <button class="primary-btn" id="saveConfig">SAVE CONFIGURATION</button>
+                    </div>
+                </section>
+
+                <section class="panel io-upload">
+                    <h2 class="section-heading">
+                        <i class="fas fa-cloud-arrow-up"></i>
+                        <span id="upload-title">UPLOAD INPUT FILE</span>
+                    </h2>
+                    <form id="ioForm">
+                        <div class="upload-container">
+                            <div class="upload-box project-box">
+                                <h3 id="project-title">PROJECT INFORMATION</h3>
+                                <div class="pattern-group slim">
+                                    <label for="projectName" id="project-label">نام پروژه:</label>
+                                    <input type="text" id="projectName" name="project_name" placeholder="Project name..." required>
+                                    <p class="hint" id="project-hint">نام پروژه برای ذخیره خروجی‌ها استفاده می‌شود</p>
+                                </div>
+                            </div>
+                            <div class="upload-box">
+                                <h3 id="excel-title-io">EXCEL INPUT FILE</h3>
+                                <input type="file" id="excelInput" name="excel_file" accept=".xlsx,.xls" required>
+                                <label for="excelInput">
+                                    <span class="icon"><i class="fas fa-file-excel"></i></span>
+                                    <span id="select-excel">Select Excel File</span>
+                                </label>
+                                <div id="excelName" class="file-list"></div>
+                            </div>
+                        </div>
+                        <div class="process-section">
+                            <button type="submit" class="process-btn" id="processBtn">
+                                <i class="fas fa-play"></i>
+                                <span id="process-text">شروع پردازش</span>
+                            </button>
+                        </div>
+                    </form>
+                </section>
+
+                <section class="panel io-results">
+                    <div class="result-header">
+                        <h2 class="section-heading">
+                            <i class="fas fa-square-poll-vertical"></i>
+                            <span id="results-title">OUTPUT DASHBOARD</span>
+                        </h2>
+                        <div class="progress-bar">
+                            <div class="progress" id="progressBar" style="width: 0%;"></div>
+                        </div>
+                    </div>
+                    <div class="report-metrics">
+                        <div class="metric-card">
+                            <span id="metric-total-label">Total IO Signals</span>
+                            <strong id="metric-total" class="num">0</strong>
+                        </div>
+                        <div class="metric-card">
+                            <span id="metric-compliance-label">Hot Spare Compliance</span>
+                            <strong id="metric-compliance" class="num">0%</strong>
+                            <small id="metric-compliance-sub">0% Ratio</small>
+                        </div>
+                        <div class="metric-card">
+                            <span id="metric-cabinet-label">Optimized Cabinets</span>
+                            <strong id="metric-cabinets" class="num">0</strong>
+                        </div>
+                        <div class="metric-card">
+                            <span id="metric-spare-label">Overall Spare Capacity</span>
+                            <strong id="metric-spare" class="num">0%</strong>
+                        </div>
+                    </div>
+                    <div class="stats-row">
+                        <div class="stat-card">
+                            <span id="stat-active-label">Active Signals</span>
+                            <strong id="stat-active" class="num">0</strong>
+                        </div>
+                        <div class="stat-card">
+                            <span id="stat-hot-label">Hot Spares</span>
+                            <strong id="stat-hot" class="num">0</strong>
+                        </div>
+                        <div class="stat-card">
+                            <span id="stat-spare-label">Backfill Spares</span>
+                            <strong id="stat-spare" class="num">0</strong>
+                        </div>
+                        <div class="stat-card">
+                            <span id="stat-cabinet-label">Cabinets</span>
+                            <strong id="stat-cabinets" class="num">0</strong>
+                        </div>
+                    </div>
+                    <div class="cabinet-layout">
+                        <div class="cabinet-grid" id="cabinetGrid"></div>
+                        <div class="cabinet-detail" id="cabinetDetail">
+                            <h4 id="detail-title">Cabinet Details</h4>
+                            <div class="detail-body">
+                                <p id="detail-empty">Select a cabinet to view details.</p>
+                            </div>
+                            <a class="ghost-btn small" id="exportReport" href="#" target="_blank">
+                                <i class="fas fa-file-export"></i>
+                                <span id="export-text">Export configuration report</span>
+                            </a>
+                        </div>
+                    </div>
+                    <div class="board-tooltip" id="boardTooltip" style="display: none;"></div>
+                    <div class="legend-row">
+                        <span class="legend-item"><i class="legend-dot active"></i><span id="legend-active">Active</span></span>
+                        <span class="legend-item"><i class="legend-dot hot"></i><span id="legend-hot">Active + Hot Spare</span></span>
+                        <span class="legend-item"><i class="legend-dot empty"></i><span id="legend-empty">Empty Slot</span></span>
+                    </div>
+                    <div class="log-area">
+                        <h4 id="log-title">Processing Log</h4>
+                        <pre id="logOutput">Ready for processing...</pre>
+                    </div>
+                    <div class="download-area" id="downloadBox" style="display: none;">
+                        <a href="#" class="primary-btn small" id="excelDownload" target="_blank">
+                            <i class="fas fa-file-excel"></i>
+                            <span id="download-excel">Download Excel</span>
+                        </a>
+                        <a href="#" class="ghost-btn small" id="zipDownload" target="_blank">
+                            <i class="fas fa-file-archive"></i>
+                            <span id="download-zip">Download ZIP</span>
+                        </a>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const translations = {
+            fa: {
+                'io-kicker': 'IO Assignment',
+                'io-title': 'پیکربندی کابینت و بهینه‌سازی',
+                'io-subtitle': 'تنظیم ظرفیت‌ها، بارگذاری فایل ورودی و دریافت خروجی بهینه‌سازی.',
+                'config-title': 'ورودی تنظیمات کابینت',
+                'type-count-label': 'تعداد تیپ کابینت',
+                'channels-title': 'ظرفیت کانال‌ها (سراسری)',
+                'access-title': 'پیکربندی دسترسی',
+                'front-access-label': 'دسترسی جلو',
+                'rear-access-label': 'دسترسی عقب',
+                'upload-title': 'بارگذاری فایل ورودی',
+                'project-label': 'نام پروژه',
+                'project-title': 'اطلاعات پروژه',
+                'project-hint': 'نام پروژه برای ذخیره خروجی‌ها استفاده می‌شود',
+                'excel-title-io': 'فایل Excel ورودی',
+                'select-excel': 'انتخاب فایل Excel',
+                'excel-label': 'فایل Excel',
+                'process-text': 'شروع پردازش',
+                'results-title': 'داشبورد خروجی',
+                'stat-active-label': 'سیگنال فعال',
+                'stat-hot-label': 'Hot Spare',
+                'stat-spare-label': 'Backfill Spare',
+                'stat-cabinet-label': 'کابینت‌ها',
+                'log-title': 'گزارش پردازش',
+                'download-excel': 'دانلود Excel',
+                'download-zip': 'دانلود ZIP',
+                'metric-total-label': 'کل سیگنال‌های IO',
+                'metric-compliance-label': 'نرخ Hot Spare',
+                'metric-cabinet-label': 'تعداد کابینت بهینه',
+                'metric-spare-label': 'ظرفیت Spare کلی',
+                'detail-title': 'جزئیات کابینت',
+                'detail-empty': 'برای مشاهده جزئیات یک کابینت را انتخاب کنید.',
+                'export-text': 'خروجی گزارش پیکربندی',
+                'legend-active': 'فعال',
+                'legend-hot': 'فعال + Hot Spare',
+                'legend-empty': 'خالی',
+                'nav-home': 'خانه',
+                'nav-jb': 'JB Detection',
+                'nav-io': 'IO Assignment',
+                'nav-reports': 'گزارش‌ها',
+                'nav-settings': 'تنظیمات',
+                'nav-logout': 'خروج'
+            },
+            en: {
+                'io-kicker': 'IO Assignment',
+                'io-title': 'Cabinet Configuration & Optimization',
+                'io-subtitle': 'Tune capacities, upload input, and export optimized outputs.',
+                'config-title': 'Cabinet configuration input',
+                'type-count-label': 'Select number of cabinet types',
+                'channels-title': 'Board channel capacities (global)',
+                'access-title': 'Access configuration',
+                'front-access-label': 'Front access',
+                'rear-access-label': 'Rear access',
+                'upload-title': 'Upload input file',
+                'project-label': 'Project name',
+                'project-title': 'Project information',
+                'project-hint': 'Project name is used for saving outputs.',
+                'excel-title-io': 'Excel input file',
+                'select-excel': 'Select Excel file',
+                'excel-label': 'Excel file',
+                'process-text': 'Start processing',
+                'results-title': 'Output dashboard',
+                'stat-active-label': 'Active signals',
+                'stat-hot-label': 'Hot spares',
+                'stat-spare-label': 'Backfill spares',
+                'stat-cabinet-label': 'Cabinets',
+                'log-title': 'Processing log',
+                'download-excel': 'Download Excel',
+                'download-zip': 'Download ZIP',
+                'metric-total-label': 'Total IO signals',
+                'metric-compliance-label': 'Hot spare compliance',
+                'metric-cabinet-label': 'Optimized cabinets',
+                'metric-spare-label': 'Overall spare capacity',
+                'detail-title': 'Cabinet details',
+                'detail-empty': 'Select a cabinet to view details.',
+                'export-text': 'Export configuration report',
+                'legend-active': 'Active',
+                'legend-hot': 'Active + Hot Spare',
+                'legend-empty': 'Empty',
+                'nav-home': 'Home',
+                'nav-jb': 'JB Detection',
+                'nav-io': 'IO Assignment',
+                'nav-reports': 'Reports',
+                'nav-settings': 'Settings',
+                'nav-logout': 'Logout'
+            }
+        };
+
+        const collapseBtn = document.getElementById('collapseBtn');
+        const sidePanel = document.getElementById('sidePanel');
+        const themeBtn = document.getElementById('themeBtn');
+        const faBtn = document.getElementById('faBtn');
+        const enBtn = document.getElementById('enBtn');
+        const settingsBtn = document.getElementById('settingsBtn');
+        const notifyBtn = document.getElementById('notifyBtn');
+        const typeCount = document.getElementById('typeCount');
+
+        let currentLang = localStorage.getItem('lang') || 'fa';
+        let currentTheme = localStorage.getItem('theme') || 'dark';
+
+        function setLang(lang) {
+            document.documentElement.dir = lang === 'fa' ? 'rtl' : 'ltr';
+            faBtn.classList.toggle('active', lang === 'fa');
+            enBtn.classList.toggle('active', lang === 'en');
+            currentLang = lang;
+            document.title = translations[lang]['io-title'];
+            Object.keys(translations[lang]).forEach(key => {
+                const element = document.getElementById(key);
+                if (element) {
+                    element.textContent = translations[lang][key];
+                }
+            });
+            localStorage.setItem('lang', lang);
+        }
+
+        function setTheme(theme) {
+            document.body.classList.remove('light', 'dark');
+            document.body.classList.add(theme);
+            themeBtn.innerHTML = theme === 'dark' ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
+            localStorage.setItem('theme', theme);
+        }
+
+        collapseBtn.addEventListener('click', () => {
+            sidePanel.classList.toggle('collapsed');
+            document.body.classList.toggle('menu-collapsed');
+        });
+
+        faBtn.addEventListener('click', () => setLang('fa'));
+        enBtn.addEventListener('click', () => setLang('en'));
+        themeBtn.addEventListener('click', () => {
+            currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            setTheme(currentTheme);
+        });
+
+        if (settingsBtn) {
+            settingsBtn.addEventListener('click', () => {
+                alert(currentLang === 'fa' ? 'تنظیمات به‌زودی فعال می‌شود.' : 'Settings will be enabled soon.');
+            });
+        }
+
+        if (notifyBtn) {
+            notifyBtn.addEventListener('click', () => {
+                alert(currentLang === 'fa' ? 'اعلان جدیدی وجود ندارد.' : 'No new notifications.');
+            });
+        }
+
+        document.getElementById('excelInput').addEventListener('change', (e) => {
+            const excelName = document.getElementById('excelName');
+            excelName.innerHTML = '';
+            if (e.target.files.length > 0) {
+                const fileName = e.target.files[0].name;
+                const fileItem = document.createElement('div');
+                fileItem.className = 'file-item';
+                fileItem.innerHTML = `<i class="fas fa-file-excel"></i> ${fileName}`;
+                excelName.appendChild(fileItem);
+                fileItem.style.animation = 'none';
+                setTimeout(() => {
+                    fileItem.style.animation = 'fileSelected 0.5s ease';
+                }, 10);
+            } else {
+                excelName.innerHTML = `<p>${translations[currentLang]['excel-label']}</p>`;
+            }
+        });
+
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                const type = btn.dataset.type;
+                document.querySelectorAll('.limits-panel').forEach(panel => {
+                    panel.classList.toggle('active', panel.dataset.type === type);
+                });
+            });
+        });
+
+        document.getElementById('confirmTypes').addEventListener('click', () => {
+            const count = parseInt(typeCount.value, 10);
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                const type = parseInt(btn.dataset.type, 10);
+                btn.style.display = type <= count ? 'inline-flex' : 'none';
+            });
+        });
+
+        function collectLimits(typeKey, directionKey) {
+            const block = document.getElementById(`limits-${typeKey}-${directionKey}`);
+            const limits = {};
+            if (!block) return limits;
+            block.querySelectorAll('input[data-key]').forEach(input => {
+                limits[input.dataset.key] = parseFloat(input.value || '0');
+            });
+            return limits;
+        }
+
+        function buildConfig() {
+            const channels = {
+                "Barrier Board (AI)": parseFloat(document.getElementById('ch-barrier-ai').value || '16'),
+                "Barrier Board (AO)": parseFloat(document.getElementById('ch-barrier-ao').value || '16'),
+                "Barrier Board (DI)": parseFloat(document.getElementById('ch-barrier-di').value || '16'),
+                "Barrier Board (DO)": parseFloat(document.getElementById('ch-barrier-do').value || '16'),
+                "Terminal Board (AI)": parseFloat(document.getElementById('ch-terminal-ai').value || '16'),
+                "Terminal Board (AO)": parseFloat(document.getElementById('ch-terminal-ao').value || '16'),
+                "Terminal Board (DI)": parseFloat(document.getElementById('ch-terminal-di').value || '16'),
+                "Terminal Board (DO)": parseFloat(document.getElementById('ch-terminal-do').value || '16'),
+                "Relay Board AI capacity": parseFloat(document.getElementById('ch-relay-ai').value || '32'),
+                "Relay Board AO capacity": parseFloat(document.getElementById('ch-relay-ao').value || '32'),
+                "Relay Board DI capacity": parseFloat(document.getElementById('ch-relay-di').value || '32'),
+                "Relay Board DO capacity": parseFloat(document.getElementById('ch-relay-do').value || '32')
+            };
+
+            const cabinet_plan = [];
+            const priorities = [
+                { type: "Type 1", direction: "REAR", qtyId: "qty-type1-rear" },
+                { type: "Type 1", direction: "FRONT", qtyId: "qty-type1-front" },
+                { type: "Type 2", direction: "REAR", qtyId: "qty-type2-rear" },
+                { type: "Type 2", direction: "FRONT", qtyId: "qty-type2-front" },
+                { type: "Type 3", direction: "REAR", qtyId: "qty-type3-rear" },
+                { type: "Type 3", direction: "FRONT", qtyId: "qty-type3-front" }
+            ];
+
+            priorities.forEach((item, index) => {
+                const qty = parseInt(document.getElementById(item.qtyId).value || '0', 10);
+                if (qty > 0) {
+                    cabinet_plan.push({
+                        type: item.type,
+                        direction: item.direction,
+                        quantity: qty,
+                        priority: index + 1
+                    });
+                }
+            });
+
+            const cabinet_limits = {};
+            const typeMap = [
+                { name: "Type 1", key: "type1" },
+                { name: "Type 2", key: "type2" },
+                { name: "Type 3", key: "type3" }
+            ];
+            typeMap.forEach(typeItem => {
+                ["front", "rear"].forEach(directionKey => {
+                    const directionName = directionKey.toUpperCase();
+                    const limits = collectLimits(typeItem.key, directionKey);
+                    cabinet_limits[`${typeItem.name}|${directionName}`] = limits;
+                });
+            });
+
+            return { channels, cabinet_plan, cabinet_limits };
+        }
+
+        document.getElementById('ioForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const projectName = document.getElementById('projectName').value.trim();
+            const excelFile = document.getElementById('excelInput').files[0];
+            if (!projectName || !excelFile) {
+                alert(currentLang === 'fa' ? 'نام پروژه و فایل Excel الزامی است.' : 'Project name and Excel file are required.');
+                return;
+            }
+
+            const config = buildConfig();
+            const formData = new FormData();
+            formData.append('project_name', projectName);
+            formData.append('excel_file', excelFile);
+            formData.append('config', JSON.stringify(config));
+
+            document.getElementById('processBtn').disabled = true;
+            document.getElementById('logOutput').textContent = currentLang === 'fa' ? 'در حال پردازش...' : 'Processing...';
+            document.getElementById('progressBar').style.width = '5%';
+            document.getElementById('downloadBox').style.display = 'none';
+
+            try {
+                const response = await fetch('/io-assignment/process', { method: 'POST', body: formData });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    pollTask(data.task_id);
+                } else {
+                    throw new Error(data.message || 'Failed to start task');
+                }
+            } catch (error) {
+                document.getElementById('logOutput').textContent = error.message;
+                document.getElementById('processBtn').disabled = false;
+            }
+        });
+
+        async function pollTask(taskId) {
+            const interval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/task-status/${taskId}`);
+                    const data = await response.json();
+                    if (data.progress !== undefined) {
+                        document.getElementById('progressBar').style.width = `${data.progress}%`;
+                    }
+                    if (Array.isArray(data.log) && data.log.length) {
+                        const recent = data.log.slice(-6).map(item => `${item.timestamp} - ${item.message}`).join('\n');
+                        document.getElementById('logOutput').textContent = recent;
+                    }
+                    if (data.status === 'completed') {
+                        clearInterval(interval);
+                        handleCompleted(data.result);
+                    } else if (data.status === 'failed') {
+                        clearInterval(interval);
+                        document.getElementById('logOutput').textContent = data.error || 'Failed';
+                        document.getElementById('processBtn').disabled = false;
+                    } else if (data.status === 'error') {
+                        clearInterval(interval);
+                        document.getElementById('logOutput').textContent = data.message || 'Task error';
+                        document.getElementById('processBtn').disabled = false;
+                    }
+                } catch (error) {
+                    clearInterval(interval);
+                    document.getElementById('logOutput').textContent = error.message;
+                    document.getElementById('processBtn').disabled = false;
+                }
+            }, 1000);
+        }
+
+        function handleCompleted(result) {
+            const summary = result.summary || {};
+            document.getElementById('stat-active').textContent = summary.total_active || 0;
+            document.getElementById('stat-hot').textContent = summary.total_hot_spares || 0;
+            document.getElementById('stat-spare').textContent = summary.total_spares || 0;
+            document.getElementById('stat-cabinets').textContent = summary.cabinet_count || 0;
+            document.getElementById('metric-total').textContent = summary.total_signals || 0;
+            document.getElementById('metric-compliance').textContent = `${summary.hot_spare_compliance || 0}%`;
+            const expectedLabel = currentLang === 'fa' ? 'انتظار' : 'Expected';
+            document.getElementById('metric-compliance-sub').textContent = `${expectedLabel}: ${summary.expected_hot_spares || 0}`;
+            document.getElementById('metric-cabinets').textContent = summary.cabinet_count || 0;
+            document.getElementById('metric-spare').textContent = `${summary.overall_spare_capacity || 0}%`;
+            document.getElementById('logOutput').textContent = currentLang === 'fa' ? 'پردازش تکمیل شد.' : 'Processing completed.';
+
+            const apiBase = `${window.location.protocol}//${window.location.host}`;
+            let excelPath = result.output_files.excel_path || '';
+            let zipPath = result.output_files.zip_path || '';
+            let reportPath = result.output_files.report_path || '';
+            if (excelPath.startsWith('/home/devio/JB-outputs/')) {
+                excelPath = excelPath.replace('/home/devio/JB-outputs/', '');
+            }
+            if (zipPath.startsWith('/home/devio/JB-outputs/')) {
+                zipPath = zipPath.replace('/home/devio/JB-outputs/', '');
+            }
+            if (reportPath.startsWith('/home/devio/JB-outputs/')) {
+                reportPath = reportPath.replace('/home/devio/JB-outputs/', '');
+            }
+            document.getElementById('excelDownload').href = `${apiBase}/download?file=${encodeURIComponent(excelPath)}`;
+            document.getElementById('zipDownload').href = `${apiBase}/download?file=${encodeURIComponent(zipPath)}`;
+            document.getElementById('exportReport').href = `${apiBase}/download?file=${encodeURIComponent(reportPath)}`;
+            document.getElementById('downloadBox').style.display = 'flex';
+            document.getElementById('processBtn').disabled = false;
+
+            renderCabinets(result.cabinets || []);
+        }
+
+        function renderCabinets(cabinets) {
+            const grid = document.getElementById('cabinetGrid');
+            const detail = document.getElementById('cabinetDetail');
+            grid.innerHTML = '';
+            if (!cabinets.length) {
+                detail.querySelector('.detail-body').innerHTML = `<p id="detail-empty">${translations[currentLang]['detail-empty']}</p>`;
+                return;
+            }
+
+            cabinets.forEach(cab => {
+                const boards = cab.boards || [];
+                const maxTiles = 18;
+                const visibleTiles = boards.slice(0, maxTiles);
+                const remaining = Math.max(boards.length - maxTiles, 0);
+
+                const card = document.createElement('div');
+                card.className = 'cabinet-card';
+                card.innerHTML = `
+                    <div class="cabinet-header">
+                        <span>${cab.cabinet_id}</span>
+                        <span class="cabinet-type">${cab.cabinet_type} ${cab.direction}</span>
+                    </div>
+                    <div class="cabinet-metrics">
+                        <div class="metric-line">
+                            <span>Rail Capacity</span>
+                            <strong>${cab.rail_used}/${cab.rail_limit || '-'} (${cab.rail_pct}%)</strong>
+                        </div>
+                        <div class="metric-line">
+                            <span>Board Slot Capacity</span>
+                            <strong>${cab.board_slots_used}/${cab.board_slots_max || '-'} (${cab.board_slot_pct}%)</strong>
+                        </div>
+                        <div class="limit-tag">${cab.limiting_factor}</div>
+                    </div>
+                    <div class="tile-grid">
+                        ${visibleTiles.map(board => {
+                            const fillClass = board.fill_pct >= 85 ? 'high' : (board.fill_pct >= 55 ? 'med' : 'low');
+                            const hotClass = board.hot_spares > 0 ? 'hot' : '';
+                            const payload = encodeURIComponent(JSON.stringify(board));
+                            const intensity = Math.min(0.85, Math.max(0.2, (board.fill_pct || 0) / 100));
+                            const baseBg = `rgba(40, 200, 120, ${intensity})`;
+                            const style = board.hot_spares > 0
+                                ? `background: linear-gradient(135deg, ${baseBg}, rgba(47, 177, 255, 0.7));`
+                                : `background: ${baseBg};`;
+                            return `
+                            <span class="tile ${fillClass} ${hotClass}" data-board="${payload}" style="${style}">
+                                ${board.base_io || 'IO'}
+                            </span>
+                            `;
+                        }).join('')}
+                        ${remaining ? `<span class="tile empty">+${remaining}</span>` : ''}
+                    </div>
+                    <div class="tile-caption">
+                        ${boards.length ? `${boards.length} boards` : 'No boards'}
+                    </div>
+                `;
+                card.addEventListener('click', () => showCabinetDetail(cab));
+                grid.appendChild(card);
+            });
+
+            const tooltip = document.getElementById('boardTooltip');
+            const labels = currentLang === 'fa' ? {
+                capacity: 'ظرفیت',
+                signals: 'سیگنال',
+                active: 'فعال',
+                hot: 'Hot Spare',
+                spare: 'Spare',
+                fill: 'درصد پرشدگی'
+            } : {
+                capacity: 'Capacity',
+                signals: 'Signals',
+                active: 'Active',
+                hot: 'Hot Spare',
+                spare: 'Spare',
+                fill: 'Fill'
+            };
+            grid.querySelectorAll('.tile[data-board]').forEach(tile => {
+                tile.addEventListener('mouseenter', () => {
+                    const board = JSON.parse(decodeURIComponent(tile.dataset.board || '{}'));
+                    tooltip.innerHTML = `
+                        <strong>${board.board_id}</strong>
+                        <span>${board.board_type} ${board.base_io}</span>
+                        <span>${labels.capacity}: ${board.capacity || '-'}</span>
+                        <span>${labels.signals}: ${board.total_signals}</span>
+                        <span>${labels.active}: ${board.active_signals}</span>
+                        <span>${labels.hot}: ${board.hot_spares}</span>
+                        <span>${labels.spare}: ${board.spare_signals}</span>
+                        <span>${labels.fill}: ${board.fill_pct}%</span>
+                    `;
+                    tooltip.style.display = 'flex';
+                });
+                tile.addEventListener('mousemove', (event) => {
+                    tooltip.style.left = `${event.clientX + 12}px`;
+                    tooltip.style.top = `${event.clientY + 12}px`;
+                });
+                tile.addEventListener('mouseleave', () => {
+                    tooltip.style.display = 'none';
+                });
+            });
+        }
+
+        function showCabinetDetail(cab) {
+            const detailBody = document.querySelector('#cabinetDetail .detail-body');
+            const units = (cab.jb_list || []).map(jb => `<li>${jb}</li>`).join('');
+            const boardRows = (cab.boards || [])
+                .slice(0, 8)
+                .map(board => `<div class="detail-row"><strong>${board.board_id}</strong><span>${board.total_signals}/${board.capacity || '-'}</span></div>`)
+                .join('');
+            const relayRows = Object.entries(cab.relay_board_counts || {})
+                .map(([key, count]) => `<div class="detail-row"><strong>${key.replace('Relay Board ', 'Relay ').replace(' capacity', '')}</strong><span>${count}</span></div>`)
+                .join('');
+            detailBody.innerHTML = `
+                <div class="detail-row">
+                    <strong>ID</strong>
+                    <span>${cab.cabinet_id}</span>
+                </div>
+                <div class="detail-row">
+                    <strong>Type</strong>
+                    <span>${cab.cabinet_type} ${cab.direction}</span>
+                </div>
+                <div class="detail-row">
+                    <strong>Rail</strong>
+                    <span>${cab.rail_used}/${cab.rail_limit || '-'} (${cab.rail_pct}%)</span>
+                </div>
+                <div class="detail-row">
+                    <strong>Limiting</strong>
+                    <span>${cab.limiting_factor}</span>
+                </div>
+                <div class="detail-section">
+                    <h5>Boards</h5>
+                    ${boardRows || '<div class="detail-row"><strong>-</strong><span>0</span></div>'}
+                </div>
+                <div class="detail-section">
+                    <h5>Relay</h5>
+                    ${relayRows || '<div class="detail-row"><strong>-</strong><span>0</span></div>'}
+                </div>
+                <div class="detail-list">
+                    <strong>Assigned JB</strong>
+                    <ul>${units || '<li>-</li>'}</ul>
+                </div>
+            `;
+        }
+
+        setTheme(currentTheme);
+        setLang(currentLang);
+    </script>
+</body>
+</html>

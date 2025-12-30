@@ -50,6 +50,7 @@ from apps.backend.utils.file_naming import (
     create_zip_archive,
     get_download_url
 )
+from apps.backend.modules.io_assignment import run_io_assignment
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -301,6 +302,29 @@ class TaskStatus:
     COMPLETED = 'completed'
     FAILED = 'failed'
 
+def append_task_log(task_id, message):
+    task = TaskManager.get_task(task_id) or {}
+    logs = task.get('log', [])
+    logs.append({
+        'timestamp': datetime.now().isoformat(),
+        'message': message
+    })
+    TaskManager.update_task(task_id, {'log': logs})
+
+def to_json_safe(value):
+    if isinstance(value, dict):
+        return {str(k): to_json_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [to_json_safe(v) for v in value]
+    if isinstance(value, (int, float, str, bool)) or value is None:
+        return value
+    if hasattr(value, 'item'):
+        try:
+            return value.item()
+        except Exception:
+            pass
+    return str(value)
+
 def get_platform_specific_extractor(tesseract_path=None, excel_path=None):
     """
     بر اساس سیستم عامل، کلاس مناسب استخراج کننده را برمی‌گرداند
@@ -507,10 +531,202 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
             'failed_at': datetime.now().isoformat()
         })
 
+
+def process_io_assignment_task(task_id, excel_path, project_name, config_overrides, username):
+    try:
+        TaskManager.update_task(task_id, {
+            'status': TaskStatus.PROCESSING,
+            'progress': 10,
+            'started_at': datetime.now().isoformat()
+        })
+        append_task_log(task_id, "Task started")
+
+        project_output_dir = get_project_output_dir(project_name)
+        append_task_log(task_id, f"Output directory: {project_output_dir}")
+        output_excel_filename = generate_document_filename(project_name, "IOAssignment", "xlsx")
+        output_excel_path = os.path.join(project_output_dir, output_excel_filename)
+
+        TaskManager.update_task(task_id, {'progress': 35})
+        append_task_log(task_id, "Running IO Assignment engine")
+
+        result = run_io_assignment(
+            input_excel_path=excel_path,
+            output_excel_path=output_excel_path,
+            config_overrides=config_overrides
+        )
+
+        TaskManager.update_task(task_id, {'progress': 75})
+        append_task_log(task_id, "Engine finished, building summaries")
+
+        final_df = result['final_df']
+        total_active = int((final_df['Signal_Type'] == 'ACTIVE').sum())
+        total_hot = int((final_df['Signal_Type'] == 'HOT_SPARE').sum())
+        total_spare = int((final_df['Signal_Type'] == 'SPARE').sum())
+        total_signals = total_active + total_hot + total_spare
+        expected_hot = math.ceil(total_active * result['config'].hot_spare_ratio) if total_active else 0
+        hot_compliance = round((total_hot / expected_hot) * 100, 1) if expected_hot else 100.0
+        overall_spare_capacity = round(((total_hot + total_spare) / max(total_signals, 1)) * 100, 1)
+
+        summary = {
+            'total_active': total_active,
+            'total_hot_spares': total_hot,
+            'total_spares': total_spare,
+            'total_signals': total_signals,
+            'expected_hot_spares': expected_hot,
+            'hot_spare_compliance': hot_compliance,
+            'overall_spare_capacity': overall_spare_capacity,
+            'cabinet_count': len(result['cabinets']),
+            'jb_count': int(final_df[result['config'].col_mapping['JB']].nunique())
+        }
+
+        board_type_col = 'Board_Type'
+        board_id_col = 'Board_ID'
+        signal_col = 'Signal_Type'
+        cabinet_stats = []
+        for cab in result['cabinets']:
+            cab_df = final_df[final_df['Cabinet_ID'] == cab.id]
+            board_counts = cab_df.groupby('Board_Type')['Board_ID'].nunique().to_dict()
+            rail_limit = cab.limits.get('Max rail terminals', 0)
+            rail_pct = round((cab.rail_used / rail_limit) * 100, 1) if rail_limit else 0.0
+            class DummyJB:
+                pass
+            dummy = DummyJB()
+            dummy.channel_counts = {
+                'Barrier_AI': 0,
+                'Barrier_AO': 0,
+                'Barrier_DI': 0,
+                'Barrier_DO': 0,
+                'Terminal_AI': 0,
+                'Terminal_AO': 0,
+                'Terminal_DI': 0,
+                'Terminal_DO': 0,
+                'Relay_DI': 0,
+                'Relay_DO': 0,
+                'Relay_AI': 0,
+                'Relay_AO': 0,
+            }
+            usage_now, max_total, mode = cab._pool_usage_after(dummy)
+            board_slots_used = 0
+            board_slots_max = 0
+            board_slot_pct = 0.0
+            if mode == 'COUNT':
+                board_slots_used = int(usage_now or 0)
+                board_slots_max = int(max_total or 0)
+            elif mode == 'PERCENT_PER_BOARD':
+                board_slots_used = round(float(usage_now or 0), 1)
+                board_slots_max = round(float(max_total or 0), 1)
+            if board_slots_max:
+                board_slot_pct = round((float(board_slots_used) / float(board_slots_max)) * 100, 1)
+
+            relay_board_counts = {
+                'Relay Board AI capacity': int(math.ceil(cab.channels_relay_ai / result['config'].channels.get('Relay Board AI capacity', 1))) if cab.channels_relay_ai else 0,
+                'Relay Board AO capacity': int(math.ceil(cab.channels_relay_ao / result['config'].channels.get('Relay Board AO capacity', 1))) if cab.channels_relay_ao else 0,
+                'Relay Board DI capacity': int(math.ceil(cab.channels_relay_di / result['config'].channels.get('Relay Board DI capacity', 1))) if cab.channels_relay_di else 0,
+                'Relay Board DO capacity': int(math.ceil(cab.channels_relay_do / result['config'].channels.get('Relay Board DO capacity', 1))) if cab.channels_relay_do else 0,
+            }
+
+            board_details = []
+            if not cab_df.empty and board_id_col in cab_df.columns:
+                for board_id, g in cab_df.groupby(board_id_col):
+                    board_type = g.iloc[0][board_type_col] if board_type_col in g.columns else ''
+                    match = re.search(r'\(([^)]+)\)', str(board_id))
+                    base_io = match.group(1) if match else ''
+                    capacity_key = f"{board_type} ({base_io})" if base_io else board_type
+                    capacity = result['config'].channels.get(capacity_key, 0)
+                    counts = g[signal_col].value_counts().to_dict() if signal_col in g.columns else {}
+                    active = int(counts.get('ACTIVE', 0))
+                    hot = int(counts.get('HOT_SPARE', 0))
+                    spare = int(counts.get('SPARE', 0))
+                    total = active + hot + spare
+                    fill_pct = round((total / capacity) * 100, 1) if capacity else 0.0
+                    board_details.append({
+                        'board_id': str(board_id),
+                        'board_type': str(board_type),
+                        'base_io': base_io,
+                        'capacity': int(capacity) if capacity else 0,
+                        'total_signals': total,
+                        'active_signals': active,
+                        'hot_spares': hot,
+                        'spare_signals': spare,
+                        'fill_pct': fill_pct
+                    })
+            cabinet_stats.append({
+                'cabinet_id': cab.id,
+                'cabinet_type': cab.type_name,
+                'direction': cab.direction,
+                'limiting_factor': cab.limiting_factor,
+                'rail_used': int(cab.rail_used),
+                'rail_limit': int(rail_limit) if rail_limit else 0,
+                'rail_pct': rail_pct,
+                'board_slots_used': board_slots_used,
+                'board_slots_max': board_slots_max,
+                'board_slot_pct': board_slot_pct,
+                'board_counts': {k: int(v) for k, v in board_counts.items()},
+                'relay_board_counts': relay_board_counts,
+                'boards': board_details,
+                'jb_list': [jb.name for jb in cab.assigned_jbs][:6],
+            })
+
+        report_filename = generate_document_filename(project_name, "IOAssignmentReport", "json")
+        report_path = os.path.join(project_output_dir, report_filename)
+        with open(report_path, 'w', encoding='utf-8') as f:
+            json.dump({
+                'project_name': project_name,
+                'processing_date': datetime.now().isoformat(),
+                'user': username,
+                'task_id': task_id,
+                'summary': summary
+            }, f, indent=2, ensure_ascii=False)
+        append_task_log(task_id, f"Report saved: {report_path}")
+
+        TaskManager.update_task(task_id, {'progress': 90})
+        append_task_log(task_id, "Creating ZIP package")
+
+        zip_path = create_zip_archive(project_name, [output_excel_path, report_path], doc_type="IOAssignment")
+        download_url = get_download_url(zip_path)
+        append_task_log(task_id, f"ZIP created: {zip_path}")
+
+        if os.path.exists(excel_path):
+            try:
+                os.remove(excel_path)
+            except Exception as e:
+                logger.warning(f"Task {task_id}: خطا در حذف {excel_path}: {e}")
+
+        final_result = {
+            'status': TaskStatus.COMPLETED,
+            'progress': 100,
+            'completed_at': datetime.now().isoformat(),
+            'result': {
+                'output_files': {
+                    'excel_path': output_excel_path,
+                    'report_path': report_path,
+                    'zip_path': zip_path,
+                    'download_url': download_url
+                },
+                'summary': summary,
+                'cabinets': cabinet_stats
+            }
+        }
+
+        TaskManager.update_task(task_id, to_json_safe(final_result))
+        logger.info(f"IO Assignment Task {task_id}: پردازش با موفقیت تکمیل شد")
+        append_task_log(task_id, "Task completed")
+    except Exception as e:
+        logger.error(f"IO Assignment Task {task_id}: خطا در پردازش - {str(e)}")
+        logger.error(traceback.format_exc())
+        append_task_log(task_id, f"Task failed: {str(e)}")
+        TaskManager.update_task(task_id, {
+            'status': TaskStatus.FAILED,
+            'error': str(e),
+            'error_details': traceback.format_exc(),
+            'progress': 100,
+            'failed_at': datetime.now().isoformat()
+        })
+
 @app.route('/')
 def home():
     if 'username' in session:
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('portal'))
     return render_template('login.html')
 
 @app.route('/login', methods=['POST'])
@@ -535,6 +751,14 @@ def logout():
     logger.info(f"کاربر {username} از سیستم خارج شد")
     return redirect(url_for('home'))
 
+@app.route('/home')
+def portal():
+    if 'username' not in session:
+        return redirect(url_for('home'))
+    username = session.get('username')
+    logger.info(f"کاربر {username} به صفحه خانه دسترسی پیدا کرد")
+    return render_template('home.html', username=username)
+
 @app.route('/dashboard')
 def dashboard():
     if 'username' not in session:
@@ -542,6 +766,14 @@ def dashboard():
     username = session.get('username')
     logger.info(f"کاربر {username} به داشبورد دسترسی پیدا کرد")
     return render_template('JB.html', username=username)
+
+@app.route('/io-assignment')
+def io_assignment():
+    if 'username' not in session:
+        return redirect(url_for('home'))
+    username = session.get('username')
+    logger.info(f"کاربر {username} به IO Assignment دسترسی پیدا کرد")
+    return render_template('io_assignment.html', username=username)
 
 @app.route('/system-info')
 def system_info():
@@ -604,6 +836,7 @@ def get_task_status(task_id):
             'error': task.get('error'),
             'project_name': task.get('project_name', ''),
             'pdf_count': task.get('pdf_count', 0),
+            'log': task.get('log', []),
             'started_at': task.get('started_at'),
             'completed_at': task.get('completed_at')
         })
@@ -828,6 +1061,66 @@ def api_process():
             'status': 'error',
             'message': str(e)
         }), 500
+
+
+@app.route('/io-assignment/process', methods=['POST'])
+def process_io_assignment():
+    if 'username' not in session:
+        return jsonify({
+            'status': 'error',
+            'message': 'لطفاً ابتدا وارد سیستم شوید'
+        }), 401
+
+    username = session.get('username')
+
+    try:
+        project_name = request.form.get('project_name', '').strip()
+        excel_file = request.files.get('excel_file')
+        config_json = request.form.get('config', '')
+
+        if not project_name:
+            return jsonify({'status': 'error', 'message': 'نام پروژه الزامی است'}), 400
+
+        if not excel_file or excel_file.filename == '':
+            return jsonify({'status': 'error', 'message': 'فایل Excel الزامی است'}), 400
+
+        config_overrides = {}
+        if config_json:
+            try:
+                config_overrides = json.loads(config_json)
+            except json.JSONDecodeError:
+                return jsonify({'status': 'error', 'message': 'فرمت تنظیمات نامعتبر است'}), 400
+
+        filename = secure_filename(excel_file.filename)
+        unique_name = f"io_{uuid.uuid4().hex}_{filename}"
+        temp_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_name)
+        excel_file.save(temp_path)
+        logger.info(f"IO Assignment upload saved: {temp_path}", extra={'user': username})
+
+        task_id = str(uuid.uuid4())
+        TaskManager.create_task(task_id, {
+            'status': TaskStatus.PENDING,
+            'progress': 0,
+            'task_id': task_id,
+            'project_name': project_name,
+            'username': username,
+            'task_type': 'io_assignment',
+            'created_at': datetime.now().isoformat()
+        })
+        append_task_log(task_id, "Task queued")
+
+        thread = threading.Thread(
+            target=process_io_assignment_task,
+            args=(task_id, temp_path, project_name, config_overrides, username),
+            daemon=True
+        )
+        thread.start()
+
+        return jsonify({'status': 'success', 'task_id': task_id})
+    except Exception as e:
+        logger.error(f"خطا در شروع IO Assignment: {e}", extra={'user': username})
+        logger.error(traceback.format_exc())
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 OUTPUT_DIRS = {
     "v1": "/home/devio/JB-outputs",
