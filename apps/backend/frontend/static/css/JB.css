@@ -1,17 +1,16 @@
 /* Base styles */
 :root {
-    --primary-color: #3498db;
-    --secondary-color: #2ecc71;
-    --accent-color: #e74c3c;
-    --dark-color: #2c3e50;
-    --light-color: #ecf0f1;
-    --text-color: #333;
-    --text-light: #7f8c8d;
-    --border-radius: 12px;
-    --box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+    --primary-color: #23d3c7;
+    --secondary-color: #23d3c7;
+    --accent-color: #f6b73c;
+    --dark-color: #0a111f;
+    --light-color: #111b2e;
+    --text-color: #e6eef7;
+    --text-light: #9db0c8;
+    --box-shadow: 0 18px 45px rgba(7, 12, 22, 0.55);
+    --border-radius: 18px;
     --transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
-
 body {
     font-family: 'Roboto', sans-serif;
     margin: 0;
@@ -1684,7 +1683,7 @@ body.dark .zip-download-link:hover {
     --bg-0: #0a111f;
     --bg-1: #111b2e;
     --panel-bg: rgba(15, 23, 39, 0.88);
-    --panel-border: rgba(93, 124, 164, 0.25);
+    --panel-border: rgba(255, 255, 255, 0.822);
     --text-1: #e6eef7;
     --text-2: #9db0c8;
     --shadow-strong: 0 18px 45px rgba(7, 12, 22, 0.55);
@@ -4669,4 +4668,15 @@ body.dark input[type="checkbox"]:checked {
     .preview-input input {
         width: 100%;
     }
+}
+
+/* JB header alignment */
+.jb-body .io-header,
+.jb-body .header-stack {
+    text-align: left;
+}
+
+html[dir="rtl"] .jb-body .io-header,
+html[dir="rtl"] .jb-body .header-stack {
+    text-align: right;
 }

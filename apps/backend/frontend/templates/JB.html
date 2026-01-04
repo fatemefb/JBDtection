@@ -3,25 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JB Detection System</title>
+    <title>JBDetection Module</title>
     <link rel="icon" href="{{ url_for('static', filename='images/favicon.png') }}" type="image/png">
     <link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.png') }}" type="image/png">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/favicon.png') }}">
     <link rel="name" href="{{ url_for('static', filename='images/JBD.png') }}" type="image/png">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/home.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/io_assignment.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/JB.css') }}">
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Vazirmatn:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 </head>
-<body class="home-body dashboard-body">
+<body class="home-body io-body jb-body">
     <div class="home-shell">
         <aside class="side-panel" id="sidePanel">
             <div class="side-header">
                 <div class="brand">
-                    <img src="{{ url_for('static', filename='images/favicon.png') }}" alt="JB Detection" class="brand-logo">
+                    <img src="{{ url_for('static', filename='images/favicon.png') }}" alt="VAKAV IO Mapping" class="brand-logo">
                     <div>
-                        <span id="nav-kicker" class="brand-kicker">JBDtection Suite</span>
-                        <h1 id="nav-brand" class="brand-title">JBDtection</h1>
+                        <span id="nav-kicker" class="brand-kicker">VAKAV IO Mapping</span>
+                        <h1 id="nav-brand" class="brand-title">VAKAV IO Mapping</h1>
                     </div>
                 </div>
                 <button class="icon-btn" id="collapseBtn" aria-label="Toggle menu">
@@ -35,11 +36,11 @@
                 </a>
                 <a class="nav-item active" href="/dashboard">
                     <i class="fas fa-chart-line"></i>
-                    <span id="nav-jb">JB Detection</span>
+                    <span id="nav-jb">JBDetection Module</span>
                 </a>
                 <a class="nav-item" href="/io-assignment">
                     <i class="fas fa-project-diagram"></i>
-                    <span id="nav-io">IO Assignment</span>
+                    <span id="nav-io">IO Assignment Module</span>
                 </a>
                 <button class="nav-item disabled" type="button">
                     <i class="fas fa-folder-open"></i>
@@ -62,21 +63,13 @@
             </div>
         </aside>
 
-        <main class="home-main dashboard-main">
-        <header class="app-header">
-            <div class="app-topbar">
-                <div class="brand-area">
-                    <button class="icon-btn hamburger" id="menuToggle" aria-label="Toggle menu" aria-expanded="false">
-                        <i class="fas fa-bars"></i>
-                    </button>
-                    <div class="brand">
-                        <img src="{{ url_for('static', filename='images/favicon.png') }}" alt="JB Detection" class="brand-logo">
-                        <div class="brand-text">
-                            <span id="brand-kicker" class="brand-kicker">پلتفرم تحلیل اتصالات و تگ‌ها</span>
-                            <h1 id="title">JB Detection System</h1>
-                            <p id="subtitle" class="brand-subtitle">سیستم پیشرفته شناسایی و تطابق تگ‌های PDF و Excel</p>
-                        </div>
-                    </div>
+        <main class="home-main io-main">
+        <header class="io-header">
+            <div class="header-row">
+                <div class="header-stack">
+                    <span id="brand-kicker" class="header-kicker">ماژول JBDetection</span>
+                    <h2 id="title">JBDetection Module</h2>
+                    <p id="subtitle">سیستم پیشرفته شناسایی و تطابق تگ‌های PDF و Excel</p>
                 </div>
                 <div class="header-actions">
                     <div class="icon-group">
@@ -86,6 +79,9 @@
                         <button class="icon-btn" id="notifyBtn" title="Notifications" aria-label="Notifications">
                             <i class="fas fa-bell"></i>
                         </button>
+                        <button class="icon-btn hamburger" id="menuToggle" aria-label="Toggle menu" aria-expanded="false">
+                            <i class="fas fa-bars"></i>
+                        </button>
                     </div>
                     <div class="lang-switch">
                         <button id="faBtn" class="lang-btn active">فارسی</button>
@@ -94,40 +90,11 @@
                     <div class="theme-switch">
                         <button id="themeBtn" class="theme-btn"><i class="fas fa-moon"></i></button>
                     </div>
-                    <div class="user-info">
-                        <span id="username-display">{{ username }}</span>
-                        <a href="/logout" class="logout-btn" title="خروج از سیستم">
-                            <i class="fas fa-sign-out-alt"></i>
-                        </a>
-                    </div>
                 </div>
             </div>
-            <nav class="app-tabs" id="appTabs">
-                <button class="tab-item active">
-                    <i class="fas fa-chart-line"></i>
-                    <span id="tab-dashboard">داشبورد</span>
-                </button>
-                <button class="tab-item">
-                    <i class="fas fa-cloud-arrow-up"></i>
-                    <span id="tab-upload">بارگذاری</span>
-                </button>
-                <button class="tab-item">
-                    <i class="fas fa-sliders"></i>
-                    <span id="tab-pattern">الگوها</span>
-                </button>
-                <button class="tab-item">
-                    <i class="fas fa-square-poll-vertical"></i>
-                    <span id="tab-results">نتایج</span>
-                </button>
-                <button class="tab-item">
-                    <i class="fas fa-file-lines"></i>
-                    <span id="tab-reports">گزارش‌ها</span>
-                </button>
-            </nav>
         </header>
         
-        <div class="dashboard-content">
-            <div class="dashboard">
+        <div class="dashboard">
                 
                 <section class="upload-section panel">
                     <h2 id="upload-title"><i class="fas fa-file-upload"></i> بارگذاری فایل‌ها</h2>
@@ -403,11 +370,10 @@
                         </div>
                     </div>
                 </section>
-            </div>
         </div>
 
         <footer>
-            <p id="footer-text">&copy; 2025 JB Detection System. All rights reserved.</p>
+            <p id="footer-text">&copy; 2025 JBDetection Module. All rights reserved.</p>
         </footer>
         </main>
     </div>
@@ -416,13 +382,13 @@
         // Translation object
         const translations = {
             'fa': {
-                'title': 'سیستم تشخیص JB',
-                'brand-kicker': 'بهینه‌سازی IO و تطابق تگ‌ها',
-                'nav-kicker': 'پلتفرم یکپارچه',
-                'nav-brand': 'JBDtection',
+                'title': 'ماژول JBDetection',
+                'brand-kicker': 'ماژول JBDetection',
+                'nav-kicker': 'VAKAV IO Mapping',
+                'nav-brand': 'VAKAV IO Mapping',
                 'nav-home': 'خانه',
-                'nav-jb': 'JB Detection',
-                'nav-io': 'IO Assignment',
+                'nav-jb': 'ماژول JBDetection',
+                'nav-io': 'ماژول IO Assignment',
                 'nav-reports': 'گزارش‌ها',
                 'nav-settings': 'تنظیمات',
                 'nav-logout': 'خروج',
@@ -473,7 +439,7 @@
                 'error': '❌ خطا: ',
                 'no-file-selected': 'فایلی انتخاب نشده',
                 'no-project-name': 'لطفاً نام پروژه را وارد کنید',
-                'footer-text': '&copy; 2025 سیستم تشخیص JB. تمامی حقوق محفوظ است.',
+                'footer-text': '&copy; 2025 ماژول JBDetection. تمامی حقوق محفوظ است.',
                 'download-title': 'دانلود فایل‌های خروجی',
                 'download-excel': 'دانلود فایل Excel',
                 'download-pdf': 'دانلود PDF شماره',
@@ -537,13 +503,13 @@
                 
             },
             'en': {
-                'title': 'JB Detection System',
-                'brand-kicker': 'IO optimization and tag alignment',
-                'nav-kicker': 'Unified platform',
-                'nav-brand': 'JBDtection',
+                'title': 'JBDetection Module',
+                'brand-kicker': 'JBDetection Module',
+                'nav-kicker': 'VAKAV IO Mapping',
+                'nav-brand': 'VAKAV IO Mapping',
                 'nav-home': 'Home',
-                'nav-jb': 'JB Detection',
-                'nav-io': 'IO Assignment',
+                'nav-jb': 'JBDetection Module',
+                'nav-io': 'IO Assignment Module',
                 'nav-reports': 'Reports',
                 'nav-settings': 'Settings',
                 'nav-logout': 'Logout',
@@ -594,7 +560,7 @@
                 'error': '❌ Error: ',
                 'no-file-selected': 'No file selected',
                 'no-project-name': 'Please enter a project name',
-                'footer-text': '&copy; 2025 JB Detection System. All rights reserved.',
+                'footer-text': '&copy; 2025 JBDetection Module. All rights reserved.',
                 'download-title': 'Download Output Files',
                 'download-excel': 'Download Excel File',
                 'download-pdf': 'Download PDF #',
@@ -1483,7 +1449,7 @@
             }
             
             // تنظیم عنوان صفحه
-            document.title = currentLang === 'fa' ? 'سیستم تشخیص JB' : 'JB Detection System';
+            document.title = currentLang === 'fa' ? 'ماژول JBDetection' : 'JBDetection Module';
             
             // Add smooth transition when page loads
             document.body.style.transition = 'background-color 0.5s ease, color 0.5s ease';
