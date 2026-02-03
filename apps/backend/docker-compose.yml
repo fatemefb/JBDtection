@@ -1,6 +1,27 @@
 version: "3.9"
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: vakav_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vakav
+      POSTGRES_USER: vakav
+      POSTGRES_PASSWORD: vakav_strong_password_change_me
+      TZ: Asia/Tehran
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vakav -d vakav"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - vakav_net
+
   jbdetection_v1:
     container_name: jbdetection_v1
     build:
@@ -15,16 +36,24 @@ services:
     environment:
       - PYTHONPATH=/app
       - FLASK_ENV=production
-      # افزایش timeout‌ها
+      - TZ=Asia/Tehran
+      - DATABASE_URL=postgresql+psycopg2://vakav:vakav_strong_password_change_me@postgres:5432/vakav
+
+      # gunicorn timeouts
       - GUNICORN_TIMEOUT=3600
       - GUNICORN_GRACEFUL_TIMEOUT=3600
-    user: "1000:1000"  
+    user: "1000:1000"
     cap_add:
       - SYS_ADMIN
       - DAC_READ_SEARCH
     security_opt:
       - apparmor:unconfined
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - vakav_net
     command: >
       gunicorn apps.backend.app:app
         -b 0.0.0.0:5000
@@ -64,6 +93,9 @@ services:
     environment:
       - PYTHONPATH=/app
       - FLASK_ENV=development
+      - TZ=Asia/Tehran
+      - DATABASE_URL=postgresql+psycopg2://vakav:vakav_strong_password_change_me@postgres:5432/vakav
+
       - GUNICORN_TIMEOUT=3600
       - GUNICORN_GRACEFUL_TIMEOUT=3600
     user: "1000:1000"
@@ -73,6 +105,11 @@ services:
     security_opt:
       - apparmor:unconfined
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - vakav_net
     command: >
       gunicorn apps.backend.app:app
         -b 0.0.0.0:5000
@@ -88,8 +125,9 @@ services:
         --access-logfile=-
         --error-logfile=-
 
-# فعال‌سازی BuildKit در docker-compose
-x-buildkit:
-  environment:
-    DOCKER_BUILDKIT: 1
-    COMPOSE_DOCKER_CLI_BUILD: 1
+volumes:
+  postgres_data:
+
+networks:
+  vakav_net:
+    driver: bridge

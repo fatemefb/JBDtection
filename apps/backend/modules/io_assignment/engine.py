@@ -145,6 +145,7 @@ class IOConfig:
     jb_label_overhead: int = 2
     is_cab_prefix: str = "IS-A-"
     nis_cab_prefix: str = "NIS-B-"
+    has_directions: bool = True
     rank_io: Dict[str, int] = field(default_factory=lambda: {
         "AI": 1, "AIR": 2, "AOR": 3, "AO": 4,
         "DI": 5, "DIR": 6, "DO": 7, "DOR": 8,
@@ -202,6 +203,8 @@ def build_config(overrides: Optional[Dict[str, Any]]) -> IOConfig:
         config.hot_spare_ratio = float(overrides["hot_spare_ratio"])
     if "jb_label_overhead" in overrides:
         config.jb_label_overhead = int(overrides["jb_label_overhead"])
+    if "has_directions" in overrides:
+        config.has_directions = bool(overrides["has_directions"])
 
     if "cabinet_plan" in overrides and isinstance(overrides["cabinet_plan"], list):
         config.cabinet_plan = overrides["cabinet_plan"]
@@ -228,6 +231,8 @@ def build_cabinet_pool_from_plan(config: IOConfig) -> List[Dict[str, Any]]:
         d = item["direction"]
         qty = int(item["quantity"])
         limits = config.cabinet_limits.get((t, d))
+        if limits is None and d == "SINGLE":
+            limits = config.cabinet_limits.get((t, "FRONT")) or config.cabinet_limits.get((t, "REAR"))
         if limits is None:
             raise ValueError(f"Missing limits for cabinet type/direction: {(t, d)}")
         for _ in range(qty):
@@ -343,6 +348,55 @@ def inject_hot_spares(df: pd.DataFrame, config: IOConfig) -> pd.DataFrame:
     io_col = config.col_mapping["IO_TYPE"]
     saf_col = config.col_mapping["SAFETY"]
     jb_col = config.col_mapping["JB"]
+    term1_col = config.col_mapping["TERM1"]
+    term2_col = config.col_mapping["TERM2"]
+
+    def parse_terminal(value: Any) -> Optional[Tuple[str, int, int]]:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        match = re.match(r"(.*?)(\d+)$", text)
+        if not match:
+            return None
+        prefix, digits = match.group(1), match.group(2)
+        return prefix, int(digits), len(digits)
+
+    def format_terminal(prefix: str, width: int, number: int) -> str:
+        return f"{prefix}{number:0{width}d}"
+
+    terminal_state: Dict[str, Dict[str, Any]] = {}
+    if term1_col in df.columns or term2_col in df.columns:
+        for jb_name, group in df.groupby(jb_col):
+            max_num = 0
+            fmt1: Optional[Tuple[str, int]] = None
+            fmt2: Optional[Tuple[str, int]] = None
+            if term1_col in group.columns:
+                for val in group[term1_col]:
+                    parsed = parse_terminal(val)
+                    if parsed:
+                        prefix, number, width = parsed
+                        max_num = max(max_num, number)
+                        if fmt1 is None:
+                            fmt1 = (prefix, width)
+            if term2_col in group.columns:
+                for val in group[term2_col]:
+                    parsed = parse_terminal(val)
+                    if parsed:
+                        prefix, number, width = parsed
+                        max_num = max(max_num, number)
+                        if fmt2 is None:
+                            fmt2 = (prefix, width)
+            if fmt1 is None:
+                fmt1 = ("T", 1)
+            if fmt2 is None:
+                fmt2 = ("T", 1)
+            terminal_state[jb_name] = {
+                "next": max_num + 1,
+                "fmt1": fmt1,
+                "fmt2": fmt2,
+            }
 
     grouped = df.groupby([io_col, saf_col])
 
@@ -361,6 +415,17 @@ def inject_hot_spares(df: pd.DataFrame, config: IOConfig) -> pd.DataFrame:
             rep_row["Tag No"] = "HOT_SPARE"
             rep_row["Loop No"] = "HOT_SPARE"
             rep_row["Signal_Type"] = "HOT_SPARE"
+            if jb in terminal_state and (term1_col in df.columns or term2_col in df.columns):
+                state = terminal_state[jb]
+                term1_prefix, term1_width = state["fmt1"]
+                term2_prefix, term2_width = state["fmt2"]
+                term1_num = state["next"]
+                term2_num = state["next"] + 1
+                state["next"] += 2
+                if term1_col in df.columns:
+                    rep_row[term1_col] = format_terminal(term1_prefix, term1_width, term1_num)
+                if term2_col in df.columns:
+                    rep_row[term2_col] = format_terminal(term2_prefix, term2_width, term2_num)
             spare_rows.append(rep_row)
 
     if spare_rows:
@@ -656,7 +721,10 @@ def assign_cabinets(jb_demands: Dict[str, JBDemand], config: IOConfig):
 
             st = jb.safety_type
             direction = chosen_type.get("direction", "")
-            suffix = "R" if direction == "REAR" else ("F" if direction == "FRONT" else "")
+            display_direction = direction if config.has_directions else ""
+            suffix = ""
+            if config.has_directions:
+                suffix = "R" if direction == "REAR" else ("F" if direction == "FRONT" else "")
             name = f"{config.is_cab_prefix if st == 'IS' else config.nis_cab_prefix}{counters[st]:02d}{suffix}"
             counters[st] += 1
 
@@ -665,7 +733,7 @@ def assign_cabinets(jb_demands: Dict[str, JBDemand], config: IOConfig):
                 safety_type=st,
                 type_name=chosen_type["name"],
                 limits=chosen_type["limits"],
-                direction=direction,
+                direction=display_direction,
                 config=config,
             )
             new_cab.add_jb(jb)

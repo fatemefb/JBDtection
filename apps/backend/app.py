@@ -25,7 +25,6 @@ import uuid
 import threading
 from datetime import datetime, timedelta
 import copy
-
 import fcntl
 # اصلاح مسیرهای import
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -362,6 +361,11 @@ def get_platform_specific_extractor(tesseract_path=None, excel_path=None):
         logger.info(f"سیستم عامل ناشناخته '{system}'، استفاده از استخراج کننده عمومی با قابلیت لاگینگ")
         return LoggedTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
 
+def get_io_assignment_logger(project_name: str, username: str):
+    safe_project_name = re.sub(r'[^\w\-]', '_', project_name)
+    logger_name = f"io_assignment_{safe_project_name}"
+    return get_logger(logger_name, username=username, project_name=project_name)
+
 def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_config, username):
     """پردازش task به صورت asynchronous با مدیریت بهتر وضعیت"""
     
@@ -534,20 +538,24 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
 
 def process_io_assignment_task(task_id, excel_path, project_name, config_overrides, username):
     try:
+        io_logger = get_io_assignment_logger(project_name, username)
         TaskManager.update_task(task_id, {
             'status': TaskStatus.PROCESSING,
             'progress': 10,
             'started_at': datetime.now().isoformat()
         })
         append_task_log(task_id, "Task started")
+        io_logger.info("Task %s started", task_id)
 
         project_output_dir = get_project_output_dir(project_name)
         append_task_log(task_id, f"Output directory: {project_output_dir}")
+        io_logger.info("Output directory: %s", project_output_dir)
         output_excel_filename = generate_document_filename(project_name, "IOAssignment", "xlsx")
         output_excel_path = os.path.join(project_output_dir, output_excel_filename)
 
         TaskManager.update_task(task_id, {'progress': 35})
         append_task_log(task_id, "Running IO Assignment engine")
+        io_logger.info("Running IO Assignment engine")
 
         result = run_io_assignment(
             input_excel_path=excel_path,
@@ -557,6 +565,7 @@ def process_io_assignment_task(task_id, excel_path, project_name, config_overrid
 
         TaskManager.update_task(task_id, {'progress': 75})
         append_task_log(task_id, "Engine finished, building summaries")
+        io_logger.info("Engine finished, building summaries")
 
         final_df = result['final_df']
         total_active = int((final_df['Signal_Type'] == 'ACTIVE').sum())
@@ -678,13 +687,16 @@ def process_io_assignment_task(task_id, excel_path, project_name, config_overrid
                 'summary': summary
             }, f, indent=2, ensure_ascii=False)
         append_task_log(task_id, f"Report saved: {report_path}")
+        io_logger.info("Report saved: %s", report_path)
 
         TaskManager.update_task(task_id, {'progress': 90})
         append_task_log(task_id, "Creating ZIP package")
+        io_logger.info("Creating ZIP package")
 
         zip_path = create_zip_archive(project_name, [output_excel_path, report_path], doc_type="IOAssignment")
         download_url = get_download_url(zip_path)
         append_task_log(task_id, f"ZIP created: {zip_path}")
+        io_logger.info("ZIP created: %s", zip_path)
 
         if os.path.exists(excel_path):
             try:
@@ -709,11 +721,14 @@ def process_io_assignment_task(task_id, excel_path, project_name, config_overrid
         }
 
         TaskManager.update_task(task_id, to_json_safe(final_result))
-        logger.info(f"IO Assignment Task {task_id}: پردازش با موفقیت تکمیل شد")
+        io_logger.info("IO Assignment Task %s completed successfully", task_id)
         append_task_log(task_id, "Task completed")
     except Exception as e:
         logger.error(f"IO Assignment Task {task_id}: خطا در پردازش - {str(e)}")
         logger.error(traceback.format_exc())
+        io_logger = get_io_assignment_logger(project_name, username)
+        io_logger.error("IO Assignment Task %s failed: %s", task_id, str(e))
+        io_logger.error(traceback.format_exc())
         append_task_log(task_id, f"Task failed: {str(e)}")
         TaskManager.update_task(task_id, {
             'status': TaskStatus.FAILED,

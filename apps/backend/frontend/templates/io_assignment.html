@@ -64,26 +64,28 @@
 
         <main class="home-main io-main">
             <header class="io-header">
-                <div class="header-stack">
-                    <span id="io-kicker" class="header-kicker">IO Assignment Module</span>
-                    <h2 id="io-title">IO Assignment Module</h2>
-                    <p id="io-subtitle">تنظیم ظرفیت‌ها، بارگذاری فایل ورودی و دریافت خروجی بهینه‌سازی.</p>
-                </div>
-                <div class="header-actions">
-                    <div class="icon-group">
-                        <button class="icon-btn" id="settingsBtn" title="Settings" aria-label="Settings">
-                            <i class="fas fa-gear"></i>
-                        </button>
-                        <button class="icon-btn" id="notifyBtn" title="Notifications" aria-label="Notifications">
-                            <i class="fas fa-bell"></i>
-                        </button>
+                <div class="header-row">
+                    <div class="header-stack">
+                        <span id="io-kicker" class="header-kicker">IO Assignment Module</span>
+                        <h2 id="io-title">IO Assignment Module</h2>
+                        <p id="io-subtitle">تنظیم ظرفیت‌ها، بارگذاری فایل ورودی و دریافت خروجی بهینه‌سازی.</p>
                     </div>
-                    <div class="lang-switch">
-                        <button id="faBtn" class="lang-btn active">فارسی</button>
-                        <button id="enBtn" class="lang-btn">English</button>
-                    </div>
-                    <div class="theme-switch">
-                        <button id="themeBtn" class="theme-btn"><i class="fas fa-moon"></i></button>
+                    <div class="header-actions">
+                        <div class="icon-group">
+                            <button class="icon-btn" id="settingsBtn" title="Settings" aria-label="Settings">
+                                <i class="fas fa-gear"></i>
+                            </button>
+                            <button class="icon-btn" id="notifyBtn" title="Notifications" aria-label="Notifications">
+                                <i class="fas fa-bell"></i>
+                            </button>
+                        </div>
+                        <div class="lang-switch">
+                            <button id="faBtn" class="lang-btn active">فارسی</button>
+                            <button id="enBtn" class="lang-btn">English</button>
+                        </div>
+                        <div class="theme-switch">
+                            <button id="themeBtn" class="theme-btn"><i class="fas fa-moon"></i></button>
+                        </div>
                     </div>
                 </div>
             </header>
@@ -101,8 +103,21 @@
                                 <option value="1">1</option>
                                 <option value="2">2</option>
                                 <option value="3" selected>3</option>
+                                <option value="4">4</option>
+                                <option value="5">5</option>
+                                <option value="6">6</option>
+                                <option value="7">7</option>
+                                <option value="8">8</option>
+                                <option value="9">9</option>
+                                <option value="10">10</option>
                             </select>
                             <button class="primary-btn small" id="confirmTypes">CONFIRM</button>
+                        </div>
+                        <div class="direction-toggle">
+                            <label class="direction-toggle-label">
+                                <input type="checkbox" id="hasDirections" checked>
+                                <span id="direction-toggle-label">Has Front/Rear Access</span>
+                            </label>
                         </div>
                     </div>
 
@@ -143,20 +158,28 @@
                         <div class="config-card">
                             <h4 id="access-title">ACCESS CONFIGURATION</h4>
                             <div class="access-grid">
-                                <div class="toggle-card">
+                                <div class="toggle-card front-access">
                                     <span id="front-access-label">FRONT ACCESS</span>
                                     <div class="toggle-row">
-                                        <label>QTY <input type="number" id="qty-type1-front" value="2" min="0"></label>
-                                        <label>QTY <input type="number" id="qty-type2-front" value="2" min="0"></label>
-                                        <label>QTY <input type="number" id="qty-type3-front" value="2" min="0"></label>
+                                        <label data-type="1"><span class="qty-type-label">TYPE 1</span> QTY <input type="number" id="qty-type1-front" data-type="1" value="2" min="0"></label>
+                                        <label data-type="2"><span class="qty-type-label">TYPE 2</span> QTY <input type="number" id="qty-type2-front" data-type="2" value="2" min="0"></label>
+                                        <label data-type="3"><span class="qty-type-label">TYPE 3</span> QTY <input type="number" id="qty-type3-front" data-type="3" value="2" min="0"></label>
                                     </div>
                                 </div>
-                                <div class="toggle-card">
+                                <div class="toggle-card rear-access">
                                     <span id="rear-access-label">REAR ACCESS</span>
                                     <div class="toggle-row">
-                                        <label>QTY <input type="number" id="qty-type1-rear" value="2" min="0"></label>
-                                        <label>QTY <input type="number" id="qty-type2-rear" value="2" min="0"></label>
-                                        <label>QTY <input type="number" id="qty-type3-rear" value="2" min="0"></label>
+                                        <label data-type="1"><span class="qty-type-label">TYPE 1</span> QTY <input type="number" id="qty-type1-rear" data-type="1" value="2" min="0"></label>
+                                        <label data-type="2"><span class="qty-type-label">TYPE 2</span> QTY <input type="number" id="qty-type2-rear" data-type="2" value="2" min="0"></label>
+                                        <label data-type="3"><span class="qty-type-label">TYPE 3</span> QTY <input type="number" id="qty-type3-rear" data-type="3" value="2" min="0"></label>
+                                    </div>
+                                </div>
+                                <div class="toggle-card single-access" id="singleAccessCard">
+                                    <span id="all-access-label">ALL ACCESS</span>
+                                    <div class="toggle-row">
+                                        <label data-type="1"><span class="qty-type-label">TYPE 1</span> QTY <input type="number" id="qty-type1" data-type="1" value="4" min="0"></label>
+                                        <label data-type="2"><span class="qty-type-label">TYPE 2</span> QTY <input type="number" id="qty-type2" data-type="2" value="4" min="0"></label>
+                                        <label data-type="3"><span class="qty-type-label">TYPE 3</span> QTY <input type="number" id="qty-type3" data-type="3" value="4" min="0"></label>
                                     </div>
                                 </div>
                             </div>
@@ -165,7 +188,7 @@
 
                     <div class="limits-grid">
                         <div class="limits-panel active" data-type="1">
-                            <div class="limit-block" id="limits-type1-front">
+                            <div class="limit-block" id="limits-type1-front" data-direction="front" data-type="1">
                                 <h4>FRONT LIMITS (TYPE 1)</h4>
                                 <div class="limit-row">
                                     <label>Max Total Boards (%) <input type="number" data-key="Max_Total_Boards" value="100"></label>
@@ -186,7 +209,7 @@
                                     <label>Relay DO <input type="number" data-key="Relay Board DO capacity" value="16.6"></label>
                                 </div>
                             </div>
-                            <div class="limit-block" id="limits-type1-rear">
+                            <div class="limit-block" id="limits-type1-rear" data-direction="rear" data-type="1">
                                 <h4>REAR LIMITS (TYPE 1)</h4>
                                 <div class="limit-row">
                                     <label>Max Total Boards (%) <input type="number" data-key="Max_Total_Boards" value="100"></label>
@@ -210,7 +233,7 @@
                         </div>
 
                         <div class="limits-panel" data-type="2">
-                            <div class="limit-block" id="limits-type2-front">
+                            <div class="limit-block" id="limits-type2-front" data-direction="front" data-type="2">
                                 <h4>FRONT LIMITS (TYPE 2)</h4>
                                 <div class="limit-row">
                                     <label>Max Total Boards (%) <input type="number" data-key="Max_Total_Boards" value="100"></label>
@@ -231,7 +254,7 @@
                                     <label>Relay DO <input type="number" data-key="Relay Board DO capacity" value="16.6"></label>
                                 </div>
                             </div>
-                            <div class="limit-block" id="limits-type2-rear">
+                            <div class="limit-block" id="limits-type2-rear" data-direction="rear" data-type="2">
                                 <h4>REAR LIMITS (TYPE 2)</h4>
                                 <div class="limit-row">
                                     <label>Max Total Boards (%) <input type="number" data-key="Max_Total_Boards" value="100"></label>
@@ -255,7 +278,7 @@
                         </div>
 
                         <div class="limits-panel" data-type="3">
-                            <div class="limit-block" id="limits-type3-front">
+                            <div class="limit-block" id="limits-type3-front" data-direction="front" data-type="3">
                                 <h4>FRONT LIMITS (TYPE 3)</h4>
                                 <div class="limit-row">
                                     <label>Max Total Boards (%) <input type="number" data-key="Max_Total_Boards" value="100"></label>
@@ -276,7 +299,7 @@
                                     <label>Relay DO <input type="number" data-key="Relay Board DO capacity" value="16.6"></label>
                                 </div>
                             </div>
-                            <div class="limit-block" id="limits-type3-rear">
+                            <div class="limit-block" id="limits-type3-rear" data-direction="rear" data-type="3">
                                 <h4>REAR LIMITS (TYPE 3)</h4>
                                 <div class="limit-row">
                                     <label>Max Total Boards (%) <input type="number" data-key="Max_Total_Boards" value="100"></label>
@@ -432,10 +455,12 @@
                 'io-subtitle': 'تنظیم ظرفیت‌ها، بارگذاری فایل ورودی و دریافت خروجی بهینه‌سازی.',
                 'config-title': 'ورودی تنظیمات کابینت',
                 'type-count-label': 'تعداد تیپ کابینت',
+                'direction-toggle-label': 'دارای دسترسی جلو/عقب',
                 'channels-title': 'ظرفیت کانال‌ها (سراسری)',
                 'access-title': 'پیکربندی دسترسی',
                 'front-access-label': 'دسترسی جلو',
                 'rear-access-label': 'دسترسی عقب',
+                'all-access-label': 'دسترسی کلی',
                 'upload-title': 'بارگذاری فایل ورودی',
                 'project-label': 'نام پروژه',
                 'project-title': 'اطلاعات پروژه',
@@ -475,10 +500,12 @@
                 'io-subtitle': 'Tune capacities, upload input, and export optimized outputs.',
                 'config-title': 'Cabinet configuration input',
                 'type-count-label': 'Select number of cabinet types',
+                'direction-toggle-label': 'Has front/rear access',
                 'channels-title': 'Board channel capacities (global)',
                 'access-title': 'Access configuration',
                 'front-access-label': 'Front access',
                 'rear-access-label': 'Rear access',
+                'all-access-label': 'All access',
                 'upload-title': 'Upload input file',
                 'project-label': 'Project name',
                 'project-title': 'Project information',
@@ -522,9 +549,36 @@
         const settingsBtn = document.getElementById('settingsBtn');
         const notifyBtn = document.getElementById('notifyBtn');
         const typeCount = document.getElementById('typeCount');
+        const hasDirections = document.getElementById('hasDirections');
+        const maxTypes = 10;
 
         let currentLang = localStorage.getItem('lang') || 'fa';
         let currentTheme = localStorage.getItem('theme') || 'dark';
+        const englishFormatter = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
+
+        function toEnglishDigits(value) {
+            if (value === null || value === undefined) {
+                return '';
+            }
+            return String(value)
+                .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+                .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+        }
+
+        function formatNumber(value, maxFractionDigits = 1) {
+            const num = Number(value);
+            if (!Number.isFinite(num)) {
+                return '0';
+            }
+            if (maxFractionDigits === 0) {
+                return englishFormatter.format(Math.round(num));
+            }
+            return new Intl.NumberFormat('en-US', { maximumFractionDigits: maxFractionDigits }).format(num);
+        }
+
+        function formatPercent(value) {
+            return `${formatNumber(value, 1)}%`;
+        }
 
         function setLang(lang) {
             document.documentElement.dir = lang === 'fa' ? 'rtl' : 'ltr';
@@ -590,15 +644,106 @@
             }
         });
 
-        document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                const type = btn.dataset.type;
-                document.querySelectorAll('.limits-panel').forEach(panel => {
-                    panel.classList.toggle('active', panel.dataset.type === type);
+        function bindTabButtons() {
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                if (btn.dataset.bound === 'true') {
+                    return;
+                }
+                btn.dataset.bound = 'true';
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    const type = btn.dataset.type;
+                    document.querySelectorAll('.limits-panel').forEach(panel => {
+                        panel.classList.toggle('active', panel.dataset.type === type);
+                    });
                 });
             });
+        }
+
+        function ensureTypeControls() {
+            const tabRow = document.querySelector('.tab-row');
+            const frontRow = document.querySelector('.front-access .toggle-row');
+            const rearRow = document.querySelector('.rear-access .toggle-row');
+            const singleRow = document.querySelector('.single-access .toggle-row');
+            const limitsGrid = document.querySelector('.limits-grid');
+            const templatePanel = document.querySelector('.limits-panel[data-type="3"]');
+
+            for (let i = 1; i <= maxTypes; i += 1) {
+                if (!document.querySelector(`.tab-btn[data-type="${i}"]`)) {
+                    const tab = document.createElement('button');
+                    tab.className = 'tab-btn';
+                    tab.dataset.type = String(i);
+                    tab.textContent = `TYPE ${i}`;
+                    tabRow.appendChild(tab);
+                }
+
+                if (frontRow && !document.getElementById(`qty-type${i}-front`)) {
+                    const label = document.createElement('label');
+                    label.dataset.type = String(i);
+                    label.innerHTML = `<span class="qty-type-label">TYPE ${i}</span> QTY <input type="number" id="qty-type${i}-front" data-type="${i}" value="2" min="0">`;
+                    frontRow.appendChild(label);
+                }
+                if (rearRow && !document.getElementById(`qty-type${i}-rear`)) {
+                    const label = document.createElement('label');
+                    label.dataset.type = String(i);
+                    label.innerHTML = `<span class="qty-type-label">TYPE ${i}</span> QTY <input type="number" id="qty-type${i}-rear" data-type="${i}" value="2" min="0">`;
+                    rearRow.appendChild(label);
+                }
+                if (singleRow && !document.getElementById(`qty-type${i}`)) {
+                    const label = document.createElement('label');
+                    label.dataset.type = String(i);
+                    label.innerHTML = `<span class="qty-type-label">TYPE ${i}</span> QTY <input type="number" id="qty-type${i}" data-type="${i}" value="4" min="0">`;
+                    singleRow.appendChild(label);
+                }
+
+                if (!document.querySelector(`.limits-panel[data-type="${i}"]`) && templatePanel) {
+                    const panel = templatePanel.cloneNode(true);
+                    panel.dataset.type = String(i);
+                    panel.classList.remove('active');
+                    panel.querySelectorAll('.limit-block').forEach(block => {
+                        const direction = block.dataset.direction || '';
+                        block.dataset.type = String(i);
+                        block.id = `limits-type${i}-${direction}`;
+                        const title = block.querySelector('h4');
+                        if (title) {
+                            title.textContent = `${direction.toUpperCase()} LIMITS (TYPE ${i})`;
+                        }
+                    });
+                    limitsGrid.appendChild(panel);
+                }
+            }
+
+            bindTabButtons();
+            normalizeNumberInputs();
+        }
+
+        function syncDirectionMode() {
+            const useDirections = hasDirections.checked;
+            document.querySelectorAll('.front-access, .rear-access').forEach(card => {
+                card.style.display = useDirections ? 'block' : 'none';
+            });
+            const singleAccess = document.getElementById('singleAccessCard');
+            if (singleAccess) {
+                singleAccess.style.display = useDirections ? 'none' : 'block';
+            }
+            document.querySelectorAll('.limit-block[data-direction=\"rear\"]').forEach(block => {
+                block.style.display = useDirections ? '' : 'none';
+            });
+            document.querySelectorAll('.limit-block[data-direction=\"front\"]').forEach(block => {
+                const title = block.querySelector('h4');
+                const typeLabel = block.dataset.type;
+                if (!title || !typeLabel) {
+                    return;
+                }
+                title.textContent = useDirections
+                    ? `FRONT LIMITS (TYPE ${typeLabel})`
+                    : `LIMITS (TYPE ${typeLabel})`;
+            });
+        }
+
+        hasDirections.addEventListener('change', () => {
+            syncDirectionMode();
         });
 
         document.getElementById('confirmTypes').addEventListener('click', () => {
@@ -607,6 +752,23 @@
                 const type = parseInt(btn.dataset.type, 10);
                 btn.style.display = type <= count ? 'inline-flex' : 'none';
             });
+            document.querySelectorAll('label[data-type]').forEach(label => {
+                const type = parseInt(label.dataset.type, 10);
+                if (!Number.isNaN(type)) {
+                    label.style.display = type <= count ? '' : 'none';
+                }
+            });
+            document.querySelectorAll('.limits-panel').forEach(panel => {
+                const type = parseInt(panel.dataset.type, 10);
+                panel.style.display = type <= count ? '' : 'none';
+            });
+            const activeTab = document.querySelector('.tab-btn.active');
+            if (!activeTab || parseInt(activeTab.dataset.type, 10) > count) {
+                const first = document.querySelector(`.tab-btn[data-type="1"]`);
+                if (first) {
+                    first.click();
+                }
+            }
         });
 
         function collectLimits(typeKey, directionKey) {
@@ -636,42 +798,60 @@
             };
 
             const cabinet_plan = [];
-            const priorities = [
-                { type: "Type 1", direction: "REAR", qtyId: "qty-type1-rear" },
-                { type: "Type 1", direction: "FRONT", qtyId: "qty-type1-front" },
-                { type: "Type 2", direction: "REAR", qtyId: "qty-type2-rear" },
-                { type: "Type 2", direction: "FRONT", qtyId: "qty-type2-front" },
-                { type: "Type 3", direction: "REAR", qtyId: "qty-type3-rear" },
-                { type: "Type 3", direction: "FRONT", qtyId: "qty-type3-front" }
-            ];
-
-            priorities.forEach((item, index) => {
-                const qty = parseInt(document.getElementById(item.qtyId).value || '0', 10);
-                if (qty > 0) {
-                    cabinet_plan.push({
-                        type: item.type,
-                        direction: item.direction,
-                        quantity: qty,
-                        priority: index + 1
+            const useDirections = hasDirections.checked;
+            const count = parseInt(typeCount.value, 10);
+            if (useDirections) {
+                let priority = 1;
+                for (let i = 1; i <= count; i += 1) {
+                    ["REAR", "FRONT"].forEach(direction => {
+                        const qtyId = `qty-type${i}-${direction.toLowerCase()}`;
+                        const qtyInput = document.getElementById(qtyId);
+                        const qty = parseInt((qtyInput && qtyInput.value) || '0', 10);
+                        if (qty > 0) {
+                            cabinet_plan.push({
+                                type: `Type ${i}`,
+                                direction: direction,
+                                quantity: qty,
+                                priority: priority
+                            });
+                            priority += 1;
+                        }
                     });
+                }
+            } else {
+                for (let i = 1; i <= count; i += 1) {
+                    const qtyInput = document.getElementById(`qty-type${i}`);
+                    const qty = parseInt((qtyInput && qtyInput.value) || '0', 10);
+                    if (qty > 0) {
+                        cabinet_plan.push({
+                            type: `Type ${i}`,
+                            direction: "SINGLE",
+                            quantity: qty,
+                            priority: i
+                        });
+                    }
+                }
+            }
+
+            const cabinet_limits = {};
+            const typeMap = Array.from({ length: count }, (_, idx) => {
+                const n = idx + 1;
+                return { name: `Type ${n}`, key: `type${n}` };
+            });
+            typeMap.forEach(typeItem => {
+                if (useDirections) {
+                    ["front", "rear"].forEach(directionKey => {
+                        const directionName = directionKey.toUpperCase();
+                        const limits = collectLimits(typeItem.key, directionKey);
+                        cabinet_limits[`${typeItem.name}|${directionName}`] = limits;
+                    });
+                } else {
+                    const limits = collectLimits(typeItem.key, "front");
+                    cabinet_limits[`${typeItem.name}|SINGLE`] = limits;
                 }
             });
 
-            const cabinet_limits = {};
-            const typeMap = [
-                { name: "Type 1", key: "type1" },
-                { name: "Type 2", key: "type2" },
-                { name: "Type 3", key: "type3" }
-            ];
-            typeMap.forEach(typeItem => {
-                ["front", "rear"].forEach(directionKey => {
-                    const directionName = directionKey.toUpperCase();
-                    const limits = collectLimits(typeItem.key, directionKey);
-                    cabinet_limits[`${typeItem.name}|${directionName}`] = limits;
-                });
-            });
-
-            return { channels, cabinet_plan, cabinet_limits };
+            return { channels, cabinet_plan, cabinet_limits, has_directions: useDirections };
         }
 
         document.getElementById('ioForm').addEventListener('submit', async (e) => {
@@ -742,16 +922,16 @@
 
         function handleCompleted(result) {
             const summary = result.summary || {};
-            document.getElementById('stat-active').textContent = summary.total_active || 0;
-            document.getElementById('stat-hot').textContent = summary.total_hot_spares || 0;
-            document.getElementById('stat-spare').textContent = summary.total_spares || 0;
-            document.getElementById('stat-cabinets').textContent = summary.cabinet_count || 0;
-            document.getElementById('metric-total').textContent = summary.total_signals || 0;
-            document.getElementById('metric-compliance').textContent = `${summary.hot_spare_compliance || 0}%`;
+            document.getElementById('stat-active').textContent = formatNumber(summary.total_active || 0, 0);
+            document.getElementById('stat-hot').textContent = formatNumber(summary.total_hot_spares || 0, 0);
+            document.getElementById('stat-spare').textContent = formatNumber(summary.total_spares || 0, 0);
+            document.getElementById('stat-cabinets').textContent = formatNumber(summary.cabinet_count || 0, 0);
+            document.getElementById('metric-total').textContent = formatNumber(summary.total_signals || 0, 0);
+            document.getElementById('metric-compliance').textContent = formatPercent(summary.hot_spare_compliance || 0);
             const expectedLabel = currentLang === 'fa' ? 'انتظار' : 'Expected';
-            document.getElementById('metric-compliance-sub').textContent = `${expectedLabel}: ${summary.expected_hot_spares || 0}`;
-            document.getElementById('metric-cabinets').textContent = summary.cabinet_count || 0;
-            document.getElementById('metric-spare').textContent = `${summary.overall_spare_capacity || 0}%`;
+            document.getElementById('metric-compliance-sub').textContent = `${expectedLabel}: ${formatNumber(summary.expected_hot_spares || 0, 0)}`;
+            document.getElementById('metric-cabinets').textContent = formatNumber(summary.cabinet_count || 0, 0);
+            document.getElementById('metric-spare').textContent = formatPercent(summary.overall_spare_capacity || 0);
             document.getElementById('logOutput').textContent = currentLang === 'fa' ? 'پردازش تکمیل شد.' : 'Processing completed.';
 
             const apiBase = `${window.location.protocol}//${window.location.host}`;
@@ -774,6 +954,19 @@
             document.getElementById('processBtn').disabled = false;
 
             renderCabinets(result.cabinets || []);
+        }
+
+        function normalizeNumberInputs() {
+            document.querySelectorAll('input[type="number"]').forEach((input) => {
+                input.setAttribute('lang', 'en');
+                input.setAttribute('dir', 'ltr');
+                input.addEventListener('input', () => {
+                    const normalized = toEnglishDigits(input.value);
+                    if (input.value !== normalized) {
+                        input.value = normalized;
+                    }
+                });
+            });
         }
 
         function renderCabinets(cabinets) {
@@ -800,14 +993,14 @@
                     </div>
                     <div class="cabinet-metrics">
                         <div class="metric-line">
-                            <span>Rail Capacity</span>
-                            <strong>${cab.rail_used}/${cab.rail_limit || '-'} (${cab.rail_pct}%)</strong>
-                        </div>
-                        <div class="metric-line">
-                            <span>Board Slot Capacity</span>
-                            <strong>${cab.board_slots_used}/${cab.board_slots_max || '-'} (${cab.board_slot_pct}%)</strong>
-                        </div>
-                        <div class="limit-tag">${cab.limiting_factor}</div>
+                        <span>Rail Capacity</span>
+                        <strong>${formatNumber(cab.rail_used, 0)}/${toEnglishDigits(cab.rail_limit || '-')} (${formatPercent(cab.rail_pct)})</strong>
+                    </div>
+                    <div class="metric-line">
+                        <span>Board Slot Capacity</span>
+                        <strong>${formatNumber(cab.board_slots_used, 0)}/${toEnglishDigits(cab.board_slots_max || '-')} (${formatPercent(cab.board_slot_pct)})</strong>
+                    </div>
+                    <div class="limit-tag">${toEnglishDigits(cab.limiting_factor)}</div>
                     </div>
                     <div class="tile-grid">
                         ${visibleTiles.map(board => {
@@ -825,10 +1018,10 @@
                             </span>
                             `;
                         }).join('')}
-                        ${remaining ? `<span class="tile empty">+${remaining}</span>` : ''}
+                        ${remaining ? `<span class="tile empty">+${formatNumber(remaining, 0)}</span>` : ''}
                     </div>
                     <div class="tile-caption">
-                        ${boards.length ? `${boards.length} boards` : 'No boards'}
+                        ${boards.length ? `${formatNumber(boards.length, 0)} boards` : 'No boards'}
                     </div>
                 `;
                 card.addEventListener('click', () => showCabinetDetail(cab));
@@ -857,12 +1050,12 @@
                     tooltip.innerHTML = `
                         <strong>${board.board_id}</strong>
                         <span>${board.board_type} ${board.base_io}</span>
-                        <span>${labels.capacity}: ${board.capacity || '-'}</span>
-                        <span>${labels.signals}: ${board.total_signals}</span>
-                        <span>${labels.active}: ${board.active_signals}</span>
-                        <span>${labels.hot}: ${board.hot_spares}</span>
-                        <span>${labels.spare}: ${board.spare_signals}</span>
-                        <span>${labels.fill}: ${board.fill_pct}%</span>
+                        <span>${labels.capacity}: ${formatNumber(board.capacity || 0, 0)}</span>
+                        <span>${labels.signals}: ${formatNumber(board.total_signals || 0, 0)}</span>
+                        <span>${labels.active}: ${formatNumber(board.active_signals || 0, 0)}</span>
+                        <span>${labels.hot}: ${formatNumber(board.hot_spares || 0, 0)}</span>
+                        <span>${labels.spare}: ${formatNumber(board.spare_signals || 0, 0)}</span>
+                        <span>${labels.fill}: ${formatPercent(board.fill_pct || 0)}</span>
                     `;
                     tooltip.style.display = 'flex';
                 });
@@ -875,16 +1068,20 @@
                 });
             });
         }
+        ensureTypeControls();
+        normalizeNumberInputs();
+        bindTabButtons();
+        syncDirectionMode();
 
         function showCabinetDetail(cab) {
             const detailBody = document.querySelector('#cabinetDetail .detail-body');
             const units = (cab.jb_list || []).map(jb => `<li>${jb}</li>`).join('');
             const boardRows = (cab.boards || [])
                 .slice(0, 8)
-                .map(board => `<div class="detail-row"><strong>${board.board_id}</strong><span>${board.total_signals}/${board.capacity || '-'}</span></div>`)
+                .map(board => `<div class="detail-row"><strong>${board.board_id}</strong><span>${formatNumber(board.total_signals || 0, 0)}/${formatNumber(board.capacity || 0, 0)}</span></div>`)
                 .join('');
             const relayRows = Object.entries(cab.relay_board_counts || {})
-                .map(([key, count]) => `<div class="detail-row"><strong>${key.replace('Relay Board ', 'Relay ').replace(' capacity', '')}</strong><span>${count}</span></div>`)
+                .map(([key, count]) => `<div class="detail-row"><strong>${key.replace('Relay Board ', 'Relay ').replace(' capacity', '')}</strong><span>${formatNumber(count || 0, 0)}</span></div>`)
                 .join('');
             detailBody.innerHTML = `
                 <div class="detail-row">
@@ -897,11 +1094,11 @@
                 </div>
                 <div class="detail-row">
                     <strong>Rail</strong>
-                    <span>${cab.rail_used}/${cab.rail_limit || '-'} (${cab.rail_pct}%)</span>
+                    <span>${formatNumber(cab.rail_used || 0, 0)}/${toEnglishDigits(cab.rail_limit || '-')} (${formatPercent(cab.rail_pct || 0)})</span>
                 </div>
                 <div class="detail-row">
                     <strong>Limiting</strong>
-                    <span>${cab.limiting_factor}</span>
+                    <span>${toEnglishDigits(cab.limiting_factor)}</span>
                 </div>
                 <div class="detail-section">
                     <h5>Boards</h5>

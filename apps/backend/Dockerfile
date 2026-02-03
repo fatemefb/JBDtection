@@ -107,6 +107,7 @@ RUN rm -f /etc/apt/sources.list.d/*.list && \
       libopenjp2-7 zlib1g libleptonica-dev \
       libgomp1 libicu66 libpango-1.0-0 libcairo2 \
       libgl1 libglib2.0-0 python3-tk \
+      libpq5 curl \
       && rm -rf /var/lib/apt/lists/*
 
 RUN ln -sf /usr/bin/python3.8 /usr/bin/python && \
@@ -127,17 +128,18 @@ RUN mkdir -p /home/devio/JB-outputs /home/devio/JB-logs && \
 ENV TESSDATA_PREFIX=/usr/local/share/tessdata
 ENV TESSERACT_PATH=/usr/local/bin/tesseract
 ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+ENV TZ=Asia/Tehran
+ENV DATABASE_URL=postgresql+psycopg2://vakav:vakav_password@postgres:5432/vakav
 
 WORKDIR /app
 
 COPY apps/backend/requirements-linux.txt /app/
 RUN pip install --upgrade pip \
-    && pip install --ignore-installed --prefer-binary --no-cache-dir -r requirements-linux.txt \
-    && pip install gunicorn
+    && pip install --ignore-installed --prefer-binary --no-cache-dir -r requirements-linux.txt
 
 COPY apps /app/apps
 
 VOLUME ["/home/devio/JB-outputs", "/home/devio/JB-logs"]
 
-CMD ["gunicorn --workers 1 --threads 4 --bind 0.0.0.0:5000 app:app"]
+CMD ["gunicorn", "--workers", "1", "--threads", "4", "--bind", "0.0.0.0:5000", "app:app"]
 

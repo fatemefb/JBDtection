@@ -32,14 +32,14 @@
         }
 
         body.light {
-            --bg-0: #f4f7fb;
+            --bg-0: #f6f7fb;
             --bg-1: #ffffff;
-            --panel-bg: rgba(255, 255, 255, 0.92);
-            --panel-border: rgba(24, 44, 72, 0.12);
-            --text-1: #1b2636;
-            --text-2: #5b6e85;
-            --shadow-strong: 0 18px 45px rgba(21, 35, 60, 0.18);
-            --shadow-soft: 0 10px 26px rgba(21, 35, 60, 0.12);
+            --panel-bg: rgba(255, 255, 255, 0.96);
+            --panel-border: rgba(20, 34, 54, 0.08);
+            --text-1: #1c2533;
+            --text-2: #6a7a90;
+            --shadow-strong: 0 18px 45px rgba(21, 35, 60, 0.14);
+            --shadow-soft: 0 10px 26px rgba(21, 35, 60, 0.1);
         }
 
         .io-main {
@@ -61,7 +61,7 @@
         }
 
         body.light .io-header {
-            background: linear-gradient(140deg, #ffffff, #eef3fb);
+            background: linear-gradient(140deg, #ffffff, #f2f5fb);
         }
 
         .io-header::after {
@@ -101,6 +101,62 @@
             display: flex;
             align-items: center;
             gap: 14px;
+        }
+
+        .direction-toggle {
+            margin-top: 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--text-2);
+        }
+
+        .direction-toggle-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 700;
+            font-size: 1rem;
+            padding: 8px 14px;
+            border-radius: 12px;
+            border: 1px solid var(--panel-border);
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .direction-toggle input {
+            width: 22px;
+            height: 22px;
+            accent-color: var(--primary-color);
+            transform: scale(1.05);
+        }
+        
+        .direction-toggle input:checked {
+            box-shadow: 0 0 0 3px rgba(35, 211, 199, 0.18);
+        }
+
+        .single-access {
+            display: none;
+        }
+
+        .access-grid {
+            display: grid;
+            gap: 18px;
+        }
+
+        .toggle-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .qty-type-label {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 8px;
+            background: rgba(35, 211, 199, 0.16);
+            color: var(--text-1);
+            font-weight: 700;
+            margin-right: 6px;
         }
 
         .icon-btn {
@@ -178,6 +234,36 @@
 
         .section-heading i {
             color: var(--secondary-color);
+        }
+
+        .section-title {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-bottom: 18px;
+        }
+
+        .config-controls {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .config-controls label {
+            font-weight: 600;
+            color: var(--text-1);
+            min-width: 200px;
+        }
+
+        .config-controls select {
+            max-width: 140px;
+        }
+
+        .config-controls .primary-btn {
+            padding: 10px 18px;
         }
 
         /* Tab Styles */

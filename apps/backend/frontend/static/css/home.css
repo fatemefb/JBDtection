@@ -29,14 +29,14 @@ body {
 }
 
 body.light {
-    --bg-deep: #f2f5f9;
+    --bg-deep: #f6f7fb;
     --bg-soft: #ffffff;
-    --panel: rgba(255, 255, 255, 0.9);
-    --panel-border: rgba(24, 44, 72, 0.12);
-    --text-primary: #1b2636;
-    --text-muted: #5f728a;
-    --shadow-strong: 0 18px 40px rgba(21, 35, 60, 0.18);
-    --shadow-soft: 0 10px 24px rgba(21, 35, 60, 0.12);
+    --panel: rgba(255, 255, 255, 0.96);
+    --panel-border: rgba(20, 34, 54, 0.08);
+    --text-primary: #1c2533;
+    --text-muted: #6a7a90;
+    --shadow-strong: 0 18px 40px rgba(21, 35, 60, 0.14);
+    --shadow-soft: 0 10px 24px rgba(21, 35, 60, 0.1);
 }
 
 .home-shell {

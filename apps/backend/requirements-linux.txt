@@ -1,5 +1,6 @@
 # Core Flask and Web Framework
 Flask==3.0.3
+Flask-Cors==4.0.1
 Werkzeug==3.0.6
 gunicorn==23.0.0
 Jinja2==3.1.6
@@ -7,6 +8,7 @@ itsdangerous==2.2.0
 click==8.1.8
 blinker==1.8.2
 MarkupSafe==2.1.5
+pydantic==2.8.2
 
 # Task Scheduling - REQUIRED for async task processing
 APScheduler==3.10.4
@@ -103,3 +105,9 @@ typing_extensions==4.13.2
 packaging==25.0
 cachetools==5.5.2
 requests-oauthlib==2.0.0
+
+#ِDataBase
+SQLAlchemy==2.0.36
+alembic==1.13.3
+psycopg2-binary==2.9.9
+python-dotenv==1.0.1
