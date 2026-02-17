@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fa" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/JB.css') }}">
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Vazirmatn:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="{{ url_for('static', filename='js/ui_preferences.js') }}"></script>
 </head>
 <body class="home-body io-body jb-body">
     <div class="home-shell">
@@ -370,12 +371,198 @@
                         </div>
                     </div>
                 </section>
+
+                <!-- DB-centric review -->
+                <section class="panel" id="jb-review-panel">
+                    <div class="panel-header top-bar">
+                        <div class="breadcrumbs">
+                            <span class="crumb"><i class="fas fa-diagram-project"></i> <span id="crumb-project">Project</span></span>
+                            <span class="crumb"><i class="fas fa-play-circle"></i> <span id="crumb-run">Run</span></span>
+                        </div>
+                        <div class="status-actions">
+                            <button class="pill status-chip" id="statusChip">STATUS: PENDING</button>
+                            <button class="secondary-btn" id="finalizeRunBtn"><i class="fas fa-flag-checkered"></i> Finalize Run</button>
+                            <button class="secondary-btn" id="downloadBundleBtn"><i class="fas fa-cloud-download-alt"></i> Download Latest Bundle</button>
+                            <button class="secondary-btn" id="exportRunBtn"><i class="fas fa-file-export"></i> Export Excel</button>
+                            <button class="ghost-btn" id="settingsBtnTop"><i class="fas fa-gear"></i></button>
+                        </div>
+                    </div>
+
+                    <div class="summary-row" id="runSummary" style="display:none;">
+                        <div class="pill">Project: <span id="sumProject"></span></div>
+                        <div class="pill">Status: <span id="sumStatus"></span></div>
+                        <div class="pill">Stage: <span id="sumStage"></span></div>
+                        <div class="pill">Last Updated: <span id="sumUpdated"></span></div>
+                    </div>
+
+                    <div class="metrics-row">
+                        <div class="metric-card">
+                            <span class="metric-label">Total IO Rows</span>
+                            <span class="metric-value" id="metric-total-rows">0</span>
+                        </div>
+                        <div class="metric-card">
+                            <span class="metric-label">Matched %</span>
+                            <span class="metric-value" id="metric-matched-pct">0%</span>
+                        </div>
+                        <div class="metric-card">
+                            <span class="metric-label">Unmatched</span>
+                            <span class="metric-value" id="metric-unmatched">0</span>
+                        </div>
+                        <div class="metric-card danger">
+                            <span class="metric-label">Errors</span>
+                            <span class="metric-value" id="metric-errors">0</span>
+                        </div>
+                        <div class="metric-card warning">
+                            <span class="metric-label">Warnings</span>
+                            <span class="metric-value" id="metric-warnings">0</span>
+                        </div>
+                        <div class="metric-card">
+                            <span class="metric-label">Last Updated</span>
+                            <span class="metric-value small" id="metric-updated">-</span>
+                        </div>
+                    </div>
+
+                    <div class="db-grid">
+                        <aside class="filters-panel">
+                            <div class="filters-header">
+                                <h4>Filters Panel</h4>
+                                <div class="inline-form small">
+                                    <label class="compact">Project Name
+                                        <input type="text" id="projectLookupInput" list="projectLookupList" placeholder="Search project name...">
+                                        <input type="hidden" id="runIdInput">
+                                    </label>
+                                    <datalist id="projectLookupList"></datalist>
+                                    <button class="primary-btn" id="loadRunBtn">بارگذاری</button>
+                                </div>
+                            </div>
+                            <div class="filter-block">
+                                <input type="text" id="ioSearch" class="search-input" placeholder="Search IO / Tag...">
+                            </div>
+                            <div class="filter-block">
+                                <p class="filter-title">Match Status</p>
+                                <label class="checkbox"><input type="checkbox" id="chkMatched" checked> Matched</label>
+                                <label class="checkbox"><input type="checkbox" id="chkUnmatched" checked> Unmatched</label>
+                                <label class="checkbox"><input type="checkbox" id="chkPartial"> Partial</label>
+                            </div>
+                            <div class="filter-block">
+                                <p class="filter-title">Severity</p>
+                                <label class="checkbox"><input type="checkbox" id="sevError" checked> Error</label>
+                                <label class="checkbox"><input type="checkbox" id="sevWarning" checked> Warning</label>
+                                <label class="checkbox"><input type="checkbox" id="sevInfo" checked> Info</label>
+                            </div>
+                            <div class="filter-block issue-filters">
+                                <p class="filter-title" id="issue-filter-title">Issue Filters</p>
+                                <input type="text" id="issueSearch" class="search-input" placeholder="Search issue message/code...">
+                                <div class="inline-filter-row">
+                                    <label class="compact">Issue Status
+                                        <select id="issueStatusFilter">
+                                            <option value="">All</option>
+                                            <option value="open">Open</option>
+                                            <option value="resolved">Resolved</option>
+                                            <option value="muted">Muted</option>
+                                        </select>
+                                    </label>
+                                    <label class="compact">Issue Code
+                                        <select id="issueCodeFilter">
+                                            <option value="">All Codes</option>
+                                        </select>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="filter-block toggles">
+                                <label class="switch-row">
+                                    <span>Only rows with issues</span>
+                                    <input type="checkbox" id="toggleIssueRows">
+                                </label>
+                                <label class="switch-row">
+                                    <span>Show empty fields</span>
+                                    <input type="checkbox" id="toggleEmptyFields">
+                                </label>
+                            </div>
+                            <div class="filter-block range-row">
+                                <p class="filter-title">Row index range</p>
+                                <div class="range-inputs">
+                                    <input type="number" id="rangeFrom" min="1" value="1">
+                                    <input type="number" id="rangeTo" min="1" value="10">
+                                </div>
+                            </div>
+                            <div class="filter-block chips">
+                                <p class="filter-title" id="detected-jb-title">Detected JBs</p>
+                                <div class="chip-row" id="detectedJbChips">
+                                    <span class="muted" id="detectedJbEmpty">No JB detected</span>
+                                </div>
+                            </div>
+                        </aside>
+
+                        <div class="io-panel">
+                            <div class="panel-subheader">
+                                <h4 class="table-title">IO List</h4>
+                                <div class="table-toolbar inline">
+                                    <button class="secondary-btn" id="refreshIssues">فیلتر</button>
+                                    <button class="secondary-btn" id="addRowBtn"><i class="fas fa-plus"></i> ردیف جدید</button>
+                                </div>
+                            </div>
+                            <div class="table-wrapper">
+                                <table class="data-table" id="ioTable">
+                                    <thead>
+                                        <tr>
+                                            <th>#</th><th>jb</th><th>io_type</th><th>safety</th><th>location</th><th>terminal1</th><th>terminal2</th><th>src</th><th>normalized_tag</th><th>match_status</th><th>issue_count</th><th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                            <div class="pagination-row" id="paginationRow"></div>
+                        </div>
+                    </div>
+
+                    <div class="bottom-grid">
+                        <div class="issues-panel">
+                            <div class="panel-subheader"><h4>Issues Panel</h4></div>
+                            <div class="table-wrapper">
+                                <table class="data-table" id="issueTable">
+                                    <thead>
+                                        <tr>
+                                            <th>Severity</th><th>Status</th><th>Message</th><th>Explanation</th><th>Linked IO</th><th>Linked PDF</th><th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody></tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="artifacts-panel">
+                            <div class="panel-subheader">
+                                <h4>Artifacts Section</h4>
+                                <button class="primary-btn" id="downloadLatestBtn"><i class="fas fa-cloud-download-alt"></i> Download Latest Bundle</button>
+                            </div>
+                            <div class="artifact-grid" id="artifactGrid">
+                                <div class="artifact-card placeholder">No artifacts yet</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="saveToast" class="notification info">Saved</div>
+                </section>
         </div>
 
         <footer>
             <p id="footer-text">&copy; 2025 JBDetection Module. All rights reserved.</p>
         </footer>
-        </main>
+    </main>
+    </div>
+
+    <!-- Row detail modal -->
+    <div class="modal hidden" id="rowModal">
+        <div class="modal-content">
+            <button class="close-btn" id="closeModal">&times;</button>
+            <h3>جزئیات ردیف</h3>
+            <form id="rowForm">
+                <div id="rowFormFields" class="row-form-grid"></div>
+                <div class="modal-actions">
+                    <button type="submit" class="primary-btn small">ذخیره</button>
+                    <button type="button" class="ghost-btn small" id="deleteRowBtn">حذف</button>
+                </div>
+            </form>
+        </div>
     </div>
 
     <script>
@@ -392,6 +579,10 @@
                 'nav-reports': 'گزارش‌ها',
                 'nav-settings': 'تنظیمات',
                 'nav-logout': 'خروج',
+                'db-review-title': 'مرور/ویرایش رکوردهای DB',
+                'db-review-desc': 'آخرین اجرای ذخیره‌شده به‌صورت خودکار نمایش داده می‌شود. در صورت نیاز می‌توانید اجرای دیگری را انتخاب کنید.',
+                'io-search-label': 'جستجوی IO',
+                'resolve-btn': 'حل',
                 'subtitle': 'سیستم پیشرفته شناسایی و تطابق تگ‌های PDF و Excel',
                 'tab-dashboard': 'داشبورد',
                 'tab-upload': 'بارگذاری',
@@ -513,6 +704,10 @@
                 'nav-reports': 'Reports',
                 'nav-settings': 'Settings',
                 'nav-logout': 'Logout',
+                'db-review-title': 'DB Review / Edit',
+                'db-review-desc': 'Latest run loads automatically. Use manual selection if you need a different run.',
+                'io-search-label': 'Search IO',
+                'resolve-btn': 'Resolve',
                 'subtitle': 'Advanced PDF and Excel Tag Detection and Matching System',
                 'tab-dashboard': 'Dashboard',
                 'tab-upload': 'Uploads',
@@ -654,22 +849,178 @@
         let selectedColors = ['Black', 'White'];
         let currentTerminalPattern = 'two_terminal_scr';
         let currentWirePattern = 'bk_wt';
-        let currentLang = localStorage.getItem('lang') || 'fa';
-        let currentTheme = localStorage.getItem('theme') || 'dark';
+        const initialState = window.JBDUI ? window.JBDUI.getState() : {
+            lang: localStorage.getItem('lang') || 'fa',
+            theme: localStorage.getItem('theme') || 'dark'
+        };
+        let currentLang = initialState.lang;
+        let currentTheme = initialState.theme;
+        let currentRunStatus = 'pending';
+        let currentRunStage = 'import';
+        let activeRowId = null;
+        let activeRunId = null;
+        let lastLoadedRunId = localStorage.getItem('lastRunId');
+        let lastLoadedProjectId = localStorage.getItem('lastProjectId');
+        let currentIoRows = [];
+        let currentIssues = [];
+        let allProjectsLookup = [];
+        let selectedJbFilter = '';
 
         // Theme and language switch logic
         const themeBtn = document.getElementById('themeBtn');
         const faBtn = document.getElementById('faBtn');
         const enBtn = document.getElementById('enBtn');
+        const defaultIoColumns = [
+            "Loop No","Tag No","Description","P&ID No","Unit No","JB No",
+            "JB Terminal","Multi Cable","Pair/Core","Service","Location","ITR",
+            "I/O Type","Signal Type","Signal Con","Contact T","IS/NIS",
+            "terminal-1","terminal-2","SRC","Match"
+        ];
+
+        function setNodeText(selector, text) {
+            const node = document.querySelector(selector);
+            if (node) {
+                node.textContent = text;
+            }
+        }
+
+        function setNodeHTML(selector, html) {
+            const node = document.querySelector(selector);
+            if (node) {
+                node.innerHTML = html;
+            }
+        }
+
+        function setLeadingText(selector, text) {
+            const node = document.querySelector(selector);
+            if (!node) return;
+            const firstText = Array.from(node.childNodes).find((child) => child.nodeType === Node.TEXT_NODE);
+            if (firstText) {
+                firstText.textContent = `${text} `;
+            } else {
+                node.insertBefore(document.createTextNode(`${text} `), node.firstChild);
+            }
+        }
+
+        function setCheckboxLabel(inputId, labelText) {
+            const input = document.getElementById(inputId);
+            if (!input || !input.parentElement) return;
+            const label = input.parentElement;
+            const textNode = Array.from(label.childNodes).find((child) => child.nodeType === Node.TEXT_NODE);
+            if (textNode) {
+                textNode.textContent = ` ${labelText}`;
+            } else {
+                label.appendChild(document.createTextNode(` ${labelText}`));
+            }
+        }
+
+        function applyStaticTranslations(lang) {
+            const isFa = lang === 'fa';
+            updateRunStatusUI(currentRunStatus, currentRunStage);
+            setNodeHTML('#finalizeRunBtn', `<i class="fas fa-flag-checkered"></i> ${isFa ? 'نهایی‌سازی اجرا' : 'Finalize Run'}`);
+            setNodeHTML('#downloadBundleBtn', `<i class="fas fa-cloud-download-alt"></i> ${isFa ? 'دانلود آخرین بسته' : 'Download Latest Bundle'}`);
+            setNodeHTML('#exportRunBtn', `<i class="fas fa-file-export"></i> ${isFa ? 'خروجی Excel' : 'Export Excel'}`);
+            setLeadingText('#runSummary .pill:nth-child(1)', isFa ? 'پروژه:' : 'Project:');
+            setLeadingText('#runSummary .pill:nth-child(2)', isFa ? 'وضعیت:' : 'Status:');
+            setLeadingText('#runSummary .pill:nth-child(3)', isFa ? 'مرحله:' : 'Stage:');
+            setLeadingText('#runSummary .pill:nth-child(4)', isFa ? 'آخرین بروزرسانی:' : 'Last Updated:');
+            setNodeText('.metrics-row .metric-card:nth-child(1) .metric-label', isFa ? 'کل ردیف‌های IO' : 'Total IO Rows');
+            setNodeText('.metrics-row .metric-card:nth-child(2) .metric-label', isFa ? 'درصد تطابق' : 'Matched %');
+            setNodeText('.metrics-row .metric-card:nth-child(3) .metric-label', isFa ? 'بدون تطابق' : 'Unmatched');
+            setNodeText('.metrics-row .metric-card:nth-child(4) .metric-label', isFa ? 'خطاها' : 'Errors');
+            setNodeText('.metrics-row .metric-card:nth-child(5) .metric-label', isFa ? 'هشدارها' : 'Warnings');
+            setNodeText('.metrics-row .metric-card:nth-child(6) .metric-label', isFa ? 'آخرین بروزرسانی' : 'Last Updated');
+            setNodeText('.filters-header h4', isFa ? 'پنل فیلترها' : 'Filters Panel');
+            setLeadingText('.inline-form .compact', isFa ? 'نام پروژه' : 'Project Name');
+            setNodeText('#loadRunBtn', isFa ? 'بارگذاری' : 'Load');
+            const projectLookupInput = document.getElementById('projectLookupInput');
+            if (projectLookupInput) {
+                projectLookupInput.placeholder = isFa ? 'نام پروژه را جستجو کنید...' : 'Search project name...';
+            }
+            const ioSearch = document.getElementById('ioSearch');
+            if (ioSearch) ioSearch.placeholder = isFa ? 'جستجوی IO / Tag...' : 'Search IO / Tag...';
+            const issueSearch = document.getElementById('issueSearch');
+            if (issueSearch) issueSearch.placeholder = isFa ? 'جستجوی متن/کد ارور...' : 'Search issue text/code...';
+            setNodeText('.filter-block .filter-title', isFa ? 'وضعیت تطابق' : 'Match Status');
+            setCheckboxLabel('chkMatched', isFa ? 'تطابق دارد' : 'Matched');
+            setCheckboxLabel('chkUnmatched', isFa ? 'بدون تطابق' : 'Unmatched');
+            setCheckboxLabel('chkPartial', isFa ? 'نیمه‌تطابق' : 'Partial');
+            const severityTitle = document.querySelectorAll('.filter-block .filter-title')[1];
+            if (severityTitle) severityTitle.textContent = isFa ? 'شدت' : 'Severity';
+            const issueFilterTitle = document.getElementById('issue-filter-title');
+            if (issueFilterTitle) issueFilterTitle.textContent = isFa ? 'فیلتر خطاها' : 'Issue Filters';
+            const issueFilterLabels = document.querySelectorAll('.issue-filters .compact');
+            if (issueFilterLabels[0]) setLeadingText('.issue-filters .compact:nth-child(1)', isFa ? 'وضعیت خطا' : 'Issue Status');
+            if (issueFilterLabels[1]) setLeadingText('.issue-filters .compact:nth-child(2)', isFa ? 'کد خطا' : 'Issue Code');
+            const issueStatusFilter = document.getElementById('issueStatusFilter');
+            if (issueStatusFilter) {
+                const options = issueStatusFilter.querySelectorAll('option');
+                if (options[0]) options[0].textContent = isFa ? 'همه' : 'All';
+                if (options[1]) options[1].textContent = isFa ? 'باز' : 'Open';
+                if (options[2]) options[2].textContent = isFa ? 'حل‌شده' : 'Resolved';
+                if (options[3]) options[3].textContent = isFa ? 'بی‌صدا' : 'Muted';
+            }
+            const issueCodeFilter = document.getElementById('issueCodeFilter');
+            if (issueCodeFilter && issueCodeFilter.options.length) {
+                issueCodeFilter.options[0].textContent = isFa ? 'همه کدها' : 'All Codes';
+            }
+            setCheckboxLabel('sevError', isFa ? 'خطا' : 'Error');
+            setCheckboxLabel('sevWarning', isFa ? 'هشدار' : 'Warning');
+            setCheckboxLabel('sevInfo', isFa ? 'اطلاع' : 'Info');
+            const switchLabels = document.querySelectorAll('.filter-block.toggles .switch-row span');
+            if (switchLabels[0]) switchLabels[0].textContent = isFa ? 'فقط ردیف‌های دارای ایراد' : 'Only rows with issues';
+            if (switchLabels[1]) switchLabels[1].textContent = isFa ? 'نمایش فیلدهای خالی' : 'Show empty fields';
+            const rangeTitle = document.querySelector('.filter-block.range-row .filter-title');
+            if (rangeTitle) rangeTitle.textContent = isFa ? 'بازه شماره ردیف' : 'Row index range';
+            const chipsTitle = document.getElementById('detected-jb-title');
+            if (chipsTitle) chipsTitle.textContent = isFa ? 'JBهای شناسایی‌شده' : 'Detected JBs';
+            const detectedJbEmpty = document.getElementById('detectedJbEmpty');
+            if (detectedJbEmpty) detectedJbEmpty.textContent = isFa ? 'هیچ JB یافت نشد' : 'No JB detected';
+            setNodeText('.io-panel .table-title', isFa ? 'لیست IO' : 'IO List');
+            setNodeText('#refreshIssues', isFa ? 'فیلتر' : 'Filter');
+            setNodeHTML('#addRowBtn', `<i class="fas fa-plus"></i> ${isFa ? 'ردیف جدید' : 'Add Row'}`);
+            setNodeText('.issues-panel .panel-subheader h4', isFa ? 'پنل ایرادها' : 'Issues Panel');
+            const issueHeaders = document.querySelectorAll('#issueTable thead th');
+            if (issueHeaders[0]) issueHeaders[0].textContent = isFa ? 'شدت' : 'Severity';
+            if (issueHeaders[1]) issueHeaders[1].textContent = isFa ? 'وضعیت' : 'Status';
+            if (issueHeaders[2]) issueHeaders[2].textContent = isFa ? 'پیام' : 'Message';
+            if (issueHeaders[3]) issueHeaders[3].textContent = isFa ? 'توضیح' : 'Explanation';
+            if (issueHeaders[4]) issueHeaders[4].textContent = isFa ? 'IO مرتبط' : 'Linked IO';
+            if (issueHeaders[5]) issueHeaders[5].textContent = isFa ? 'PDF مرتبط' : 'Linked PDF';
+            if (issueHeaders[6]) issueHeaders[6].textContent = isFa ? 'عملیات' : 'Actions';
+            setNodeText('.artifacts-panel .panel-subheader h4', isFa ? 'بخش خروجی‌ها' : 'Artifacts Section');
+            setNodeHTML('#downloadLatestBtn', `<i class="fas fa-cloud-download-alt"></i> ${isFa ? 'دانلود آخرین بسته' : 'Download Latest Bundle'}`);
+            setNodeText('#artifactGrid .artifact-card.placeholder', isFa ? 'هنوز فایلی وجود ندارد' : 'No artifacts yet');
+            setNodeText('#saveToast', isFa ? 'ذخیره شد' : 'Saved');
+            setNodeText('#rowModal h3', isFa ? 'جزئیات ردیف' : 'Row Details');
+            const rowLabels = document.querySelectorAll('#rowForm > label');
+            const rowTextsFa = ['JB', 'I/O', 'IS/NIS', 'مکان', 'ترمینال 1', 'ترمینال 2', 'SRC', 'تطابق'];
+            const rowTextsEn = ['JB', 'I/O', 'IS/NIS', 'Location', 'Term1', 'Term2', 'SRC', 'Match'];
+            rowLabels.forEach((label, idx) => {
+                const firstText = Array.from(label.childNodes).find((child) => child.nodeType === Node.TEXT_NODE);
+                if (firstText) {
+                    firstText.textContent = `${(isFa ? rowTextsFa : rowTextsEn)[idx]} `;
+                }
+            });
+            const modalButtons = document.querySelectorAll('#rowForm .modal-actions button');
+            if (modalButtons[0]) modalButtons[0].textContent = isFa ? 'ذخیره' : 'Save';
+            if (modalButtons[1]) modalButtons[1].textContent = isFa ? 'حذف' : 'Delete';
+        }
 
         function setTheme(theme) {
             document.body.classList.remove('light', 'dark');
             document.body.classList.add(theme);
             themeBtn.innerHTML = theme === 'dark' ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
-            localStorage.setItem('theme', theme);
+            currentTheme = theme;
+            if (window.JBDUI) {
+                window.JBDUI.setTheme(theme);
+            } else {
+                localStorage.setItem('theme', theme);
+            }
         }
 
         function setLang(lang) {
+            document.documentElement.lang = lang;
             faBtn.classList.toggle('active', lang === 'fa');
             enBtn.classList.toggle('active', lang === 'en');
             document.documentElement.dir = lang === 'fa' ? 'rtl' : 'ltr';
@@ -687,8 +1038,25 @@
                     }
                 }
             });
-            
-            localStorage.setItem('lang', lang);
+            const projectInput = document.getElementById('projectName');
+            if (projectInput) {
+                projectInput.placeholder = translations[lang]['project-name-placeholder'] || (lang === 'fa' ? 'نام پروژه را وارد کنید...' : 'Enter project name...');
+            }
+            const pdfInputText = document.getElementById('pdfInput');
+            if (pdfInputText) {
+                pdfInputText.setAttribute('title', lang === 'fa' ? 'انتخاب فایل‌های PDF' : 'Select PDF files');
+            }
+            const excelInputText = document.getElementById('excelInput');
+            if (excelInputText) {
+                excelInputText.setAttribute('title', lang === 'fa' ? 'انتخاب فایل Excel' : 'Select Excel file');
+            }
+            applyStaticTranslations(lang);
+
+            if (window.JBDUI) {
+                window.JBDUI.setLang(lang);
+            } else {
+                localStorage.setItem('lang', lang);
+            }
         }
 
         themeBtn.addEventListener('click', () => {
@@ -702,6 +1070,9 @@
         // Initialize theme and language
         setTheme(currentTheme);
         setLang(currentLang);
+        if (window.JBDUI) {
+            window.JBDUI.applyMenuState();
+        }
 
         // Notification system
         function showNotification(message, type = 'info') {
@@ -737,8 +1108,12 @@
 
         if (collapseBtn && sidePanel) {
             collapseBtn.addEventListener('click', () => {
-                sidePanel.classList.toggle('collapsed');
-                document.body.classList.toggle('menu-collapsed');
+                if (window.JBDUI) {
+                    window.JBDUI.toggleMenuCollapsed();
+                } else {
+                    sidePanel.classList.toggle('collapsed');
+                    document.body.classList.toggle('menu-collapsed');
+                }
             });
         }
 
@@ -753,6 +1128,24 @@
                 showNotification(translations[currentLang]['notify-toast'], 'info');
             });
         }
+
+        window.addEventListener('storage', (event) => {
+            if (event.key === 'lang' || event.key === 'theme' || event.key === 'menuCollapsed') {
+                const state = window.JBDUI ? window.JBDUI.getState() : {
+                    lang: localStorage.getItem('lang') || 'fa',
+                    theme: localStorage.getItem('theme') || 'dark'
+                };
+                if (state.theme !== currentTheme) {
+                    setTheme(state.theme);
+                }
+                if (state.lang !== currentLang) {
+                    setLang(state.lang);
+                }
+                if (window.JBDUI) {
+                    window.JBDUI.applyMenuState();
+                }
+            }
+        });
 
         // PDF file input handler
         document.getElementById('pdfInput').addEventListener('change', (e) => {
@@ -1076,6 +1469,18 @@
                 
                 const result = await response.json();
                 
+                localStorage.setItem('lastProjectName', projectName);
+                if (result.run_id) {
+                    activeRunId = result.run_id;
+                    const runInput = document.getElementById('runIdInput');
+                    if (runInput) runInput.value = result.run_id;
+                    localStorage.setItem('lastRunId', result.run_id);
+                    if (result.project_id) {
+                        lastLoadedProjectId = result.project_id;
+                        localStorage.setItem('lastProjectId', result.project_id);
+                    }
+                }
+                
                 if (result.status === 'success' && result.task_id) {
                     // شروع polling برای بررسی وضعیت
                     pollTaskStatus(result.task_id);
@@ -1118,6 +1523,19 @@
                     
                     const data = await response.json();
                     consecutiveErrors = 0; // بازنشانی شمارنده خطاها در صورت موفقیت
+
+                    if (data.run_id) {
+                        activeRunId = data.run_id;
+                        lastLoadedRunId = data.run_id;
+                        localStorage.setItem('lastRunId', data.run_id);
+                    }
+                    if (data.project_id) {
+                        lastLoadedProjectId = data.project_id;
+                        localStorage.setItem('lastProjectId', data.project_id);
+                    }
+                    if (data.status) {
+                        updateRunStatusUI(data.status, data.stage || currentRunStage);
+                    }
                     
                     // به‌روزرسانی progress bar
                     if (data.progress !== undefined) {
@@ -1165,18 +1583,70 @@
                 }
             }, 1000); // هر 1 ثانیه
         }
+        function normalizeRunStatus(status) {
+            const raw = (status || '').toString().trim().toLowerCase();
+            if (!raw) return 'pending';
+            if (raw === 'completed') return 'finalized';
+            return raw;
+        }
+
         function getStatusText(status) {
+            const normalized = normalizeRunStatus(status);
             const statusTexts = {
                 'pending': currentLang === 'fa' ? 'در انتظار' : 'Pending',
                 'processing': currentLang === 'fa' ? 'در حال پردازش' : 'Processing',
-                'completed': currentLang === 'fa' ? 'تکمیل شد' : 'Completed',
-                'failed': currentLang === 'fa' ? 'خطا' : 'Failed'
+                'review': currentLang === 'fa' ? 'در حال بازبینی' : 'Review',
+                'finalized': currentLang === 'fa' ? 'نهایی شده' : 'Finalized',
+                'failed': currentLang === 'fa' ? 'خطا' : 'Failed',
+                'archived': currentLang === 'fa' ? 'آرشیو' : 'Archived'
             };
-            return statusTexts[status] || status;
+            return statusTexts[normalized] || normalized;
+        }
+
+        function updateRunStatusUI(status, stage = '') {
+            currentRunStatus = normalizeRunStatus(status);
+            if (stage !== undefined && stage !== null) {
+                currentRunStage = stage;
+            }
+
+            const chip = document.getElementById('statusChip');
+            if (chip) {
+                chip.classList.remove(
+                    'status-pending',
+                    'status-processing',
+                    'status-review',
+                    'status-finalized',
+                    'status-failed',
+                    'status-archived'
+                );
+                chip.classList.add(`status-${currentRunStatus}`);
+                const label = getStatusText(currentRunStatus);
+                chip.textContent = currentLang === 'fa' ? `وضعیت: ${label}` : `STATUS: ${label.toUpperCase()}`;
+            }
+
+            const sumStatus = document.getElementById('sumStatus');
+            if (sumStatus) {
+                sumStatus.textContent = getStatusText(currentRunStatus);
+            }
+
+            const sumStage = document.getElementById('sumStage');
+            if (sumStage && currentRunStage) {
+                sumStage.textContent = currentRunStage;
+            }
         }
 
         function handleTaskCompleted(data) {
             document.getElementById('progressBar').style.width = '100%';
+            updateRunStatusUI('finalized', 'finalized');
+
+            const completedRunId = data.run_id || lastLoadedRunId;
+            if (completedRunId) {
+                activeRunId = completedRunId;
+                const runInput = document.getElementById('runIdInput');
+                if (runInput) runInput.value = completedRunId;
+                localStorage.setItem('lastRunId', completedRunId);
+                loadRun(completedRunId);
+            }
             
             // نمایش نتایج
             const result = data.result;
@@ -1253,6 +1723,7 @@
 
         function handleTaskFailed(data) {
             document.getElementById('progressBar').style.width = '100%';
+            updateRunStatusUI('failed', currentRunStage);
             document.getElementById('logOutput').textContent = 
                 translations[currentLang]['error'] + `${data.error || 'خطای ناشناخته'}\n`;
             showNotification(translations[currentLang]['error'] + (data.error || 'خطای ناشناخته'), 'error');
@@ -1266,6 +1737,7 @@
 
         function handleTaskTimeout() {
             document.getElementById('progressBar').style.width = '100%';
+            updateRunStatusUI('failed', currentRunStage);
             document.getElementById('logOutput').textContent = 
                 translations[currentLang]['task-timeout-msg'];
             showNotification(translations[currentLang]['task-timeout'], 'error');
@@ -1406,6 +1878,55 @@
             }, 3000);
         });
 
+        function computeMetrics() {
+            const total = currentIoRows.length;
+            const matched = currentIoRows.filter(r => {
+                const v = (r.values || {}).Match || (r.values || {}).match_status || '';
+                return v.toString().toLowerCase().includes('match');
+            }).length;
+            const errors = currentIssues.filter(i => i.severity === 'error').length;
+            const warnings = currentIssues.filter(i => i.severity === 'warning').length;
+            const unmatched = currentIssues.length;
+            const pct = total ? Math.round((matched/total)*1000)/10 : 0;
+            document.getElementById('metric-total-rows').textContent = total;
+            document.getElementById('metric-matched-pct').textContent = pct + '%';
+            document.getElementById('metric-unmatched').textContent = unmatched;
+            document.getElementById('metric-errors').textContent = errors;
+            document.getElementById('metric-warnings').textContent = warnings;
+            const now = new Date().toLocaleString();
+            document.getElementById('metric-updated').textContent = now;
+            const sumUpdated = document.getElementById('sumUpdated');
+            if (sumUpdated) sumUpdated.textContent = now;
+        }
+
+        function buildArtifacts(data) {
+            const grid = document.getElementById('artifactGrid');
+            grid.innerHTML = '';
+            const files = [];
+            if (data.excel_path) files.push({name:'final_excel.xlsx', path:data.excel_path});
+            if (data.zip_path || data.download_url) files.push({name:'zip_bundle.zip', path:data.zip_path || data.download_url});
+            (data.annotated_pdfs||[]).forEach((p,idx)=>files.push({name:`annotated_pdf_${idx+1}.pdf`, path:p}));
+            if (data.unmatched_excel_path) files.push({name:'unmatched_excel.xlsx', path:data.unmatched_excel_path});
+            if (data.report_path) files.push({name:'report_json.json', path:data.report_path});
+            if (!files.length) {
+                grid.innerHTML = '<div class="artifact-card placeholder">No artifacts yet</div>';
+                return;
+            }
+            const apiBase = `${window.location.protocol}//${window.location.host}`;
+            files.forEach(f=>{
+                const card = document.createElement('div');
+                card.className='artifact-card';
+                card.innerHTML = `
+                    <div class="name">${f.name}</div>
+                    <div class="meta">${f.path || ''}</div>
+                    <div class="actions">
+                        <a class="secondary-btn small" href="${apiBase}/download?file=${encodeURIComponent(f.path||'')}" target="_blank">Download</a>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
         // تابع برای بررسی دسترسی به API
         async function checkApiAccess() {
             try {
@@ -1466,6 +1987,765 @@
             setTimeout(() => {
                 document.body.style.animation = '';
             }, 10);
+
+            const storedProjectName = localStorage.getItem('lastProjectName');
+            if (storedProjectName) {
+                const projectInput = document.getElementById('projectName');
+                if (projectInput) projectInput.value = storedProjectName;
+                const projectLookupInput = document.getElementById('projectLookupInput');
+                if (projectLookupInput) projectLookupInput.value = storedProjectName;
+            }
+            refreshProjectLookup().catch(() => {});
+
+            if (lastLoadedRunId) {
+                const runInput = document.getElementById('runIdInput');
+                if (runInput) runInput.value = lastLoadedRunId;
+                loadRun(lastLoadedRunId);
+            } else if (lastLoadedProjectId) {
+                fetch(`/api/projects/${lastLoadedProjectId}/runs/latest`)
+                    .then(res => res.ok ? res.json() : null)
+                    .then(data => {
+                        if (data && data.run && data.run.id) {
+                            lastLoadedRunId = data.run.id;
+                            localStorage.setItem('lastRunId', data.run.id);
+                            loadRun(data.run.id);
+                        }
+                    })
+                    .catch(()=>{});
+            }
+
+            const toggleManualBtn = document.getElementById('showManualRunBtn');
+            const manualForm = document.getElementById('manualRunForm');
+            if (toggleManualBtn && manualForm) {
+                toggleManualBtn.addEventListener('click', () => {
+                    manualForm.style.display = manualForm.style.display === 'none' ? 'flex' : 'none';
+                });
+            }
+        });
+
+        // ===== DB review logic =====
+        const ioTableBody = document.querySelector('#ioTable tbody');
+        const ioTableHeadRow = document.querySelector('#ioTable thead tr');
+        const issueTableBody = document.querySelector('#issueTable tbody');
+        const toast = document.getElementById('saveToast');
+        const modal = document.getElementById('rowModal');
+        const closeModalBtn = document.getElementById('closeModal');
+        const rowForm = document.getElementById('rowForm');
+        const deleteRowBtn = document.getElementById('deleteRowBtn');
+
+        function showToast(msg, type='info') {
+            toast.textContent = msg;
+            toast.className = `notification ${type} show`;
+            setTimeout(()=> toast.classList.remove('show'), 1600);
+        }
+
+        function normalizeProjectName(value) {
+            return (value || '')
+                .toString()
+                .trim()
+                .replace(/\s+/g, ' ')
+                .toLowerCase();
+        }
+
+        function parseRunCreatedAt(run) {
+            const candidates = [
+                run && run.created_at,
+                run && run.updated_at,
+                run && run.started_at,
+                run && run.finished_at
+            ];
+            for (const value of candidates) {
+                const parsed = value ? Date.parse(value) : NaN;
+                if (Number.isFinite(parsed)) {
+                    return parsed;
+                }
+            }
+            return 0;
+        }
+
+        async function refreshProjectLookup(force = false) {
+            if (!force && allProjectsLookup.length) {
+                return allProjectsLookup;
+            }
+            const res = await fetch('/api/projects');
+            if (!res.ok) {
+                throw new Error('projects_fetch_failed');
+            }
+            const data = await res.json();
+            allProjectsLookup = Array.isArray(data.projects) ? data.projects : [];
+
+            const lookupList = document.getElementById('projectLookupList');
+            if (lookupList) {
+                lookupList.innerHTML = '';
+                const seen = new Set();
+                allProjectsLookup.forEach((project) => {
+                    const name = (project.name || '').trim();
+                    if (!name || seen.has(name)) {
+                        return;
+                    }
+                    seen.add(name);
+                    const option = document.createElement('option');
+                    option.value = name;
+                    lookupList.appendChild(option);
+                });
+            }
+            return allProjectsLookup;
+        }
+
+        async function loadLatestRunByProjectName(rawProjectName) {
+            const lookupInput = document.getElementById('projectLookupInput');
+            const fallbackProjectInput = document.getElementById('projectName');
+            const query = (rawProjectName || lookupInput?.value || fallbackProjectInput?.value || '').trim();
+            const messages = currentLang === 'fa'
+                ? {
+                    empty: 'نام پروژه را وارد کنید.',
+                    notFound: 'پروژه‌ای با این نام پیدا نشد.',
+                    noRun: 'برای این پروژه اجرا (Run) وجود ندارد.',
+                    loadFailed: 'خطا در بارگذاری پروژه.'
+                }
+                : {
+                    empty: 'Enter a project name.',
+                    notFound: 'No project found with this name.',
+                    noRun: 'No runs found for this project.',
+                    loadFailed: 'Failed to load project.'
+                };
+
+            if (!query) {
+                showToast(messages.empty, 'error');
+                return;
+            }
+
+            try {
+                const projects = await refreshProjectLookup(true);
+                const normalizedQuery = normalizeProjectName(query);
+                const exactMatches = projects.filter((project) => normalizeProjectName(project.name) === normalizedQuery);
+                const candidates = exactMatches.length
+                    ? exactMatches
+                    : projects.filter((project) => normalizeProjectName(project.name).includes(normalizedQuery));
+
+                if (!candidates.length) {
+                    showToast(messages.notFound, 'error');
+                    return;
+                }
+
+                const latestRunCandidates = await Promise.allSettled(
+                    candidates.map(async (project) => {
+                        const latestRes = await fetch(`/api/projects/${project.id}/runs/latest`);
+                        if (!latestRes.ok) {
+                            return null;
+                        }
+                        const latestData = await latestRes.json();
+                        if (!latestData || !latestData.run || !latestData.run.id) {
+                            return null;
+                        }
+                        return {
+                            project,
+                            run: latestData.run
+                        };
+                    })
+                );
+
+                const availableRuns = latestRunCandidates
+                    .map((item) => (item.status === 'fulfilled' ? item.value : null))
+                    .filter((item) => item && item.run && item.run.id);
+
+                if (!availableRuns.length) {
+                    showToast(messages.noRun, 'warning');
+                    return;
+                }
+
+                availableRuns.sort((a, b) => parseRunCreatedAt(b.run) - parseRunCreatedAt(a.run));
+                const selected = availableRuns[0];
+
+                if (lookupInput) {
+                    lookupInput.value = selected.project.name || query;
+                }
+                if (fallbackProjectInput) {
+                    fallbackProjectInput.value = selected.project.name || query;
+                }
+                localStorage.setItem('lastProjectName', selected.project.name || query);
+                await loadRun(selected.run.id);
+            } catch (error) {
+                console.error('Project load error:', error);
+                showToast(messages.loadFailed, 'error');
+            }
+        }
+
+        async function loadRun(runId) {
+            activeRunId = runId;
+            const statusRes = await fetch(`/api/runs/${runId}/status`);
+            if (!statusRes.ok) { 
+                showToast(currentLang === 'fa' ? 'اجرا یافت نشد' : 'Run not found', 'error');
+                localStorage.removeItem('lastRunId');
+                localStorage.removeItem('lastProjectId');
+                return; 
+            }
+            const statusJson = await statusRes.json();
+            const projectId = statusJson.run.project_id;
+            let projectName = projectId;
+            try {
+                const p = await fetch(`/api/projects/${projectId}`);
+                if (p.ok) {
+                    const pj = await p.json();
+                    projectName = pj.project.name || projectId;
+                }
+            } catch(_) {}
+            const projectInput = document.getElementById('projectName');
+            if (projectInput && projectName) {
+                projectInput.value = projectName;
+                localStorage.setItem('lastProjectName', projectName);
+            }
+            const projectLookupInput = document.getElementById('projectLookupInput');
+            if (projectLookupInput && projectName) {
+                projectLookupInput.value = projectName;
+            }
+            localStorage.setItem('lastProjectId', projectId);
+            lastLoadedProjectId = projectId;
+            localStorage.setItem('lastRunId', runId);
+            lastLoadedRunId = runId;
+            const runInput = document.getElementById('runIdInput');
+            if (runInput) runInput.value = runId;
+            document.getElementById('runSummary').style.display = 'flex';
+            document.getElementById('sumProject').textContent = projectName;
+            updateRunStatusUI(statusJson.run.status, statusJson.run.stage);
+            await Promise.all([loadIO(runId), loadIssues(runId)]);
+        }
+
+        async function loadIO(runId) {
+            let columns = [...defaultIoColumns];
+            try {
+                const res = await fetch(`/api/runs/${runId}/io-list`);
+                if (res.ok) {
+                    const data = await res.json();
+                    currentIoRows = data.rows || [];
+                    if (data.columns && data.columns.length) columns = data.columns;
+                    activeIoColumns = [...columns];
+                    renderIoTable(columns, data.rows || []);
+                    renderDetectedJBChips(data.rows || []);
+                    computeMetrics();
+                    return;
+                }
+            } catch (_) {}
+            currentIoRows = [];
+            activeIoColumns = [...columns];
+            renderIoTable(columns, []);
+            renderDetectedJBChips([]);
+        }
+
+        let activeIoColumns = [...defaultIoColumns];
+
+        // initial header
+        renderIoTable(activeIoColumns, []);
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        function getCanonicalRowValues(row) {
+            const values = row && row.values ? row.values : {};
+            const pick = (field, aliases = []) => {
+                if (row && row[field] !== undefined && row[field] !== null && String(row[field]).trim() !== '') {
+                    return String(row[field]);
+                }
+                for (const alias of aliases) {
+                    const val = values ? values[alias] : '';
+                    if (val !== undefined && val !== null && String(val).trim() !== '') {
+                        return String(val);
+                    }
+                }
+                return '';
+            };
+            return {
+                jb: pick('jb', ['JB', 'JB No', 'jb']),
+                io_type: pick('io_type', ['I/O Type', 'io_type']),
+                safety: pick('safety', ['IS/NIS', 'safety']),
+                location: pick('location', ['Location', 'location']),
+                terminal1: pick('terminal1', ['terminal-1', 'terminal1', 'Terminal_First_Number']),
+                terminal2: pick('terminal2', ['terminal-2', 'terminal2', 'Terminal_Second_Number']),
+                src: pick('src', ['SRC', 'src']),
+                match_status: pick('match_status', ['Match', 'Match_Type', 'match_status'])
+            };
+        }
+
+        function getNextRowIndex() {
+            if (!currentIoRows.length) return 1;
+            const maxIdx = currentIoRows.reduce((maxVal, row) => {
+                const current = Number(row?.row_index || 0);
+                return Number.isFinite(current) ? Math.max(maxVal, current) : maxVal;
+            }, 0);
+            return maxIdx + 1;
+        }
+
+        function createDynamicField(labelText, colKey, value, readonly = false) {
+            const label = document.createElement('label');
+            label.textContent = labelText;
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.dataset.col = colKey;
+            input.value = value ?? '';
+            if (readonly) {
+                input.readOnly = true;
+            }
+            label.appendChild(input);
+            return label;
+        }
+
+        function renderRowFormFields(rowId = null) {
+            const fieldsWrap = document.getElementById('rowFormFields');
+            if (!fieldsWrap) return;
+            fieldsWrap.innerHTML = '';
+
+            const row = rowId ? currentIoRows.find((item) => item.id === rowId) : null;
+            const values = (row && row.values && typeof row.values === 'object') ? row.values : {};
+            const nextRowIndex = row ? Number(row.row_index || '') : getNextRowIndex();
+
+            fieldsWrap.appendChild(
+                createDynamicField(
+                    currentLang === 'fa' ? 'شماره ردیف' : 'Row Index',
+                    'row_index',
+                    nextRowIndex,
+                    !!rowId
+                )
+            );
+
+            (activeIoColumns || []).forEach((col) => {
+                const val = values[col] ?? '';
+                fieldsWrap.appendChild(createDynamicField(col, col, val));
+            });
+        }
+
+        function collectRowFormPayload() {
+            const payload = { values: {} };
+            const inputs = rowForm.querySelectorAll('input[data-col]');
+            inputs.forEach((input) => {
+                const col = input.dataset.col;
+                if (!col) return;
+                if (col === 'row_index') {
+                    const rowIndexVal = parseInt(input.value || '', 10);
+                    if (Number.isFinite(rowIndexVal) && rowIndexVal > 0) {
+                        payload.row_index = rowIndexVal;
+                    }
+                    return;
+                }
+                payload.values[col] = input.value ?? '';
+            });
+            return payload;
+        }
+
+        function openRowEditor(rowId = null) {
+            activeRowId = rowId;
+            rowForm.reset();
+            const rowModalTitle = document.querySelector('#rowModal h3');
+            if (rowModalTitle) {
+                rowModalTitle.textContent = rowId
+                    ? (currentLang === 'fa' ? 'ویرایش ردیف' : 'Edit Row')
+                    : (currentLang === 'fa' ? 'افزودن ردیف' : 'Add Row');
+            }
+            deleteRowBtn.style.display = rowId ? '' : 'none';
+            renderRowFormFields(rowId);
+            modal.classList.remove('hidden');
+        }
+
+        function getIssueRowIdSet() {
+            return new Set(
+                (currentIssues || [])
+                    .map((issue) => issue.io_list_row_id)
+                    .filter(Boolean)
+            );
+        }
+
+        function refreshIoIssueMarkers() {
+            const issueRowIds = getIssueRowIdSet();
+            ioTableBody.querySelectorAll('tr[data-id]').forEach((tr) => {
+                tr.classList.toggle('row-has-issue', issueRowIds.has(tr.dataset.id));
+            });
+        }
+
+        function renderIoTable(columns, rows) {
+            ioTableHeadRow.innerHTML = '<th>#</th>' + columns.map((c) => `<th>${escapeHtml(c)}</th>`).join('') + '<th></th>';
+            ioTableBody.innerHTML = '';
+            if (!rows.length) {
+                ioTableBody.innerHTML = `<tr><td colspan="${columns.length+2}">${currentLang==='fa'?'هیچ ردیفی نیست':'No rows yet'}</td></tr>`;
+                return;
+            }
+            const issueRowIds = getIssueRowIdSet();
+            rows.forEach(r => {
+                const tr = document.createElement('tr');
+                tr.dataset.id = r.id;
+                const cells = columns.map(col => {
+                    const val = (r.values || {})[col] || '';
+                    return `<td data-col="${escapeHtml(col)}">${escapeHtml(val)}</td>`;
+                }).join('');
+                if (issueRowIds.has(r.id)) {
+                    tr.classList.add('row-has-issue');
+                }
+                tr.innerHTML = `<td>${escapeHtml(r.row_index)}</td>${cells}<td><button class="ghost-btn tiny" data-open-modal="1">${currentLang==='fa'?'ویرایش':'Edit'}</button></td>`;
+                ioTableBody.appendChild(tr);
+            });
+            applySearchFilter();
+        }
+
+        function refreshIssueCodeFilterOptions(issues) {
+            const codeFilter = document.getElementById('issueCodeFilter');
+            if (!codeFilter) return;
+            const previous = codeFilter.value || '';
+            const seen = new Set();
+            const codes = [];
+            (issues || []).forEach((issue) => {
+                const code = (issue.code || '').trim();
+                if (code && !seen.has(code)) {
+                    seen.add(code);
+                    codes.push(code);
+                }
+            });
+            codeFilter.innerHTML = '';
+            const allOption = document.createElement('option');
+            allOption.value = '';
+            allOption.textContent = currentLang === 'fa' ? 'همه کدها' : 'All Codes';
+            codeFilter.appendChild(allOption);
+            codes.sort().forEach((code) => {
+                const option = document.createElement('option');
+                option.value = code;
+                option.textContent = code;
+                codeFilter.appendChild(option);
+            });
+            if (previous && codes.includes(previous)) {
+                codeFilter.value = previous;
+            }
+        }
+
+        function getIssueExplanation(issue) {
+            const code = (issue.code || '').toLowerCase();
+            if (code === 'unmatched_excel') {
+                return currentLang === 'fa'
+                    ? 'تگ موجود در فایل Excel با خروجی PDF تطابق ندارد.'
+                    : 'A tag from Excel could not be matched with PDF output.';
+            }
+            if (code === 'unmatched_pdf') {
+                return currentLang === 'fa'
+                    ? 'تگ استخراج‌شده از PDF در لیست Excel پیدا نشد.'
+                    : 'A tag detected from PDF was not found in the Excel list.';
+            }
+            if (issue.severity === 'error') {
+                return currentLang === 'fa'
+                    ? 'خطای بحرانی؛ نیاز به بررسی دستی و اصلاح داده/الگو.'
+                    : 'Critical issue; requires manual review and data/pattern correction.';
+            }
+            if (issue.severity === 'warning') {
+                return currentLang === 'fa'
+                    ? 'مورد مشکوک؛ بهتر است قبل از نهایی‌سازی بررسی شود.'
+                    : 'Potential mismatch; review before finalizing.';
+            }
+            return currentLang === 'fa'
+                ? 'اطلاعات تکمیلی برای رهگیری وضعیت پردازش.'
+                : 'Informational entry for traceability of processing status.';
+        }
+
+        function getIssueStatusLabel(status) {
+            const normalized = (status || '').toLowerCase();
+            const fa = { open: 'باز', resolved: 'حل‌شده', muted: 'بی‌صدا' };
+            const en = { open: 'Open', resolved: 'Resolved', muted: 'Muted' };
+            return (currentLang === 'fa' ? fa : en)[normalized] || normalized;
+        }
+
+        function getFilteredIssues() {
+            const allowedSeverities = [];
+            if (document.getElementById('sevError')?.checked) allowedSeverities.push('error');
+            if (document.getElementById('sevWarning')?.checked) allowedSeverities.push('warning');
+            if (document.getElementById('sevInfo')?.checked) allowedSeverities.push('info');
+            const statusFilter = (document.getElementById('issueStatusFilter')?.value || '').trim().toLowerCase();
+            const codeFilter = (document.getElementById('issueCodeFilter')?.value || '').trim();
+            const textFilter = (document.getElementById('issueSearch')?.value || '').trim().toLowerCase();
+
+            return (currentIssues || []).filter((issue) => {
+                if (allowedSeverities.length && !allowedSeverities.includes((issue.severity || '').toLowerCase())) {
+                    return false;
+                }
+                if (statusFilter && (issue.status || '').toLowerCase() !== statusFilter) {
+                    return false;
+                }
+                if (codeFilter && (issue.code || '') !== codeFilter) {
+                    return false;
+                }
+                if (textFilter) {
+                    const hay = `${issue.message || ''} ${issue.code || ''}`.toLowerCase();
+                    if (!hay.includes(textFilter)) {
+                        return false;
+                    }
+                }
+                return true;
+            });
+        }
+
+        function renderIssuesTable() {
+            const issues = getFilteredIssues();
+            issueTableBody.innerHTML = '';
+            if (!issues.length) {
+                issueTableBody.innerHTML = `<tr><td colspan="7">${currentLang === 'fa' ? 'خطایی برای نمایش وجود ندارد' : 'No issues to display'}</td></tr>`;
+                return;
+            }
+            issues.forEach((i) => {
+                const tr = document.createElement('tr');
+                tr.className = `issue-row issue-row-${i.severity}`;
+                const actionLabel = i.status === 'resolved'
+                    ? (currentLang === 'fa' ? 'بازگشایی' : 'Reopen')
+                    : (translations[currentLang]['resolve-btn'] || 'Resolve');
+                const targetStatus = i.status === 'resolved' ? 'open' : 'resolved';
+                tr.innerHTML = `
+                    <td><span class="issue-badge sev-${i.severity}">${escapeHtml(i.severity)}</span></td>
+                    <td><span class="issue-status status-${escapeHtml(i.status)}">${escapeHtml(getIssueStatusLabel(i.status))}</span></td>
+                    <td>${escapeHtml(i.message || '')}</td>
+                    <td class="issue-desc">${escapeHtml(getIssueExplanation(i))}</td>
+                    <td>${i.io_list_row_id ? escapeHtml(i.io_list_row_id.slice(0, 8)) : '-'}</td>
+                    <td>${i.tag_occurrence_id ? escapeHtml(i.tag_occurrence_id.slice(0, 8)) : '-'}</td>
+                    <td><button class="secondary-btn small" data-issue="${escapeHtml(i.id)}" data-target-status="${targetStatus}">${actionLabel}</button></td>
+                `;
+                issueTableBody.appendChild(tr);
+            });
+        }
+
+        function renderDetectedJBChips(rows) {
+            const container = document.getElementById('detectedJbChips');
+            if (!container) return;
+            const unique = new Set();
+            (rows || []).forEach((row) => {
+                const canonical = getCanonicalRowValues(row);
+                const jb = (canonical.jb || '').trim();
+                if (jb) unique.add(jb);
+            });
+            container.innerHTML = '';
+            if (!unique.size) {
+                const empty = document.createElement('span');
+                empty.className = 'muted';
+                empty.id = 'detectedJbEmpty';
+                empty.textContent = currentLang === 'fa' ? 'هیچ JB یافت نشد' : 'No JB detected';
+                container.appendChild(empty);
+                selectedJbFilter = '';
+                return;
+            }
+
+            const allChip = document.createElement('button');
+            allChip.className = `ghost-btn chip ${selectedJbFilter ? '' : 'active-chip'}`.trim();
+            allChip.textContent = currentLang === 'fa' ? 'همه' : 'All';
+            allChip.addEventListener('click', () => {
+                selectedJbFilter = '';
+                renderDetectedJBChips(currentIoRows);
+                applySearchFilter();
+            });
+            container.appendChild(allChip);
+
+            Array.from(unique).sort().forEach((jb) => {
+                const chip = document.createElement('button');
+                chip.className = `ghost-btn chip ${selectedJbFilter === jb ? 'active-chip' : ''}`.trim();
+                chip.textContent = jb;
+                chip.addEventListener('click', () => {
+                    selectedJbFilter = selectedJbFilter === jb ? '' : jb;
+                    renderDetectedJBChips(currentIoRows);
+                    applySearchFilter();
+                });
+                container.appendChild(chip);
+            });
+        }
+
+        async function loadIssues(runId) {
+            const res = await fetch(`/api/runs/${runId}/issues`);
+            if (!res.ok) return;
+            const data = await res.json();
+            currentIssues = data.issues || [];
+            refreshIssueCodeFilterOptions(currentIssues);
+            renderIssuesTable();
+            refreshIoIssueMarkers();
+            computeMetrics();
+            applySearchFilter();
+        }
+
+        ioTableBody.addEventListener('click', (e)=>{
+            const btn = e.target.closest('button[data-open-modal]');
+            const tr = e.target.closest('tr[data-id]');
+            if (!tr) return;
+            if (btn || e.target.closest('td')) {
+                openRowEditor(tr.dataset.id);
+            }
+        });
+
+        ioTableBody.addEventListener('dblclick', (e) => {
+            const tr = e.target.closest('tr[data-id]');
+            if (!tr) return;
+            openRowEditor(tr.dataset.id);
+        });
+
+        issueTableBody.addEventListener('click', async (e)=>{
+            const btn = e.target.closest('button[data-issue]');
+            if (!btn) return;
+            const id = btn.dataset.issue;
+            const res = await fetch(`/api/issues/${id}`, {
+                method:'PATCH',
+                headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({status: btn.dataset.targetStatus})
+            });
+            if (res.ok) {
+                showToast(currentLang === 'fa' ? 'وضعیت خطا بروزرسانی شد' : 'Issue status updated', 'success');
+                if (activeRunId) loadIssues(activeRunId);
+            }
+        });
+
+        function applySearchFilter() {
+            const term = (document.getElementById('ioSearch').value || '').toLowerCase();
+            const showMatched = document.getElementById('chkMatched')?.checked !== false;
+            const showUnmatched = document.getElementById('chkUnmatched')?.checked !== false;
+            const showPartial = document.getElementById('chkPartial')?.checked !== false;
+            const onlyIssueRows = !!document.getElementById('toggleIssueRows')?.checked;
+            const onlyEmptyRows = !!document.getElementById('toggleEmptyFields')?.checked;
+            const rangeFrom = parseInt(document.getElementById('rangeFrom')?.value || '1', 10);
+            const rangeTo = parseInt(document.getElementById('rangeTo')?.value || '999999', 10);
+            const issueRowIds = getIssueRowIdSet();
+
+            ioTableBody.querySelectorAll('tr[data-id]').forEach((tr) => {
+                const row = currentIoRows.find((item) => item.id === tr.dataset.id);
+                const rowIndex = Number(row?.row_index || 0);
+                const canonical = getCanonicalRowValues(row || {});
+                const text = tr.textContent.toLowerCase();
+                const matchRaw = (canonical.match_status || '').toLowerCase();
+                const isPartial = matchRaw.includes('partial');
+                const isUnmatched = matchRaw.includes('unmatch') || matchRaw.includes('mismatch') || matchRaw.includes('not match');
+                const isMatched = !isPartial && !isUnmatched && (matchRaw.includes('match') || matchRaw.includes('ok'));
+                const hasEmpty = ['jb', 'io_type', 'safety', 'location', 'terminal1', 'terminal2', 'src']
+                    .some((key) => !(canonical[key] || '').toString().trim());
+
+                let visible = true;
+                if (term && !text.includes(term)) visible = false;
+                if (rowIndex && (rowIndex < rangeFrom || rowIndex > rangeTo)) visible = false;
+                if (selectedJbFilter && (canonical.jb || '').trim() !== selectedJbFilter) visible = false;
+                if (onlyIssueRows && !issueRowIds.has(tr.dataset.id)) visible = false;
+                if (onlyEmptyRows && !hasEmpty) visible = false;
+
+                if (isPartial && !showPartial) visible = false;
+                if (isUnmatched && !showUnmatched) visible = false;
+                if (isMatched && !showMatched) visible = false;
+
+                tr.style.display = visible ? '' : 'none';
+            });
+        }
+
+        function applyIssueFilters() {
+            renderIssuesTable();
+            applySearchFilter();
+        }
+
+        function showEditedExportDownload(data) {
+            const downloadBox = document.getElementById('downloadBox');
+            const downloadLinks = document.getElementById('downloadLinks');
+            const directDownloadLink = document.getElementById('directDownloadLink');
+            const zipDownloadLink = document.getElementById('zipDownloadLink');
+            if (!downloadBox || !downloadLinks || !data || !data.download_url) {
+                return;
+            }
+
+            let editedLink = document.getElementById('editedExportLink');
+            if (!editedLink) {
+                editedLink = document.createElement('a');
+                editedLink.id = 'editedExportLink';
+                editedLink.className = 'zip-download-link';
+                editedLink.target = '_blank';
+                downloadLinks.prepend(editedLink);
+            }
+            editedLink.href = data.download_url;
+            editedLink.innerHTML = `<i class="fas fa-file-export"></i> ${currentLang === 'fa' ? 'دانلود خروجی جدول ادیت‌شده' : 'Download edited table export'}`;
+
+            if (zipDownloadLink) {
+                zipDownloadLink.href = data.download_url;
+            }
+            if (directDownloadLink) {
+                directDownloadLink.style.display = 'block';
+            }
+            downloadBox.style.display = 'block';
+        }
+
+        document.getElementById('ioSearch').addEventListener('input', applySearchFilter);
+        document.getElementById('issueSearch').addEventListener('input', applyIssueFilters);
+        document.getElementById('issueStatusFilter').addEventListener('change', applyIssueFilters);
+        document.getElementById('issueCodeFilter').addEventListener('change', applyIssueFilters);
+        ['sevError', 'sevWarning', 'sevInfo'].forEach((id) => {
+            const node = document.getElementById(id);
+            if (node) node.addEventListener('change', applyIssueFilters);
+        });
+        ['chkMatched', 'chkUnmatched', 'chkPartial', 'toggleIssueRows', 'toggleEmptyFields', 'rangeFrom', 'rangeTo']
+            .forEach((id) => {
+                const node = document.getElementById(id);
+                if (node) node.addEventListener('input', applySearchFilter);
+                if (node) node.addEventListener('change', applySearchFilter);
+            });
+        document.getElementById('refreshIssues').addEventListener('click', ()=>{
+            if (activeRunId) loadIssues(activeRunId);
+        });
+        document.getElementById('loadRunBtn').addEventListener('click', ()=>{
+            loadLatestRunByProjectName(document.getElementById('projectLookupInput')?.value || '');
+        });
+        const projectLookupInput = document.getElementById('projectLookupInput');
+        if (projectLookupInput) {
+            projectLookupInput.addEventListener('focus', () => {
+                refreshProjectLookup(true).catch(() => {});
+            });
+            projectLookupInput.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    loadLatestRunByProjectName(projectLookupInput.value);
+                }
+            });
+        }
+        document.getElementById('addRowBtn').addEventListener('click', ()=>{
+            openRowEditor(null);
+        });
+        closeModalBtn.addEventListener('click', ()=> modal.classList.add('hidden'));
+
+        rowForm.addEventListener('submit', async (e)=>{
+            e.preventDefault();
+            if (!activeRunId) { showToast('ابتدا Run را بارگذاری کنید','error'); return; }
+            const payload = collectRowFormPayload();
+            let res;
+            if (activeRowId) {
+                res = await fetch(`/api/io-list-rows/${activeRowId}`, {
+                    method:'PATCH',
+                    headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify(payload)
+                });
+            } else {
+                res = await fetch(`/api/runs/${activeRunId}/io-list`, {
+                    method:'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify(payload)
+                });
+            }
+            if (res.ok) {
+                modal.classList.add('hidden');
+                showToast(currentLang === 'fa' ? 'ثبت شد' : 'Saved', 'success');
+                await Promise.all([loadIO(activeRunId), loadIssues(activeRunId)]);
+            } else showToast(currentLang === 'fa' ? 'خطا' : 'Error', 'error');
+        });
+
+        deleteRowBtn.addEventListener('click', async ()=>{
+            if (!activeRowId) { modal.classList.add('hidden'); return; }
+            const res = await fetch(`/api/io-list-rows/${activeRowId}`, {method:'DELETE'});
+            if (res.ok) {
+                modal.classList.add('hidden');
+                showToast(currentLang === 'fa' ? 'حذف شد' : 'Deleted', 'success');
+                await Promise.all([loadIO(activeRunId), loadIssues(activeRunId)]);
+            } else showToast(currentLang === 'fa' ? 'خطا در حذف' : 'Delete failed', 'error');
+        });
+
+        document.getElementById('exportRunBtn').addEventListener('click', async ()=>{
+            if (!activeRunId) { showToast('ابتدا Run را بارگذاری کنید','error'); return; }
+            const res = await fetch(`/api/runs/${activeRunId}/export`, {method:'POST'});
+            if (!res.ok) { showToast('خطا در خروجی','error'); return; }
+            const data = await res.json();
+            if (data.download_url) window.open(data.download_url, '_blank');
+            buildArtifacts(data);
+            showEditedExportDownload(data);
         });
 
         // اضافه کردن CSS برای انیمیشن

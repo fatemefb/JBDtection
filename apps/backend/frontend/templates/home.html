@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/home.css') }}">
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Vazirmatn:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="{{ url_for('static', filename='js/ui_preferences.js') }}"></script>
 </head>
 <body class="home-body">
     <div class="home-shell">
@@ -19,8 +20,8 @@
                 <div class="brand">
                     <img src="{{ url_for('static', filename='images/favicon.png') }}" alt="VAKAV IO Mapping" class="brand-logo">
                     <div>
-                        <span class="brand-kicker">VAKAV IO Mapping</span>
-                        <h1 class="brand-title">VAKAV IO Mapping</h1>
+                        <span id="nav-kicker" class="brand-kicker">VAKAV IO Mapping</span>
+                        <h1 id="nav-brand" class="brand-title">VAKAV IO Mapping</h1>
                     </div>
                 </div>
                 <button class="icon-btn" id="collapseBtn" aria-label="Toggle menu">
@@ -156,6 +157,8 @@
                 'split-jb-desc': 'یک موتور تحلیل تگ و اسناد مهندسی که روی دقت، سرعت و گزارش‌پذیری تمرکز دارد. اینجا نقطه شروع برای بررسی وضعیت پردازش و دسترسی سریع به خروجی‌هاست.',
                 'split-io-title': 'IO Assignment Module چه می‌کند؟',
                 'split-io-desc': 'ماژول آینده برای مدیریت ظرفیت IO، تطابق کابینت‌ها و ساخت گزارش‌های بهینه‌سازی. در فاز بعدی با همین زبان بصری اضافه می‌شود.',
+                'nav-kicker': 'VAKAV IO Mapping',
+                'nav-brand': 'VAKAV IO Mapping',
                 'nav-home': 'خانه',
                 'nav-jb': 'ماژول JBDetection',
                 'nav-io': 'ماژول IO Assignment',
@@ -182,6 +185,8 @@
                 'split-jb-desc': 'An engineering tag analysis engine focused on accuracy, speed, and reporting. This is the starting point for processing and outputs.',
                 'split-io-title': 'What does the IO Assignment Module do?',
                 'split-io-desc': 'Future module for IO capacity, cabinet alignment, and optimization reporting. Will be added next.',
+                'nav-kicker': 'VAKAV IO Mapping',
+                'nav-brand': 'VAKAV IO Mapping',
                 'nav-home': 'Home',
                 'nav-jb': 'JBDetection Module',
                 'nav-io': 'IO Assignment Module',
@@ -198,10 +203,15 @@
         const enBtn = document.getElementById('enBtn');
         const settingsBtn = document.getElementById('settingsBtn');
         const notifyBtn = document.getElementById('notifyBtn');
-        let currentLang = localStorage.getItem('lang') || 'fa';
-        let currentTheme = localStorage.getItem('theme') || 'dark';
+        const initialState = window.JBDUI ? window.JBDUI.getState() : {
+            lang: localStorage.getItem('lang') || 'fa',
+            theme: localStorage.getItem('theme') || 'dark'
+        };
+        let currentLang = initialState.lang;
+        let currentTheme = initialState.theme;
 
         function setLang(lang) {
+            document.documentElement.lang = lang;
             document.documentElement.dir = lang === 'fa' ? 'rtl' : 'ltr';
             faBtn.classList.toggle('active', lang === 'fa');
             enBtn.classList.toggle('active', lang === 'en');
@@ -215,19 +225,32 @@
                 }
             });
 
-            localStorage.setItem('lang', lang);
+            if (window.JBDUI) {
+                window.JBDUI.setLang(lang);
+            } else {
+                localStorage.setItem('lang', lang);
+            }
         }
 
         function setTheme(theme) {
             document.body.classList.remove('light', 'dark');
             document.body.classList.add(theme);
             themeBtn.innerHTML = theme === 'dark' ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
-            localStorage.setItem('theme', theme);
+            currentTheme = theme;
+            if (window.JBDUI) {
+                window.JBDUI.setTheme(theme);
+            } else {
+                localStorage.setItem('theme', theme);
+            }
         }
 
         collapseBtn.addEventListener('click', () => {
-            sidePanel.classList.toggle('collapsed');
-            document.body.classList.toggle('menu-collapsed');
+            if (window.JBDUI) {
+                window.JBDUI.toggleMenuCollapsed();
+            } else {
+                sidePanel.classList.toggle('collapsed');
+                document.body.classList.toggle('menu-collapsed');
+            }
         });
 
         faBtn.addEventListener('click', () => setLang('fa'));
@@ -252,6 +275,24 @@
 
         setTheme(currentTheme);
         setLang(currentLang);
+        if (window.JBDUI) {
+            window.JBDUI.applyMenuState();
+        }
+
+        window.addEventListener('storage', (event) => {
+            if (event.key === 'lang' || event.key === 'theme') {
+                const state = window.JBDUI ? window.JBDUI.getState() : {
+                    lang: localStorage.getItem('lang') || 'fa',
+                    theme: localStorage.getItem('theme') || 'dark'
+                };
+                if (state.theme !== currentTheme) {
+                    setTheme(state.theme);
+                }
+                if (state.lang !== currentLang) {
+                    setLang(state.lang);
+                }
+            }
+        });
     </script>
 </body>
 </html>

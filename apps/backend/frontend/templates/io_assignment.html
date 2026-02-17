@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/io_assignment.css') }}">
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Vazirmatn:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="{{ url_for('static', filename='js/ui_preferences.js') }}"></script>
 </head>
 <body class="home-body io-body">
     <div class="home-shell">
@@ -344,13 +345,30 @@
                                 </div>
                             </div>
                             <div class="upload-box">
-                                <h3 id="excel-title-io">EXCEL INPUT FILE</h3>
-                                <input type="file" id="excelInput" name="excel_file" accept=".xlsx,.xls" required>
-                                <label for="excelInput">
-                                    <span class="icon"><i class="fas fa-file-excel"></i></span>
-                                    <span id="select-excel">Select Excel File</span>
-                                </label>
-                                <div id="excelName" class="file-list"></div>
+                                <h3 id="excel-title-io">ورودی IO List</h3>
+                                <div class="radio-stack">
+                                    <label class="radio-line">
+                                        <input type="radio" name="io_source" value="upload" checked>
+                                        <span>آپلود Excel جدید</span>
+                                    </label>
+                                    <label class="radio-line">
+                                        <input type="radio" name="io_source" value="jb">
+                                        <span>استفاده از خروجی JB ذخیره‌شده (بر اساس نام پروژه)</span>
+                                    </label>
+                                </div>
+                                <div id="uploadExcelBlock">
+                                    <input type="file" id="excelInput" name="excel_file" accept=".xlsx,.xls">
+                                    <label for="excelInput">
+                                        <span class="icon"><i class="fas fa-file-excel"></i></span>
+                                        <span id="select-excel">Select Excel File</span>
+                                    </label>
+                                    <div id="excelName" class="file-list"></div>
+                                </div>
+                                <div id="projectSelectBlock" style="display:none;">
+                                    <label for="jbProjectLookupInput">نام پروژه (JB)</label>
+                                    <input type="text" id="jbProjectLookupInput" list="jbProjectLookupList" placeholder="جستجوی نام پروژه...">
+                                    <datalist id="jbProjectLookupList"></datalist>
+                                </div>
                             </div>
                         </div>
                         <div class="process-section">
@@ -453,8 +471,11 @@
                 'io-kicker': 'ماژول IO Assignment',
                 'io-title': 'ماژول IO Assignment',
                 'io-subtitle': 'تنظیم ظرفیت‌ها، بارگذاری فایل ورودی و دریافت خروجی بهینه‌سازی.',
+                'nav-kicker': 'VAKAV IO Mapping',
+                'nav-brand': 'VAKAV IO Mapping',
                 'config-title': 'ورودی تنظیمات کابینت',
                 'type-count-label': 'تعداد تیپ کابینت',
+                'confirmTypes': 'تایید',
                 'direction-toggle-label': 'دارای دسترسی جلو/عقب',
                 'channels-title': 'ظرفیت کانال‌ها (سراسری)',
                 'access-title': 'پیکربندی دسترسی',
@@ -498,8 +519,11 @@
                 'io-kicker': 'IO Assignment Module',
                 'io-title': 'IO Assignment Module',
                 'io-subtitle': 'Tune capacities, upload input, and export optimized outputs.',
+                'nav-kicker': 'VAKAV IO Mapping',
+                'nav-brand': 'VAKAV IO Mapping',
                 'config-title': 'Cabinet configuration input',
                 'type-count-label': 'Select number of cabinet types',
+                'confirmTypes': 'Confirm',
                 'direction-toggle-label': 'Has front/rear access',
                 'channels-title': 'Board channel capacities (global)',
                 'access-title': 'Access configuration',
@@ -552,9 +576,137 @@
         const hasDirections = document.getElementById('hasDirections');
         const maxTypes = 10;
 
-        let currentLang = localStorage.getItem('lang') || 'fa';
-        let currentTheme = localStorage.getItem('theme') || 'dark';
+        const initialState = window.JBDUI ? window.JBDUI.getState() : {
+            lang: localStorage.getItem('lang') || 'fa',
+            theme: localStorage.getItem('theme') || 'dark'
+        };
+        let currentLang = initialState.lang;
+        let currentTheme = initialState.theme;
         const englishFormatter = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
+
+        function applyStaticTranslations(lang) {
+            const staticNodes = [
+                {
+                    selector: '.radio-stack .radio-line:nth-child(1) span',
+                    fa: 'آپلود Excel جدید',
+                    en: 'Upload new Excel file'
+                },
+                {
+                    selector: '.radio-stack .radio-line:nth-child(2) span',
+                    fa: 'استفاده از خروجی JB ذخیره‌شده (بر اساس نام پروژه)',
+                    en: 'Use saved JB output (by project name)'
+                },
+                {
+                    selector: '#projectSelectBlock label[for=\"jbProjectLookupInput\"]',
+                    fa: 'نام پروژه (JB)',
+                    en: 'Project name (JB)'
+                }
+            ];
+
+            staticNodes.forEach((item) => {
+                const node = document.querySelector(item.selector);
+                if (node) {
+                    node.textContent = lang === 'fa' ? item.fa : item.en;
+                }
+            });
+
+            const projectInput = document.getElementById('projectName');
+            if (projectInput) {
+                projectInput.placeholder = lang === 'fa' ? 'نام پروژه...' : 'Project name...';
+            }
+            const projectLookupInput = document.getElementById('jbProjectLookupInput');
+            if (projectLookupInput) {
+                projectLookupInput.placeholder = lang === 'fa' ? 'جستجوی نام پروژه...' : 'Search project name...';
+            }
+        }
+
+        function updateDynamicConfigTranslations(lang) {
+            const isFa = lang === 'fa';
+            const typeWord = isFa ? 'تیپ' : 'TYPE';
+            const qtyWord = isFa ? 'تعداد' : 'QTY';
+            const channelLabels = isFa ? ['بریر', 'ترمینال', 'رله'] : ['BARRIER', 'TERMINAL', 'RELAY'];
+            const keyMapFa = {
+                'Max_Total_Boards': 'حداکثر مجموع بردها (%)',
+                'Max rail terminals': 'حداکثر ترمینال ریل',
+                'Barrier Board (AI)': 'برد بریر AI',
+                'Barrier Board (AO)': 'برد بریر AO',
+                'Barrier Board (DI)': 'برد بریر DI',
+                'Barrier Board (DO)': 'برد بریر DO',
+                'Terminal Board (AI)': 'برد ترمینال AI',
+                'Terminal Board (AO)': 'برد ترمینال AO',
+                'Terminal Board (DI)': 'برد ترمینال DI',
+                'Terminal Board (DO)': 'برد ترمینال DO',
+                'Relay Board AI capacity': 'ظرفیت برد رله AI',
+                'Relay Board AO capacity': 'ظرفیت برد رله AO',
+                'Relay Board DI capacity': 'ظرفیت برد رله DI',
+                'Relay Board DO capacity': 'ظرفیت برد رله DO'
+            };
+            const keyMapEn = {
+                'Max_Total_Boards': 'Max Total Boards (%)',
+                'Max rail terminals': 'Max Rail Terminals',
+                'Barrier Board (AI)': 'Barrier AI',
+                'Barrier Board (AO)': 'Barrier AO',
+                'Barrier Board (DI)': 'Barrier DI',
+                'Barrier Board (DO)': 'Barrier DO',
+                'Terminal Board (AI)': 'Terminal AI',
+                'Terminal Board (AO)': 'Terminal AO',
+                'Terminal Board (DI)': 'Terminal DI',
+                'Terminal Board (DO)': 'Terminal DO',
+                'Relay Board AI capacity': 'Relay AI',
+                'Relay Board AO capacity': 'Relay AO',
+                'Relay Board DI capacity': 'Relay DI',
+                'Relay Board DO capacity': 'Relay DO'
+            };
+
+            document.querySelectorAll('.tab-btn').forEach((btn) => {
+                const type = btn.dataset.type;
+                if (type) {
+                    btn.textContent = `${typeWord} ${type}`;
+                }
+            });
+
+            document.querySelectorAll('.toggle-row label[data-type]').forEach((label) => {
+                const input = label.querySelector('input');
+                const type = label.dataset.type || (input ? input.dataset.type : '');
+                if (!input || !type) return;
+                const inputHtml = input.outerHTML;
+                label.innerHTML = `<span class="qty-type-label">${typeWord} ${type}</span> ${qtyWord} ${inputHtml}`;
+            });
+
+            document.querySelectorAll('.channel-group > span').forEach((span, index) => {
+                if (channelLabels[index]) {
+                    span.textContent = channelLabels[index];
+                }
+            });
+
+            document.querySelectorAll('.limit-block h4').forEach((heading) => {
+                const match = heading.textContent.match(/(FRONT|REAR|LIMITS).*?(\\d+)/i);
+                if (!match) return;
+                const section = match[1].toUpperCase();
+                const typeNo = match[2];
+                if (section === 'FRONT') {
+                    heading.textContent = isFa ? `محدودیت‌های جلو (${typeWord} ${typeNo})` : `FRONT LIMITS (${typeWord} ${typeNo})`;
+                } else if (section === 'REAR') {
+                    heading.textContent = isFa ? `محدودیت‌های عقب (${typeWord} ${typeNo})` : `REAR LIMITS (${typeWord} ${typeNo})`;
+                } else {
+                    heading.textContent = isFa ? `محدودیت‌ها (${typeWord} ${typeNo})` : `LIMITS (${typeWord} ${typeNo})`;
+                }
+            });
+
+            document.querySelectorAll('.limit-block label').forEach((label) => {
+                const input = label.querySelector('input[data-key]');
+                if (!input) return;
+                const key = input.dataset.key;
+                const mapped = isFa ? keyMapFa[key] : keyMapEn[key];
+                if (!mapped) return;
+                const firstText = Array.from(label.childNodes).find((node) => node.nodeType === Node.TEXT_NODE);
+                if (firstText) {
+                    firstText.textContent = `${mapped} `;
+                } else {
+                    label.insertBefore(document.createTextNode(`${mapped} `), label.firstChild);
+                }
+            });
+        }
 
         function toEnglishDigits(value) {
             if (value === null || value === undefined) {
@@ -581,6 +733,7 @@
         }
 
         function setLang(lang) {
+            document.documentElement.lang = lang;
             document.documentElement.dir = lang === 'fa' ? 'rtl' : 'ltr';
             faBtn.classList.toggle('active', lang === 'fa');
             enBtn.classList.toggle('active', lang === 'en');
@@ -592,19 +745,34 @@
                     element.textContent = translations[lang][key];
                 }
             });
-            localStorage.setItem('lang', lang);
+            applyStaticTranslations(lang);
+            updateDynamicConfigTranslations(lang);
+            if (window.JBDUI) {
+                window.JBDUI.setLang(lang);
+            } else {
+                localStorage.setItem('lang', lang);
+            }
         }
 
         function setTheme(theme) {
             document.body.classList.remove('light', 'dark');
             document.body.classList.add(theme);
             themeBtn.innerHTML = theme === 'dark' ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
-            localStorage.setItem('theme', theme);
+            currentTheme = theme;
+            if (window.JBDUI) {
+                window.JBDUI.setTheme(theme);
+            } else {
+                localStorage.setItem('theme', theme);
+            }
         }
 
         collapseBtn.addEventListener('click', () => {
-            sidePanel.classList.toggle('collapsed');
-            document.body.classList.toggle('menu-collapsed');
+            if (window.JBDUI) {
+                window.JBDUI.toggleMenuCollapsed();
+            } else {
+                sidePanel.classList.toggle('collapsed');
+                document.body.classList.toggle('menu-collapsed');
+            }
         });
 
         faBtn.addEventListener('click', () => setLang('fa'));
@@ -674,26 +842,26 @@
                     const tab = document.createElement('button');
                     tab.className = 'tab-btn';
                     tab.dataset.type = String(i);
-                    tab.textContent = `TYPE ${i}`;
+                    tab.textContent = currentLang === 'fa' ? `تیپ ${i}` : `TYPE ${i}`;
                     tabRow.appendChild(tab);
                 }
 
                 if (frontRow && !document.getElementById(`qty-type${i}-front`)) {
                     const label = document.createElement('label');
                     label.dataset.type = String(i);
-                    label.innerHTML = `<span class="qty-type-label">TYPE ${i}</span> QTY <input type="number" id="qty-type${i}-front" data-type="${i}" value="2" min="0">`;
+                    label.innerHTML = `<span class="qty-type-label">${currentLang === 'fa' ? `تیپ ${i}` : `TYPE ${i}`}</span> ${currentLang === 'fa' ? 'تعداد' : 'QTY'} <input type="number" id="qty-type${i}-front" data-type="${i}" value="2" min="0">`;
                     frontRow.appendChild(label);
                 }
                 if (rearRow && !document.getElementById(`qty-type${i}-rear`)) {
                     const label = document.createElement('label');
                     label.dataset.type = String(i);
-                    label.innerHTML = `<span class="qty-type-label">TYPE ${i}</span> QTY <input type="number" id="qty-type${i}-rear" data-type="${i}" value="2" min="0">`;
+                    label.innerHTML = `<span class="qty-type-label">${currentLang === 'fa' ? `تیپ ${i}` : `TYPE ${i}`}</span> ${currentLang === 'fa' ? 'تعداد' : 'QTY'} <input type="number" id="qty-type${i}-rear" data-type="${i}" value="2" min="0">`;
                     rearRow.appendChild(label);
                 }
                 if (singleRow && !document.getElementById(`qty-type${i}`)) {
                     const label = document.createElement('label');
                     label.dataset.type = String(i);
-                    label.innerHTML = `<span class="qty-type-label">TYPE ${i}</span> QTY <input type="number" id="qty-type${i}" data-type="${i}" value="4" min="0">`;
+                    label.innerHTML = `<span class="qty-type-label">${currentLang === 'fa' ? `تیپ ${i}` : `TYPE ${i}`}</span> ${currentLang === 'fa' ? 'تعداد' : 'QTY'} <input type="number" id="qty-type${i}" data-type="${i}" value="4" min="0">`;
                     singleRow.appendChild(label);
                 }
 
@@ -707,7 +875,12 @@
                         block.id = `limits-type${i}-${direction}`;
                         const title = block.querySelector('h4');
                         if (title) {
-                            title.textContent = `${direction.toUpperCase()} LIMITS (TYPE ${i})`;
+                            if (currentLang === 'fa') {
+                                const sectionName = direction.toLowerCase() === 'rear' ? 'محدودیت‌های عقب' : 'محدودیت‌های جلو';
+                                title.textContent = `${sectionName} (تیپ ${i})`;
+                            } else {
+                                title.textContent = `${direction.toUpperCase()} LIMITS (TYPE ${i})`;
+                            }
                         }
                     });
                     limitsGrid.appendChild(panel);
@@ -716,6 +889,7 @@
 
             bindTabButtons();
             normalizeNumberInputs();
+            updateDynamicConfigTranslations(currentLang);
         }
 
         function syncDirectionMode() {
@@ -737,8 +911,8 @@
                     return;
                 }
                 title.textContent = useDirections
-                    ? `FRONT LIMITS (TYPE ${typeLabel})`
-                    : `LIMITS (TYPE ${typeLabel})`;
+                    ? (currentLang === 'fa' ? `محدودیت‌های جلو (تیپ ${typeLabel})` : `FRONT LIMITS (TYPE ${typeLabel})`)
+                    : (currentLang === 'fa' ? `محدودیت‌ها (تیپ ${typeLabel})` : `LIMITS (TYPE ${typeLabel})`);
             });
         }
 
@@ -854,20 +1028,172 @@
             return { channels, cabinet_plan, cabinet_limits, has_directions: useDirections };
         }
 
+        // toggle input source
+        const uploadExcelBlock = document.getElementById('uploadExcelBlock');
+        const projectSelectBlock = document.getElementById('projectSelectBlock');
+        document.querySelectorAll('input[name="io_source"]').forEach(r => {
+            r.addEventListener('change', () => {
+                const useUpload = r.value === 'upload' && r.checked;
+                uploadExcelBlock.style.display = useUpload ? 'block' : 'none';
+                projectSelectBlock.style.display = useUpload ? 'none' : 'block';
+            });
+        });
+
+        let allProjectsLookup = [];
+
+        function normalizeProjectName(value) {
+            return (value || '')
+                .toString()
+                .trim()
+                .replace(/\s+/g, ' ')
+                .toLowerCase();
+        }
+
+        function parseRunCreatedAt(run) {
+            const candidates = [
+                run && run.created_at,
+                run && run.updated_at,
+                run && run.started_at,
+                run && run.finished_at
+            ];
+            for (const value of candidates) {
+                const parsed = value ? Date.parse(value) : NaN;
+                if (Number.isFinite(parsed)) {
+                    return parsed;
+                }
+            }
+            return 0;
+        }
+
+        // populate project list from DB
+        async function loadProjects(force = false) {
+            if (!force && allProjectsLookup.length) {
+                return allProjectsLookup;
+            }
+            const res = await fetch('/api/projects');
+            if (!res.ok) {
+                throw new Error('projects_fetch_failed');
+            }
+            const data = await res.json();
+            allProjectsLookup = Array.isArray(data.projects) ? data.projects : [];
+            const lookupList = document.getElementById('jbProjectLookupList');
+            if (lookupList) {
+                lookupList.innerHTML = '';
+                const seen = new Set();
+                allProjectsLookup.forEach((project) => {
+                    const name = (project.name || project.project_name || '').trim();
+                    if (!name || seen.has(name)) {
+                        return;
+                    }
+                    seen.add(name);
+                    const option = document.createElement('option');
+                    option.value = name;
+                    lookupList.appendChild(option);
+                });
+            }
+            return allProjectsLookup;
+        }
+
+        async function resolveLatestRunByProjectName(rawProjectName) {
+            const query = (rawProjectName || '').trim();
+            if (!query) {
+                throw new Error('empty_project_name');
+            }
+
+            const projects = await loadProjects(true);
+            const normalizedQuery = normalizeProjectName(query);
+            const exactMatches = projects.filter((project) => normalizeProjectName(project.name || project.project_name) === normalizedQuery);
+            const candidates = exactMatches.length
+                ? exactMatches
+                : projects.filter((project) => normalizeProjectName(project.name || project.project_name).includes(normalizedQuery));
+
+            if (!candidates.length) {
+                throw new Error('project_not_found');
+            }
+
+            const latestRunCandidates = await Promise.allSettled(
+                candidates.map(async (project) => {
+                    const latestRes = await fetch(`/api/projects/${project.id}/runs/latest`);
+                    if (!latestRes.ok) {
+                        return null;
+                    }
+                    const latestData = await latestRes.json();
+                    if (!latestData || !latestData.run || !latestData.run.id) {
+                        return null;
+                    }
+                    return { project, run: latestData.run };
+                })
+            );
+
+            const availableRuns = latestRunCandidates
+                .map((item) => (item.status === 'fulfilled' ? item.value : null))
+                .filter((item) => item && item.run && item.run.id);
+
+            if (!availableRuns.length) {
+                throw new Error('project_run_not_found');
+            }
+
+            availableRuns.sort((a, b) => parseRunCreatedAt(b.run) - parseRunCreatedAt(a.run));
+            return availableRuns[0];
+        }
+
+        loadProjects().catch(() => {});
+        const jbProjectLookupInput = document.getElementById('jbProjectLookupInput');
+        if (jbProjectLookupInput) {
+            jbProjectLookupInput.addEventListener('focus', () => {
+                loadProjects(true).catch(() => {});
+            });
+        }
+
         document.getElementById('ioForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const projectName = document.getElementById('projectName').value.trim();
+            const source = document.querySelector('input[name=\"io_source\"]:checked')?.value || 'upload';
             const excelFile = document.getElementById('excelInput').files[0];
-            if (!projectName || !excelFile) {
-                alert(currentLang === 'fa' ? 'نام پروژه و فایل Excel الزامی است.' : 'Project name and Excel file are required.');
+            const jbProjectLookupValue = document.getElementById('jbProjectLookupInput')?.value.trim() || '';
+
+            if (!projectName) {
+                alert(currentLang === 'fa' ? 'نام پروژه الزامی است.' : 'Project name is required.');
+                return;
+            }
+            if (source === 'upload' && !excelFile) {
+                alert(currentLang === 'fa' ? 'فایل Excel الزامی است.' : 'Excel file is required.');
+                return;
+            }
+            if (source === 'jb' && !jbProjectLookupValue) {
+                alert(currentLang === 'fa' ? 'نام پروژه JB را وارد کنید' : 'Enter a JB project name');
                 return;
             }
 
             const config = buildConfig();
             const formData = new FormData();
             formData.append('project_name', projectName);
-            formData.append('excel_file', excelFile);
             formData.append('config', JSON.stringify(config));
+            formData.append('use_jb_output', source === 'jb');
+            if (source === 'jb') {
+                try {
+                    const selected = await resolveLatestRunByProjectName(jbProjectLookupValue);
+                    const selectedName = selected.project.name || selected.project.project_name || jbProjectLookupValue;
+                    formData.append('jb_project_name', selectedName);
+                    if (selected.run && selected.run.id) {
+                        formData.append('jb_run_id', selected.run.id);
+                    }
+                    const lookupInput = document.getElementById('jbProjectLookupInput');
+                    if (lookupInput) {
+                        lookupInput.value = selectedName;
+                    }
+                } catch (lookupError) {
+                    const lookupErrorMap = {
+                        empty_project_name: currentLang === 'fa' ? 'نام پروژه JB را وارد کنید' : 'Enter a JB project name',
+                        project_not_found: currentLang === 'fa' ? 'پروژه‌ای با این نام در DB پیدا نشد' : 'No DB project found with this name',
+                        project_run_not_found: currentLang === 'fa' ? 'برای این پروژه Run نهایی پیدا نشد' : 'No finalized run found for this project'
+                    };
+                    alert(lookupErrorMap[lookupError.message] || (currentLang === 'fa' ? 'خطا در جستجوی پروژه JB' : 'Failed to search JB project'));
+                    return;
+                }
+            } else if (excelFile) {
+                formData.append('excel_file', excelFile);
+            }
 
             document.getElementById('processBtn').disabled = true;
             document.getElementById('logOutput').textContent = currentLang === 'fa' ? 'در حال پردازش...' : 'Processing...';
@@ -1115,8 +1441,157 @@
             `;
         }
 
+        // ===== JB review panel logic =====
+        const ioTableBody = document.querySelector('#ioTable tbody');
+        const issueTableBody = document.querySelector('#issueTable tbody');
+        const toast = document.getElementById('saveToast');
+        if (ioTableBody && issueTableBody && toast) {
+
+        async function loadRun(runId) {
+            const statusRes = await fetch(`/api/runs/${runId}/status`);
+            if (!statusRes.ok) { showToast('Run یافت نشد', 'error'); return; }
+            const statusJson = await statusRes.json();
+            const projectId = statusJson.run.project_id;
+            let projectName = projectId;
+            try {
+                const p = await fetch(`/api/projects/${projectId}`);
+                if (p.ok) {
+                    const pj = await p.json();
+                    projectName = pj.project.name || projectId;
+                }
+            } catch(_) {}
+            document.getElementById('runSummary').style.display = 'flex';
+            document.getElementById('sumProject').textContent = projectName;
+            document.getElementById('sumStatus').textContent = statusJson.run.status;
+            document.getElementById('sumStage').textContent = statusJson.run.stage;
+            await Promise.all([loadIO(runId), loadIssues(runId)]);
+        }
+
+        async function loadIO(runId) {
+            const res = await fetch(`/api/runs/${runId}/io-list`);
+            if (!res.ok) return;
+            const data = await res.json();
+            ioTableBody.innerHTML = '';
+            data.rows.forEach(r => {
+                const tr = document.createElement('tr');
+                tr.dataset.id = r.id;
+                tr.innerHTML = `
+                    <td>${r.row_index}</td>
+                    <td contenteditable data-field="jb">${r.jb || ''}</td>
+                    <td>${r.io_type || ''}</td>
+                    <td>${r.safety || ''}</td>
+                    <td>${r.location || ''}</td>
+                    <td contenteditable data-field="terminal1">${r.terminal1 || ''}</td>
+                    <td contenteditable data-field="terminal2">${r.terminal2 || ''}</td>
+                    <td contenteditable data-field="match_status">${r.match_status || ''}</td>`;
+                ioTableBody.appendChild(tr);
+            });
+            applySearchFilter();
+        }
+
+        async function loadIssues(runId) {
+            const sevInput = document.getElementById('issueSeverity');
+            const stInput = document.getElementById('issueStatus');
+            const sev = sevInput ? sevInput.value : '';
+            const st = stInput ? stInput.value : '';
+            const qs = new URLSearchParams();
+            if (sev) qs.append('severity', sev);
+            if (st) qs.append('status', st);
+            const res = await fetch(`/api/runs/${runId}/issues?${qs.toString()}`);
+            if (!res.ok) return;
+            const data = await res.json();
+            issueTableBody.innerHTML = '';
+            data.issues.forEach(i => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="sev-${i.severity}">${i.severity}</td>
+                    <td>${i.status}</td>
+                    <td>${i.message}</td>
+                    <td>${i.io_list_row_id ? i.io_list_row_id.slice(0,8) : ''}</td>
+                    <td><button class="secondary-btn" data-issue="${i.id}" data-target-status="resolved">Resolve</button></td>
+                `;
+                issueTableBody.appendChild(tr);
+            });
+        }
+
+        function showToast(msg, type='info') {
+            toast.textContent = msg;
+            toast.className = `notification ${type} show`;
+            setTimeout(()=> toast.classList.remove('show'), 1600);
+        }
+
+        ioTableBody.addEventListener('blur', async (e) => {
+            const field = e.target.dataset.field;
+            if (!field) return;
+            const tr = e.target.closest('tr');
+            const rowId = tr.dataset.id;
+            const payload = {};
+            payload[field] = e.target.textContent.trim();
+            const res = await fetch(`/api/io-list-rows/${rowId}`, {
+                method:'PATCH',
+                headers:{'Content-Type':'application/json'},
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) showToast('ذخیره شد', 'success'); else showToast('خطا در ذخیره', 'error');
+        }, true);
+
+        issueTableBody.addEventListener('click', async (e)=>{
+            const btn = e.target.closest('button[data-issue]');
+            if (!btn) return;
+            const id = btn.dataset.issue;
+            const res = await fetch(`/api/issues/${id}`, {
+                method:'PATCH',
+                headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({status: btn.dataset.targetStatus})
+            });
+            if (res.ok) {
+                showToast('Issue resolved','success');
+                const runId = document.getElementById('runIdInput').value.trim();
+                if (runId) loadIssues(runId);
+            }
+        });
+
+        function applySearchFilter() {
+            const term = document.getElementById('ioSearch').value.toLowerCase();
+            ioTableBody.querySelectorAll('tr').forEach(tr=>{
+                const text = tr.textContent.toLowerCase();
+                tr.style.display = text.includes(term) ? '' : 'none';
+            });
+        }
+        document.getElementById('ioSearch').addEventListener('input', applySearchFilter);
+        document.getElementById('refreshIssues').addEventListener('click', ()=>{
+            const runId = document.getElementById('runIdInput').value.trim();
+            if (runId) loadIssues(runId);
+        });
+        document.getElementById('loadRunBtn').addEventListener('click', ()=>{
+            const runId = document.getElementById('runIdInput').value.trim();
+            if (runId) loadRun(runId);
+        });
+        }
+
         setTheme(currentTheme);
         setLang(currentLang);
+        if (window.JBDUI) {
+            window.JBDUI.applyMenuState();
+        }
+
+        window.addEventListener('storage', (event) => {
+            if (event.key === 'lang' || event.key === 'theme' || event.key === 'menuCollapsed') {
+                const state = window.JBDUI ? window.JBDUI.getState() : {
+                    lang: localStorage.getItem('lang') || 'fa',
+                    theme: localStorage.getItem('theme') || 'dark'
+                };
+                if (state.theme !== currentTheme) {
+                    setTheme(state.theme);
+                }
+                if (state.lang !== currentLang) {
+                    setLang(state.lang);
+                }
+                if (window.JBDUI) {
+                    window.JBDUI.applyMenuState();
+                }
+            }
+        });
     </script>
 </body>
 </html>

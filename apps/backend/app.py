@@ -26,6 +26,7 @@ import threading
 from datetime import datetime, timedelta
 import copy
 import fcntl
+from sqlalchemy import select
 # اصلاح مسیرهای import
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(os.path.dirname(current_dir))
@@ -47,9 +48,25 @@ from apps.backend.utils.file_naming import (
     generate_document_filename,
     generate_log_filename,
     create_zip_archive,
-    get_download_url
+    get_download_url,
 )
 from apps.backend.modules.io_assignment import run_io_assignment
+from apps.backend.api import api_bp
+from apps.backend.db.session import SessionLocal, session_scope
+from apps.backend.services import projects as project_svc, runs as run_svc, imports as import_svc
+from apps.backend.services.exports import register_artifact
+from apps.backend.db.models import (
+    ExportArtifact,
+    ArtifactType,
+    Run,
+    RunStatus,
+    Project,
+    IOListRow,
+    Issue,
+    IssueSeverity,
+    IssueStatus,
+    UploadedFileType,
+)
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -58,6 +75,7 @@ app = Flask(
     template_folder=os.path.join(BASE_DIR, 'frontend', 'templates'),
     static_folder=os.path.join(BASE_DIR, 'frontend', 'static')
 )
+app.register_blueprint(api_bp)
 
 # تنظیم کلید محرمانه برای session
 app.secret_key = 'jb_detection_system_secret_key'
@@ -361,12 +379,187 @@ def get_platform_specific_extractor(tesseract_path=None, excel_path=None):
         logger.info(f"سیستم عامل ناشناخته '{system}'، استفاده از استخراج کننده عمومی با قابلیت لاگینگ")
         return LoggedTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
 
+
+def _normalize_project_name_for_lookup(value: str) -> str:
+    return re.sub(r'\s+', ' ', (value or '').strip()).lower()
+
+
+def get_latest_excel_from_db(project_id: Optional[str] = None, project_name: Optional[str] = None) -> Optional[str]:
+    """Return path to latest finalized run excel artifact by project name/id."""
+    session = SessionLocal()
+    try:
+        run = None
+        if project_name:
+            normalized_query = _normalize_project_name_for_lookup(project_name)
+            if not normalized_query:
+                return None
+            projects = session.scalars(select(Project)).all()
+            exact_matches = [
+                project for project in projects
+                if _normalize_project_name_for_lookup(project.project_name) == normalized_query
+            ]
+            candidates = exact_matches or [
+                project for project in projects
+                if normalized_query in _normalize_project_name_for_lookup(project.project_name)
+            ]
+
+            latest_candidate = None
+            latest_ts = None
+            for candidate in candidates:
+                candidate_run = session.scalar(
+                    select(Run)
+                    .where(Run.project_id == candidate.id, Run.status == RunStatus.FINALIZED)
+                    .order_by(Run.finished_at.desc(), Run.created_at.desc())
+                )
+                if not candidate_run:
+                    continue
+                run_ts = candidate_run.finished_at or candidate_run.started_at or candidate_run.created_at
+                if latest_candidate is None or (run_ts and (latest_ts is None or run_ts > latest_ts)):
+                    latest_candidate = candidate_run
+                    latest_ts = run_ts
+            run = latest_candidate
+        elif project_id:
+            run = session.scalar(
+                select(Run)
+                .where(Run.project_id == project_id, Run.status == RunStatus.FINALIZED)
+                .order_by(Run.finished_at.desc(), Run.created_at.desc())
+            )
+
+        if not run:
+            return None
+        art = session.scalar(
+            select(ExportArtifact)
+            .where(
+                ExportArtifact.run_id == run.id,
+                ExportArtifact.artifact_type == ArtifactType.FINAL_EXCEL
+            )
+            .order_by(ExportArtifact.created_at.desc())
+        )
+        return art.storage_path if art and art.storage_path and os.path.exists(art.storage_path) else None
+    finally:
+        session.close()
+
 def get_io_assignment_logger(project_name: str, username: str):
     safe_project_name = re.sub(r'[^\w\-]', '_', project_name)
     logger_name = f"io_assignment_{safe_project_name}"
     return get_logger(logger_name, username=username, project_name=project_name)
 
-def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_config, username):
+def _persist_run_outputs(run_id, project_id, output_excel_path, unmatched_excel_path, report_path, zip_path,
+                         annotated_pdfs, unmatched_excel_tags, unmatched_pdf_tags):
+    """Persist extractor outputs (rows, artifacts, issues) into the relational DB."""
+    with session_scope() as db:
+        run = db.get(Run, run_id)
+        project = db.get(Project, project_id) if project_id else (run.project if run else None)
+        if not run or not project:
+            return
+
+        # replace any existing rows for this run
+        db.query(IOListRow).filter(IOListRow.run_id == run.id).delete()
+
+        if output_excel_path and os.path.exists(output_excel_path):
+            df = pd.read_excel(output_excel_path)
+            spare_col = "JB_SPARE_COUNT"
+            if not df.empty and spare_col not in df.columns:
+                if "JB" in df.columns:
+                    upper_tags = df.get("Tag/SPARE", pd.Series([""] * len(df))).astype(str).str.strip().str.upper()
+                    type_col = df.get("Type", pd.Series([""] * len(df))).astype(str).str.strip().str.upper()
+                    spare_mask = type_col.eq("SPARE") | upper_tags.str.contains("SPARE", na=False)
+                    jb_series = df["JB"].astype(str).str.strip()
+                    spare_counts_by_jb = (
+                        df.loc[spare_mask]
+                        .assign(_JB_NORM=jb_series[spare_mask].str.upper())
+                        .groupby("_JB_NORM")
+                        .size()
+                        .to_dict()
+                    )
+
+                    def _jb_spare_count(jb_value):
+                        key = str(jb_value or "").strip().upper()
+                        return int(spare_counts_by_jb.get(key, 0))
+
+                    df[spare_col] = df["JB"].apply(_jb_spare_count)
+                else:
+                    df[spare_col] = 0
+                df.to_excel(output_excel_path, index=False)
+
+            for idx, row in df.fillna("").iterrows():
+                raw = row.to_dict()
+                db.add(
+                    IOListRow(
+                        run_id=run.id,
+                        project_id=project.id,
+                        row_index=int(idx) + 1,
+                        jb=str(raw.get("JB") or raw.get("jb") or ""),
+                        io_type=str(raw.get("I/O Type") or raw.get("IO_TYPE") or raw.get("io_type") or ""),
+                        safety=str(raw.get("IS/NIS") or raw.get("SAFETY") or raw.get("is/nis") or ""),
+                        location=str(raw.get("Location") or raw.get("LOCATION") or ""),
+                        terminal1=str(
+                            raw.get("terminal-1")
+                            or raw.get("TERM1")
+                            or raw.get("Term1")
+                            or raw.get("Terminal_First_Number")
+                            or ""
+                        ),
+                        terminal2=str(
+                            raw.get("terminal-2")
+                            or raw.get("TERM2")
+                            or raw.get("Term2")
+                            or raw.get("Terminal_Second_Number")
+                            or ""
+                        ),
+                        src=str(raw.get("SRC") or raw.get("src") or ""),
+                        normalized_tag=str(raw.get("Tag/SPARE") or raw.get("Tag No") or raw.get("normalized_tag") or ""),
+                        match_status=str(raw.get("Match") or raw.get("match_status") or raw.get("MATCH") or ""),
+                        raw_json=raw,
+                    )
+                )
+            register_artifact(db, run, ArtifactType.FINAL_EXCEL, output_excel_path, mime_type="application/vnd.ms-excel")
+
+        if unmatched_excel_path and os.path.exists(unmatched_excel_path):
+            register_artifact(db, run, ArtifactType.UNMATCHED_EXCEL, unmatched_excel_path, mime_type="application/vnd.ms-excel")
+
+        if report_path and os.path.exists(report_path):
+            register_artifact(db, run, ArtifactType.REPORT_JSON, report_path, mime_type="application/json")
+
+        if zip_path and os.path.exists(zip_path):
+            register_artifact(db, run, ArtifactType.ZIP_BUNDLE, zip_path, mime_type="application/zip")
+
+        for pdf_path in annotated_pdfs:
+            if os.path.exists(pdf_path):
+                register_artifact(db, run, ArtifactType.ANNOTATED_PDF, pdf_path, mime_type="application/pdf")
+
+        for tag in unmatched_excel_tags:
+            db.add(
+                Issue(
+                    run_id=run.id,
+                    project_id=project.id,
+                    severity=IssueSeverity.WARNING,
+                    status=IssueStatus.OPEN,
+                    code="unmatched_excel",
+                    message=f"Tag from Excel not matched: {tag}",
+                )
+            )
+
+        for tag in unmatched_pdf_tags:
+            db.add(
+                Issue(
+                    run_id=run.id,
+                    project_id=project.id,
+                    severity=IssueSeverity.WARNING,
+                    status=IssueStatus.OPEN,
+                    code="unmatched_pdf",
+                    message=f"Tag from PDF not matched: {tag}",
+                )
+            )
+
+        run_svc.set_status(db, run, RunStatus.FINALIZED, stage="finalized")
+        project.last_finalized_run_id = run.id
+        run_svc.add_log_line(db, run, "JBDetection results stored in database", level="info")
+        db.flush()
+        db.commit()
+
+
+def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_config, username, run_id, project_id):
     """پردازش task به صورت asynchronous با مدیریت بهتر وضعیت"""
     
     try:
@@ -374,14 +567,22 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
         TaskManager.update_task(task_id, {
             'status': TaskStatus.PROCESSING,
             'progress': 10,
-            'started_at': datetime.now().isoformat()
+            'started_at': datetime.now().isoformat(),
+            'run_id': run_id,
+            'project_id': project_id
         })
+
+        with session_scope() as db:
+            run = db.get(Run, run_id)
+            if run:
+                run_svc.set_status(db, run, RunStatus.PROCESSING, stage="jbdetection")
+                run_svc.add_log_line(db, run, "JBDetection processing started", level="info")
+                db.commit()
         
         logger.info(f"Task {task_id}: شروع پردازش برای پروژه {project_name}")
         
         # ایجاد دایرکتوری‌ها
         project_output_dir = get_project_output_dir(project_name)
-        log_dir = get_log_dir(project_name)
         annotated_pdf_dir = os.path.join(project_output_dir, "annotated_pdfs")
         os.makedirs(annotated_pdf_dir, exist_ok=True)
         
@@ -481,26 +682,25 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
         zip_path = create_zip_archive(project_name, output_files)
         download_url = get_download_url(zip_path)
         
-        # پاکسازی فایل‌های موقت
-        logger.info(f"Task {task_id}: پاکسازی فایل‌های موقت")
-        for path in pdf_paths:
-            if os.path.exists(path):
-                try:
-                    os.remove(path)
-                except Exception as e:
-                    logger.warning(f"Task {task_id}: خطا در حذف {path}: {e}")
-        
-        if os.path.exists(excel_path):
-            try:
-                os.remove(excel_path)
-            except Exception as e:
-                logger.warning(f"Task {task_id}: خطا در حذف {excel_path}: {e}")
+        _persist_run_outputs(
+            run_id,
+            project_id,
+            output_excel_path,
+            unmatched_excel_path,
+            report_path,
+            zip_path,
+            annotated_pdfs,
+            unmatched_excel_tags,
+            unmatched_pdf_tags,
+        )
         
         # ذخیره نتایج نهایی
         final_result = {
             'status': TaskStatus.COMPLETED,
             'progress': 100,
             'completed_at': datetime.now().isoformat(),
+            'run_id': run_id,
+            'project_id': project_id,
             'result': {
                 'output_files': {
                     'excel_path': output_excel_path,
@@ -526,6 +726,13 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
     except Exception as e:
         logger.error(f"Task {task_id}: خطا در پردازش - {str(e)}")
         logger.error(traceback.format_exc())
+
+        with session_scope() as db:
+            run = db.get(Run, run_id) if run_id else None
+            if run:
+                run_svc.set_status(db, run, RunStatus.FAILED, stage="jbdetection", notes=str(e))
+                run_svc.add_log_line(db, run, f"JBDetection failed: {e}", level="error")
+                db.commit()
         
         TaskManager.update_task(task_id, {
             'status': TaskStatus.FAILED,
@@ -849,6 +1056,8 @@ def get_task_status(task_id):
             'progress': task.get('progress', 0),
             'result': task.get('result'),
             'error': task.get('error'),
+            'run_id': task.get('run_id'),
+            'project_id': task.get('project_id'),
             'project_name': task.get('project_name', ''),
             'pdf_count': task.get('pdf_count', 0),
             'log': task.get('log', []),
@@ -898,17 +1107,25 @@ def process_files():
                 'message': 'لطفاً یک فایل Excel انتخاب کنید'
             }), 400
         
-        # ذخیره فایل‌های موقت
+        # ذخیره در DB + دیسک و ایجاد Run
         pdf_paths = []
-        for pdf in pdf_files:
-            temp_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{uuid.uuid4()}_{secure_filename(pdf.filename)}")
-            pdf.save(temp_path)
-            pdf_paths.append(temp_path)
-            logger.info(f"فایل PDF ذخیره شد: {pdf.filename}")
-        
-        excel_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{uuid.uuid4()}_{secure_filename(excel_file.filename)}")
-        excel_file.save(excel_path)
-        logger.info(f"فایل Excel ذخیره شد: {excel_file.filename}")
+        excel_path = None
+        run_id = None
+        project_id = None
+        with session_scope() as db:
+            project = project_svc.get_or_create_project(db, project_name, reuse=True)
+            project_id = str(project.id)
+            run = run_svc.create_run(db, project, initiated_by=username)
+            run_svc.set_status(db, run, RunStatus.PENDING, stage="import")
+
+            stored_pdfs = import_svc.ingest_pdf_files(db, pdf_files, project, run, BASE_OUTPUT_DIR)
+            excel_uploaded = import_svc.store_uploaded_file(
+                db, excel_file, project, run, UploadedFileType.EXCEL, BASE_OUTPUT_DIR
+            )
+
+            pdf_paths = [uf.storage_path for uf in stored_pdfs]
+            excel_path = excel_uploaded.storage_path
+            run_id = str(run.id)
         
         # دریافت الگوها
         jb_examples = request.form.get('jb_examples', '').strip()
@@ -943,6 +1160,8 @@ def process_files():
             'status': TaskStatus.PENDING,
             'progress': 0,
             'project_name': project_name,
+            'project_id': project_id,
+            'run_id': run_id,
             'username': username,
             'pdf_count': len(pdf_paths),
             'pdf_names': [os.path.basename(p) for p in pdf_paths]
@@ -954,7 +1173,7 @@ def process_files():
         # شروع پردازش در thread جداگانه
         thread = threading.Thread(
             target=process_task_async,
-            args=(task_id, pdf_paths, excel_path, project_name, pattern_config, username),
+            args=(task_id, pdf_paths, excel_path, project_name, pattern_config, username, run_id, project_id),
             daemon=False  # تغییر به False برای اطمینان از تکمیل پردازش
         )
         thread.start()
@@ -964,7 +1183,9 @@ def process_files():
             'status': 'success',
             'message': 'پردازش آغاز شد',
             'task_id': task_id,
-            'project_name': project_name
+            'project_name': project_name,
+            'run_id': run_id,
+            'project_id': project_id
         })
         
     except Exception as e:
@@ -1090,14 +1311,37 @@ def process_io_assignment():
 
     try:
         project_name = request.form.get('project_name', '').strip()
+        project_id = request.form.get('project_id', '').strip()
+        jb_project_name = request.form.get('jb_project_name', '').strip()
         excel_file = request.files.get('excel_file')
+        use_jb_output = request.form.get('use_jb_output', 'false').lower() == 'true'
         config_json = request.form.get('config', '')
 
         if not project_name:
             return jsonify({'status': 'error', 'message': 'نام پروژه الزامی است'}), 400
 
-        if not excel_file or excel_file.filename == '':
-            return jsonify({'status': 'error', 'message': 'فایل Excel الزامی است'}), 400
+        # اگر قرار است از خروجی JB استفاده شود
+        temp_path = None
+        if use_jb_output:
+            if not jb_project_name and not project_id:
+                return jsonify({'status': 'error', 'message': 'نام پروژه JB برای استفاده از خروجی DB الزامی است'}), 400
+
+            # Preferred path: lookup by project name (exact first, then partial; latest finalized run wins).
+            temp_path = get_latest_excel_from_db(project_name=jb_project_name) if jb_project_name else None
+            if not temp_path and project_id:
+                # backward compatibility for older clients
+                temp_path = get_latest_excel_from_db(project_id=project_id)
+
+            if not temp_path:
+                return jsonify({'status': 'error', 'message': 'خروجی Excel نهایی برای این پروژه یافت نشد'}), 404
+        else:
+            if not excel_file or excel_file.filename == '':
+                return jsonify({'status': 'error', 'message': 'فایل Excel الزامی است'}), 400
+            filename = secure_filename(excel_file.filename)
+            unique_name = f"io_{uuid.uuid4().hex}_{filename}"
+            temp_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_name)
+            excel_file.save(temp_path)
+            logger.info(f"IO Assignment upload saved: {temp_path}", extra={'user': username})
 
         config_overrides = {}
         if config_json:
@@ -1105,12 +1349,6 @@ def process_io_assignment():
                 config_overrides = json.loads(config_json)
             except json.JSONDecodeError:
                 return jsonify({'status': 'error', 'message': 'فرمت تنظیمات نامعتبر است'}), 400
-
-        filename = secure_filename(excel_file.filename)
-        unique_name = f"io_{uuid.uuid4().hex}_{filename}"
-        temp_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_name)
-        excel_file.save(temp_path)
-        logger.info(f"IO Assignment upload saved: {temp_path}", extra={'user': username})
 
         task_id = str(uuid.uuid4())
         TaskManager.create_task(task_id, {
@@ -1193,6 +1431,34 @@ def download_file():
     except Exception as e:
         username = session.get('username', 'anonymous')
         logger.error(f"خطا در دانلود فایل: {str(e)}", extra={'user': username})
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/downloads/<path:relpath>', methods=['GET'])
+def download_artifact(relpath):
+    """
+    سرو فایل‌های خروجی ذخیره شده در BASE_OUTPUT_DIR از مسیر /downloads/...
+    """
+    try:
+        # مشابه منطق /download ولی با الگوی مسیری که get_download_url تولید می‌کند
+        version = "v1"
+        if request.host.endswith(':5001'):
+            version = "v2"
+        base_dir = OUTPUT_DIRS.get(version, BASE_OUTPUT_DIR)
+        full_path = os.path.join(base_dir, relpath)
+        abs_path = os.path.abspath(full_path)
+        if not abs_path.startswith(base_dir):
+            return jsonify({"error": "Access denied"}), 403
+        if not os.path.exists(abs_path) or not os.path.isfile(abs_path):
+            return jsonify({"error": f"File not found: {abs_path}"}), 404
+        directory = os.path.dirname(abs_path)
+        filename = os.path.basename(abs_path)
+        username = session.get('username', 'anonymous')
+        logger.info(f"کاربر {username} دانلود فایل {filename} را از /downloads درخواست کرد")
+        return send_from_directory(directory, filename, as_attachment=True)
+    except Exception as e:
+        username = session.get('username', 'anonymous')
+        logger.error(f"خطا در /downloads: {str(e)}", extra={'user': username})
         return jsonify({"error": str(e)}), 500
 
 @app.route('/download-all-pdfs', methods=['GET'])

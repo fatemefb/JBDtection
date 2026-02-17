@@ -4207,6 +4207,29 @@ class TagJBExtractor:
                         for col in intermediate_columns_to_add:
                             final_df.at[idx, col] = src_row.get(col, None)
 
+            # ستون تعداد SPARE موجود در هر JB (برای نمایش UI و استفاده در IO Assignment)
+            spare_count_col = "JB_SPARE_COUNT"
+            jb_col = "JB" if "JB" in final_df.columns else ("JB No" if "JB No" in final_df.columns else None)
+            if jb_col:
+                intermediate_jb_col = "JB" if "JB" in intermediate_df.columns else None
+                if intermediate_jb_col:
+                    type_upper = intermediate_df.get("Type", pd.Series([""] * len(intermediate_df))).astype(str).str.strip().str.upper()
+                    tag_upper = intermediate_df.get(intermediate_tag_col, pd.Series([""] * len(intermediate_df))).astype(str).str.strip().str.upper()
+                    spare_mask = type_upper.eq("SPARE") | tag_upper.str.contains("SPARE", na=False)
+                    jb_norm = intermediate_df[intermediate_jb_col].astype(str).str.strip().str.upper()
+                    spare_counts_by_jb = (
+                        intermediate_df.loc[spare_mask]
+                        .assign(_JB_NORM=jb_norm[spare_mask])
+                        .groupby("_JB_NORM")
+                        .size()
+                        .to_dict()
+                    )
+                    final_df[spare_count_col] = final_df[jb_col].apply(
+                        lambda jb: int(spare_counts_by_jb.get(str(jb).strip().upper(), 0))
+                    )
+                else:
+                    final_df[spare_count_col] = 0
+
             # ذخیره Excel نهایی
             final_df.to_excel(output_path, index=False)
 

@@ -104,6 +104,7 @@ apps/backend/outputs_v1/NGL/annotated_pdfs/processing_reports.json
 __pycache__/
 *.pyc
 apps/backend/outputs_v1/
+apps/backend/outputs_test/
 apps/backend/outputs_test/.tasks/3fef9c09-f54a-4ee6-8617-38c9c0570c29.json
 apps/backend/outputs_test/NGL/Aryavakav-NGL-IOAssignment-2026-01-04-v1.0.xlsx
 apps/backend/outputs_test/NGL/Aryavakav-NGL-IOAssignment-2026-01-04-v1.0.zip

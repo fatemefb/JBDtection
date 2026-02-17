@@ -129,7 +129,7 @@ ENV TESSDATA_PREFIX=/usr/local/share/tessdata
 ENV TESSERACT_PATH=/usr/local/bin/tesseract
 ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 ENV TZ=Asia/Tehran
-ENV DATABASE_URL=postgresql+psycopg2://vakav:vakav_password@postgres:5432/vakav
+ENV DATABASE_URL=postgresql+psycopg2://vakav:vakav_strong_password_change_me@postgres:5432/vakav
 
 WORKDIR /app
 
@@ -142,4 +142,3 @@ COPY apps /app/apps
 VOLUME ["/home/devio/JB-outputs", "/home/devio/JB-logs"]
 
 CMD ["gunicorn", "--workers", "1", "--threads", "4", "--bind", "0.0.0.0:5000", "app:app"]
-

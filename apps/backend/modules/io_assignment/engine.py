@@ -1,6 +1,5 @@
 import math
 import re
-import itertools
 import logging
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Any, Optional
@@ -160,6 +159,7 @@ class IOConfig:
         "TERM1": "terminal-1",
         "TERM2": "terminal-2",
         "SRC": "SRC",
+        "SPARE_COUNT": "JB_SPARE_COUNT",
     })
     io_normal: Dict[str, str] = field(default_factory=lambda: {
         "AI": "AI", "A.I": "AI", "A I": "AI",
@@ -290,6 +290,12 @@ def initial_cleaning_and_report(df_raw: pd.DataFrame, config: IOConfig):
     src_col = config.col_mapping["SRC"]
     if src_col not in df.columns:
         df[src_col] = ""
+    spare_count_col = config.col_mapping.get("SPARE_COUNT", "JB_SPARE_COUNT")
+    input_has_spare_count = spare_count_col in df.columns
+    if not input_has_spare_count:
+        df[spare_count_col] = pd.NA
+    df["_HAS_SPARE_COUNT_INPUT"] = bool(input_has_spare_count)
+    df[spare_count_col] = pd.to_numeric(df[spare_count_col], errors="coerce").fillna(0).clip(lower=0)
 
     crit_mask = (df[jb_col] == "") | (df[io_col] == "")
     report["Removed_Missing_Critical"] = df[crit_mask].to_dict("records")
@@ -350,6 +356,7 @@ def inject_hot_spares(df: pd.DataFrame, config: IOConfig) -> pd.DataFrame:
     jb_col = config.col_mapping["JB"]
     term1_col = config.col_mapping["TERM1"]
     term2_col = config.col_mapping["TERM2"]
+    spare_count_col = config.col_mapping.get("SPARE_COUNT", "JB_SPARE_COUNT")
 
     def parse_terminal(value: Any) -> Optional[Tuple[str, int, int]]:
         if value is None:
@@ -400,36 +407,85 @@ def inject_hot_spares(df: pd.DataFrame, config: IOConfig) -> pd.DataFrame:
 
     grouped = df.groupby([io_col, saf_col])
 
+    has_spare_flag = bool(df.get("_HAS_SPARE_COUNT_INPUT", pd.Series([False])).astype(bool).any())
+    enforce_spare_cap = spare_count_col in df.columns and has_spare_flag
+    remaining_spare_by_jb: Dict[str, int] = {}
+    if enforce_spare_cap:
+        spare_capacity_df = df[[jb_col, spare_count_col]].copy()
+        spare_capacity_df[jb_col] = spare_capacity_df[jb_col].astype(str).str.strip()
+        spare_capacity_df[spare_count_col] = (
+            pd.to_numeric(spare_capacity_df[spare_count_col], errors="coerce")
+            .fillna(0)
+            .clip(lower=0)
+            .astype(int)
+        )
+        remaining_spare_by_jb = (
+            spare_capacity_df.groupby(jb_col)[spare_count_col]
+            .max()
+            .to_dict()
+        )
+
     for (io_type, safety), group in grouped:
         total_signals = len(group)
         spares_needed = math.ceil(total_signals * config.hot_spare_ratio)
         if spares_needed == 0:
             continue
 
-        jbs = group[jb_col].unique()
-        jb_cycle = itertools.cycle(jbs)
+        jbs = [str(jb).strip() for jb in group[jb_col].unique() if str(jb).strip()]
+        if not jbs:
+            continue
 
-        for _ in range(spares_needed):
-            jb = next(jb_cycle)
-            rep_row = group[group[jb_col] == jb].iloc[0].copy()
-            rep_row["Tag No"] = "HOT_SPARE"
-            rep_row["Loop No"] = "HOT_SPARE"
-            rep_row["Signal_Type"] = "HOT_SPARE"
-            if jb in terminal_state and (term1_col in df.columns or term2_col in df.columns):
-                state = terminal_state[jb]
-                term1_prefix, term1_width = state["fmt1"]
-                term2_prefix, term2_width = state["fmt2"]
-                term1_num = state["next"]
-                term2_num = state["next"] + 1
-                state["next"] += 2
-                if term1_col in df.columns:
-                    rep_row[term1_col] = format_terminal(term1_prefix, term1_width, term1_num)
-                if term2_col in df.columns:
-                    rep_row[term2_col] = format_terminal(term2_prefix, term2_width, term2_num)
-            spare_rows.append(rep_row)
+        allocated = 0
+        max_rounds = (spares_needed * max(len(jbs), 1)) + 10
+        rounds = 0
+
+        while allocated < spares_needed and rounds < max_rounds:
+            rounds += 1
+            allocated_this_round = 0
+            for jb in jbs:
+                if allocated >= spares_needed:
+                    break
+                if enforce_spare_cap and remaining_spare_by_jb.get(jb, 0) <= 0:
+                    continue
+
+                rep_row = group[group[jb_col].astype(str).str.strip() == jb].iloc[0].copy()
+                rep_row["Tag No"] = "HOT_SPARE"
+                rep_row["Loop No"] = "HOT_SPARE"
+                rep_row["Signal_Type"] = "HOT_SPARE"
+                if jb in terminal_state and (term1_col in df.columns or term2_col in df.columns):
+                    state = terminal_state[jb]
+                    term1_prefix, term1_width = state["fmt1"]
+                    term2_prefix, term2_width = state["fmt2"]
+                    term1_num = state["next"]
+                    term2_num = state["next"] + 1
+                    state["next"] += 2
+                    if term1_col in df.columns:
+                        rep_row[term1_col] = format_terminal(term1_prefix, term1_width, term1_num)
+                    if term2_col in df.columns:
+                        rep_row[term2_col] = format_terminal(term2_prefix, term2_width, term2_num)
+                spare_rows.append(rep_row)
+                allocated += 1
+                allocated_this_round += 1
+                if enforce_spare_cap:
+                    remaining_spare_by_jb[jb] = max(remaining_spare_by_jb.get(jb, 0) - 1, 0)
+
+            if allocated_this_round == 0:
+                break
+
+        if enforce_spare_cap and allocated < spares_needed:
+            logger.info(
+                "HOT_SPARE capped by JB spare capacity for group (%s, %s): requested=%s allocated=%s",
+                io_type,
+                safety,
+                spares_needed,
+                allocated,
+            )
 
     if spare_rows:
         df = pd.concat([df, pd.DataFrame(spare_rows)], ignore_index=True)
+
+    if "_HAS_SPARE_COUNT_INPUT" in df.columns:
+        df = df.drop(columns=["_HAS_SPARE_COUNT_INPUT"])
 
     return df
 

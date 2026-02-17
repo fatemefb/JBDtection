@@ -450,3 +450,160 @@ body.light .icon-btn {
         align-items: flex-start;
     }
 }
+
+/* ---------- Unified shell + palette overrides ---------- */
+:root {
+    --bg: #0c1626;
+    --bg-strong: #0f1e33;
+    --bg-card: #122338;
+    --bg-card-soft: #142a45;
+    --border: rgba(255, 255, 255, 0.08);
+    --text: #e8f1ff;
+    --text-muted: #9fb4d7;
+    --accent: #2ce0cf;
+    --accent-2: #3b82f6;
+}
+
+body.dark {
+    --bg: #0c1626;
+    --bg-strong: #0f1e33;
+    --bg-card: #122338;
+    --bg-card-soft: #142a45;
+    --border: rgba(255, 255, 255, 0.08);
+    --text: #e8f1ff;
+    --text-muted: #9fb4d7;
+    --accent: #2ce0cf;
+    --accent-2: #3b82f6;
+}
+
+body.light {
+    --bg: #f4f7fb;
+    --bg-strong: #e7edf7;
+    --bg-card: #ffffff;
+    --bg-card-soft: #f1f4fa;
+    --border: rgba(0, 20, 60, 0.1);
+    --text: #0c1b33;
+    --text-muted: #577199;
+    --accent: #0fa6a1;
+    --accent-2: #2563eb;
+}
+
+body {
+    color: var(--text);
+    background: radial-gradient(120% 120% at 10% -10%, rgba(44, 114, 255, 0.08), transparent),
+        radial-gradient(140% 140% at 90% 0%, rgba(44, 224, 207, 0.08), transparent),
+        var(--bg);
+}
+
+.home-shell {
+    align-items: start;
+}
+
+.side-panel {
+    background: var(--bg-strong);
+    border-right: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+}
+
+.brand {
+    align-items: center;
+}
+
+.brand-logo {
+    width: 54px;
+    height: 54px;
+    padding: 9px;
+    border-radius: 16px;
+    object-fit: contain;
+    background: linear-gradient(135deg, rgba(44, 224, 207, 0.2), rgba(59, 130, 246, 0.2));
+    border: 1px solid var(--border);
+    box-shadow: 0 10px 24px rgba(4, 12, 24, 0.28);
+}
+
+body.light .brand-logo {
+    background: linear-gradient(135deg, rgba(15, 166, 161, 0.12), rgba(37, 99, 235, 0.12));
+    box-shadow: 0 8px 18px rgba(14, 40, 80, 0.16);
+}
+
+.home-main {
+    min-width: 0;
+}
+
+.nav-item.active,
+.nav-item:hover {
+    color: var(--text);
+    border-color: rgba(44, 224, 207, 0.35);
+    background: rgba(44, 224, 207, 0.14);
+}
+
+@media (max-width: 1024px) {
+    .side-panel {
+        position: sticky;
+        height: auto;
+        max-height: none;
+    }
+}
+
+/* ---------- Light Theme Readability Polish ---------- */
+body.light {
+    --bg: #f6f9ff;
+    --bg-strong: #edf4ff;
+    --bg-card: #ffffff;
+    --bg-card-soft: #f3f8ff;
+    --border: rgba(76, 123, 189, 0.22);
+    --text: #0f2f52;
+    --text-muted: #3f6794;
+    --accent: #0f9fba;
+    --accent-2: #2563eb;
+}
+
+body.light .side-panel,
+body.light .home-app-header,
+body.light .hero-card,
+body.light .split-card {
+    background: var(--bg-card);
+    border-color: var(--border);
+}
+
+body.light .home-app-header {
+    background: linear-gradient(140deg, #ffffff, #f4f9ff);
+}
+
+body.light .split-card {
+    background: #f8fbff;
+}
+
+body.light .lang-btn,
+body.light .theme-btn,
+body.light .icon-btn,
+body.light .ghost-btn,
+body.light .user-pill {
+    background: #eef5ff;
+    border-color: rgba(76, 123, 189, 0.26);
+    color: var(--text);
+}
+
+body.light .ghost-btn {
+    color: #29527f;
+}
+
+body.light .header-kicker,
+body.light .hero-content p,
+body.light .split-card p,
+body.light .brand-kicker,
+body.light .nav-item,
+body.light .logout-link {
+    color: var(--text-muted);
+}
+
+body.light .nav-item.active,
+body.light .nav-item:hover {
+    background: rgba(37, 99, 235, 0.12);
+    border-color: rgba(37, 99, 235, 0.24);
+    color: #0f2f52;
+}
