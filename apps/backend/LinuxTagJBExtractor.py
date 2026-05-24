@@ -278,183 +278,19 @@ class LinuxTagJBExtractor(TagJBExtractor):
     def run_with_annotated_pdf(self, pdf_paths: 'List[str]', excel_path: str, output_excel_path: str, output_pdf_dir: str, 
                             create_zip: bool = True, zip_path: str = None) -> 'Tuple[List[str], List[str]]':
         """
-        Run complete process with vector-based matching and generate annotated PDFs.
-        Also adds tag numbers to the output Excel file and creates a ZIP archive of all output files.
-        
-        Args:
-            pdf_paths: List of PDF file paths
-            excel_path: Input Excel file path
-            output_excel_path: Output Excel file path
-            output_pdf_dir: Directory path for storing processed PDFs
-            create_zip: Whether to create a ZIP archive of all output files
-            zip_path: Path for the ZIP archive (if None, will use output_pdf_dir + '.zip')
-            
-        Returns:
-            Tuple of (unmatched_excel_tags, unmatched_pdf_tags)
+        Delegate to the base implementation (TagJBExtractor) so Linux mode keeps
+        full parity with the main pipeline outputs (including pattern-unmatched
+        candidates/details used by the dashboard).
         """
-        import zipfile
-        import os
-        import time
-        
-        # Build tag vectors from Excel first
-        start_time = time.time()
-        self.build_tag_vectors_from_excel(excel_path)
-        logger.info(f"Using tag patterns with {len(self.tag_patterns)} patterns")
-        
-        # Create output PDF directory if it doesn't exist
-        os.makedirs(output_pdf_dir, exist_ok=True)
-        
-        # Define reports path
-        reports_path = os.path.join(output_pdf_dir, "processing_reports.json")
-        
-        # Store all similarity reports for detailed analysis
-        all_similarity_reports = []
-        
-        # Master Dictionary to store tag-to-number mappings from all PDFs
-        master_tag_numbers = {}
-        
-        # Dictionary to store all PDF processing results
-        all_pdf_results = {}
-        
-        # لیست فایل‌های خروجی برای اضافه کردن به ZIP
-        output_files = []
-        
-        # Process each PDF file
-        for pdf_idx, pdf_path in enumerate(pdf_paths):
-            pdf_filename = os.path.basename(pdf_path)
-            logger.info(f"Processing PDF {pdf_idx + 1}/{len(pdf_paths)}: {pdf_filename}")
-            
-            # Process PDF to extract tags and JBs
-            pdf_result = self.process_pdf(pdf_path)
-            
-            # Store PDF results with the PDF filename as key
-            all_pdf_results[pdf_filename] = pdf_result
-            
-            # Create annotated PDF with vector matching results and get tag numbers
-            output_pdf_path = os.path.join(output_pdf_dir, f"annotated_{pdf_filename}")
-            pdf_tag_numbers = self.create_annotated_pdf(pdf_path, output_pdf_path)
-            
-            # اضافه کردن PDF حاشیه‌گذاری شده به لیست فایل‌های خروجی
-            output_files.append(output_pdf_path)
-            
-            # Update master tag numbers Dictionary
-            master_tag_numbers.update(pdf_tag_numbers)
-            
-            # Collect similarity reports from this PDF
-            if hasattr(self, 'similarity_reports'):
-                all_similarity_reports.extend(self.similarity_reports)
-            
-            # Generate per-PDF statistics
-            pdf_stats = self.get_processing_stats() if hasattr(self, 'get_processing_stats') else {}
-            logger.info(f"PDF {pdf_filename} statistics:")
-            for key, value in pdf_stats.items():
-                logger.info(f"  {key}: {value}")
-        
-        # نام‌گذاری مناسب فایل‌های اکسل
-        # فایل اکسل میانی با نام مشخص JB Wiring Diagram
-        intermediate_excel_path = os.path.join(output_pdf_dir, "JB_Wiring_Diagram_Intermediate.xlsx")
-        
-        # Pass all_pdf_results to add_wire_colors_and_scr_to_dataframe
-        if hasattr(self, 'add_wire_colors_and_scr_to_dataframe'):
-            self.add_wire_colors_and_scr_to_dataframe(
-                pd.DataFrame(), 
-                master_tag_numbers, 
-                intermediate_excel_path, 
-                all_pdf_results
-            )
-        
-        # اضافه کردن فایل اکسل میانی به لیست فایل‌های خروجی
-        output_files.append(intermediate_excel_path)
-        
-        # If IO List is provided, process and combine both Excel files
-        if excel_path:
-            # نام‌گذاری فایل اکسل نهایی با پسوند مناسب
-            if not output_excel_path.endswith(".xlsx"):
-                output_excel_path = output_excel_path.replace(".xls", ".xlsx") if output_excel_path.endswith(".xls") else f"{output_excel_path}.xlsx"
-            
-            # اگر نام فایل خروجی مشخص نشده، یک نام پیش‌فرض تعیین کنیم
-            if not os.path.basename(output_excel_path):
-                output_excel_path = os.path.join(output_pdf_dir, "JB_Wiring_Diagram_Final.xlsx")
-            
-            final_df, unmatched_io_tags, unmatched_tags = self.process_excel_with_io_list(
-                intermediate_excel_path, 
-                excel_path, 
-                output_excel_path
-            )
-            logger.info(f"Combined Excel file with IO List saved to: {output_excel_path}")
-            
-            # اضافه کردن فایل اکسل نهایی به لیست فایل‌های خروجی
-            output_files.append(output_excel_path)
-            
-            # For function output
-            unmatched_excel_tags = unmatched_io_tags
-            unmatched_pdf_tags = unmatched_tags
-            
-            # ایجاد فایل اکسل برای تگ‌های تطبیق نیافته
-            unmatched_excel_path = os.path.join(output_pdf_dir, "JB_Wiring_Diagram_Unmatched_Tags.xlsx")
-            self._create_unmatched_tags_excel(unmatched_excel_tags, unmatched_pdf_tags, unmatched_excel_path)
-            logger.info(f"Unmatched tags Excel file saved to: {unmatched_excel_path}")
-            
-            # اضافه کردن فایل اکسل تگ‌های تطبیق نیافته به لیست فایل‌های خروجی
-            output_files.append(unmatched_excel_path)
-        else:
-            # If no IO List, just copy the intermediate file to the output path
-            # نام‌گذاری فایل اکسل نهایی با پسوند مناسب
-            if not output_excel_path.endswith(".xlsx"):
-                output_excel_path = output_excel_path.replace(".xls", ".xlsx") if output_excel_path.endswith(".xls") else f"{output_excel_path}.xlsx"
-                
-            # اگر نام فایل خروجی مشخص نشده، یک نام پیش‌فرض تعیین کنیم
-            if not os.path.basename(output_excel_path):
-                output_excel_path = os.path.join(output_pdf_dir, "JB_Wiring_Diagram_Final.xlsx")
-                
-            shutil.copy2(intermediate_excel_path, output_excel_path)
-            logger.info(f"Excel file saved to: {output_excel_path}")
-            
-            # اضافه کردن فایل اکسل نهایی به لیست فایل‌های خروجی
-            output_files.append(output_excel_path)
-            
-            # For function output
-            unmatched_excel_tags = []
-            unmatched_pdf_tags = []
-            
-            # ایجاد فایل اکسل خالی برای تگ‌های تطبیق نیافته
-            unmatched_excel_path = os.path.join(output_pdf_dir, "JB_Wiring_Diagram_Unmatched_Tags.xlsx")
-            self._create_unmatched_tags_excel([], [], unmatched_excel_path)
-            logger.info(f"Empty unmatched tags Excel file saved to: {unmatched_excel_path}")
-            
-            # اضافه کردن فایل اکسل تگ‌های تطبیق نیافته به لیست فایل‌های خروجی
-            output_files.append(unmatched_excel_path)
-        
-        # Create report file
-        try:
-            self._create_report_file(reports_path, unmatched_excel_tags, unmatched_pdf_tags)
-        except Exception as e:
-            logger.error(f"Error creating report file: {e}")
-        
-        # Generate summary statistics
-        try:
-            self.processing_time = time.time() - start_time
-            stats = self.get_processing_stats() if hasattr(self, 'get_processing_stats') else {}
-            
-            logger.info(f"Processing completed in {self.processing_time:.2f} seconds")
-            logger.info(f"Summary statistics: {stats}")
-            logger.info(f"Reports and tag numbers saved to: {reports_path}")
-            logger.info(f"Total tags numbered: {len(master_tag_numbers)}")
-        except Exception as e:
-            logger.error(f"Error calculating processing stats: {e}")
-        
-        # Create ZIP archive if requested
-        if create_zip and output_files:
-            try:
-                if not zip_path:
-                    zip_path = f"{output_pdf_dir}.zip"
-                
-                self._create_zip_archive(zip_path, output_files)
-                logger.info(f"ZIP archive created at: {zip_path}")
-            except Exception as e:
-                logger.error(f"Error creating ZIP archive: {e}")
-        
-        return unmatched_excel_tags, unmatched_pdf_tags
+        logger.info("Linux run_with_annotated_pdf delegated to base TagJBExtractor pipeline")
+        return super().run_with_annotated_pdf(
+            pdf_paths=pdf_paths,
+            excel_path=excel_path,
+            output_excel_path=output_excel_path,
+            output_pdf_dir=output_pdf_dir,
+            create_zip=create_zip,
+            zip_path=zip_path,
+        )
     
     def _create_empty_excel(self, file_path):
         """

@@ -9,7 +9,7 @@
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/favicon.png') }}">
     <link rel="name" href="{{ url_for('static', filename='images/JBD.png') }}" type="image/png">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/home.css') }}">
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Vazirmatn:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&family=Vazirmatn:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <script src="{{ url_for('static', filename='js/ui_preferences.js') }}"></script>
 </head>
@@ -63,22 +63,19 @@
         </aside>
 
         <main class="home-main">
-            <header class="app-header home-app-header">
-                <div class="app-topbar">
-                    <div class="header-stack">
-                        <span id="home-kicker" class="header-kicker">Home</span>
-                        <h2 id="home-title">VAKAV IO Mapping Command Center</h2>
-                        <p id="home-subtitle">Control modules and expand your reports with the same visual language.</p>
+            <header class="app-header home-app-header section-block full-screen-section" data-reveal>
+                <div class="intro-topbar">
+                    <div class="intro-brand">
+                        <img src="{{ url_for('static', filename='images/favicon.png') }}" alt="VAKAV IO Mapping" class="intro-logo">
+                        <span id="home-kicker">VAKAV Command</span>
                     </div>
+                    <nav class="intro-nav-links">
+                        <a href="/home" id="intro-link-home">Home</a>
+                        <a href="/dashboard" id="intro-link-jb">JBDetection</a>
+                        <a href="/io-assignment" id="intro-link-io">IO Assignment</a>
+                        <a href="#" id="intro-link-docs">Docs</a>
+                    </nav>
                     <div class="header-actions">
-                        <div class="icon-group">
-                            <button class="icon-btn" id="settingsBtn" title="Settings" aria-label="Settings">
-                                <i class="fas fa-gear"></i>
-                            </button>
-                            <button class="icon-btn" id="notifyBtn" title="Notifications" aria-label="Notifications">
-                                <i class="fas fa-bell"></i>
-                            </button>
-                        </div>
                         <div class="lang-switch">
                             <button id="faBtn" class="lang-btn active">فارسی</button>
                             <button id="enBtn" class="lang-btn">English</button>
@@ -88,49 +85,89 @@
                         </div>
                     </div>
                 </div>
-            </header>
-
-            <section class="hero-panels">
-                <div class="hero-card">
-                    <div class="hero-icon">
-                        <i class="fas fa-sitemap"></i>
-                    </div>
-                    <div class="hero-content">
-                        <h3 id="card-jb-title">JBDetection Module</h3>
-                        <p id="card-jb-desc">داشبورد تشخیص و تطابق تگ‌ها. پردازش PDF و Excel با گزارش‌های حرفه‌ای.</p>
-                        <a class="primary-btn small" id="card-jb-action" href="/dashboard">
-                            ورود به ماژول
-                        </a>
-                    </div>
+                <div class="intro-hero">
+                    <h2 id="home-title">VAKAV IO Mapping</h2>
+                    <p id="home-subtitle">Integrated platform for JB detection and IO assignment workflows.</p>
                 </div>
-                <div class="hero-card alt">
-                    <div class="hero-icon">
-                        <i class="fas fa-layer-group"></i>
-                    </div>
-                    <div class="hero-content">
-                        <h3 id="card-io-title">IO Assignment Module</h3>
-                        <p id="card-io-desc">بهینه‌سازی تخصیص IO و کنترل ظرفیت کابینت‌ها. در حال آماده‌سازی.</p>
-                        <a class="ghost-btn small" id="card-io-action" href="/io-assignment">
-                            ورود به ماژول
-                        </a>
-                    </div>
+            </header>
+            <section class="system-intro section-block" data-reveal>
+                <div class="system-intro-inner">
+                    <span class="system-kicker">Integrated Engineering Runtime</span>
+                    <h2 class="system-title">
+                        JB Detection and IO Assignment
+                    </h2>
+                    <p class="system-desc">
+                        JB Detection processes source drawings and validates extracted tags.
+                        IO Assignment places validated tags into cabinet channels under configured constraints.
+                    </p>
                 </div>
             </section>
-
-            <section class="split-section">
-                <div class="split-card">
-                    <h4 id="split-jb-title">JBDetection Module چیست؟</h4>
-                    <p>
-                        <span id="split-jb-desc">یک موتور تحلیل تگ و اسناد مهندسی که روی دقت، سرعت و گزارش‌پذیری تمرکز دارد.
-                        اینجا نقطه شروع برای بررسی وضعیت پردازش و دسترسی سریع به خروجی‌هاست.</span>
-                    </p>
+            <section class="module-strip module-strip-jb section-block full-screen-section" data-reveal>
+                <div class="module-copy">
+                    <span id="module-jb-chip" class="module-kicker">JBDetection Module</span>
+                    <h3 id="module-jb-title">JB Detection Module</h3>
+                    <p id="module-jb-desc">Process junction box drawings, extract instrument tags, and validate extracted records against configured IO references.</p>
+                    <p id="module-jb-note" class="module-note">Use this module when source data originates from field drawings and terminal schedules.</p>
+                    <a class="module-action" id="module-jb-action" href="/dashboard">Open JB Detection Module</a>
                 </div>
-                <div class="split-card">
-                    <h4 id="split-io-title">IO Assignment Module چه می‌کند؟</h4>
-                    <p>
-                        <span id="split-io-desc">ماژول آینده برای مدیریت ظرفیت IO، تطابق کابینت‌ها و ساخت گزارش‌های بهینه‌سازی.
-                        در فاز بعدی با همین زبان بصری اضافه می‌شود.</span>
-                    </p>
+                <button class="module-cube module-cube-jb" type="button" data-module="/dashboard" aria-label="JBDetection cube">
+                    <div class="module-cube-body">
+                        <div class="cube-face-main">
+                            <div class="mini-jbox" aria-hidden="true">
+                                <div class="jbox-door"></div>
+                                <div class="jbox-nameplate"></div>
+                                <div class="jbox-terminal-row"></div>
+                                <div class="jbox-gland jbox-gland-1"></div>
+                                <div class="jbox-gland jbox-gland-2"></div>
+                                <div class="jbox-gland jbox-gland-3"></div>
+                                <div class="jbox-gland jbox-gland-4"></div>
+                            </div>
+                            <span id="module-jb-meta1" class="cube-label">JB Detection</span>
+                            <span id="module-jb-meta2" class="cube-sub">OCR Extraction + Tag Validation</span>
+                        </div>
+                        <div class="cube-face-side">
+                            <span id="module-jb-side1" class="cube-side-title">Field Drawing Side</span>
+                            <span id="module-jb-side2" class="cube-side-sub">Terminal / Gland Layout</span>
+                        </div>
+                        <div class="cube-face-top" aria-hidden="true"></div>
+                        <div class="cube-face-side-alt" aria-hidden="true"></div>
+                        <div class="cube-face-back" aria-hidden="true"></div>
+                        <div class="cube-face-bottom" aria-hidden="true"></div>
+                    </div>
+                </button>
+            </section>
+
+            <section class="module-strip module-strip-io section-block full-screen-section" data-reveal>
+                <button class="module-cube module-cube-io" type="button" data-module="/io-assignment" aria-label="IO Assignment cube">
+                    <div class="module-cube-body">
+                        <div class="cube-face-main">
+                            <div class="mini-cabinet" aria-hidden="true">
+                                <div class="cabinet-door"></div>
+                                <div class="cabinet-handle"></div>
+                                <div class="cabinet-rail cabinet-rail-1"></div>
+                                <div class="cabinet-rail cabinet-rail-2"></div>
+                                <div class="cabinet-rail cabinet-rail-3"></div>
+                                <div class="cabinet-leds"></div>
+                            </div>
+                            <span id="module-io-meta1" class="cube-label">Marshaling Cabinet</span>
+                            <span id="module-io-meta2" class="cube-sub">Load Balance + Spare Plan</span>
+                        </div>
+                        <div class="cube-face-side">
+                            <span id="module-io-side1" class="cube-side-title">Cabinet Mapping Side</span>
+                            <span id="module-io-side2" class="cube-side-sub">Rails, Cards and Spare Capacity</span>
+                        </div>
+                        <div class="cube-face-top" aria-hidden="true"></div>
+                        <div class="cube-face-side-alt" aria-hidden="true"></div>
+                        <div class="cube-face-back" aria-hidden="true"></div>
+                        <div class="cube-face-bottom" aria-hidden="true"></div>
+                    </div>
+                </button>
+                <div class="module-copy">
+                    <span id="module-io-chip" class="module-kicker">IO Assignment Module</span>
+                    <h3 id="module-io-title">IO Assignment Module</h3>
+                    <p id="module-io-desc">Assign validated instrument tags to marshaling cabinet channels based on capacity constraints and spare policy.</p>
+                    <p id="module-io-note" class="module-note">Use this module when defining channel ownership, spare reservation, and cross-wiring outputs.</p>
+                    <a class="module-action" id="module-io-action" href="/io-assignment">Open IO Assignment Module</a>
                 </div>
             </section>
         </main>
@@ -139,52 +176,66 @@
     <script>
         const translations = {
             fa: {
-                'home-kicker': 'خانه',
-                'home-title': 'مرکز فرماندهی VAKAV IO Mapping',
-                'home-subtitle': 'مدیریت ماژول‌ها و گسترش گزارش‌ها با یک زبان بصری یکپارچه.',
-                'hero-kicker': 'خانه',
-                'hero-title': 'مرکز فرماندهی VAKAV IO Mapping',
-                'hero-subtitle': 'از اینجا ماژول‌ها را مدیریت کن و گزارش‌های بعدی را به همین سبک اضافه کن.',
-                'hero-notify': 'اعلان‌ها',
-                'hero-enter': 'ورود به JBDetection Module',
-                'card-jb-title': 'JBDetection Module',
-                'card-jb-desc': 'داشبورد تشخیص و تطابق تگ‌ها. پردازش PDF و Excel با گزارش‌های حرفه‌ای.',
-                'card-jb-action': 'ورود به ماژول',
-                'card-io-title': 'IO Assignment Module',
-                'card-io-desc': 'بهینه‌سازی تخصیص IO و کنترل ظرفیت کابینت‌ها با گزارش دقیق.',
-                'card-io-action': 'ورود به ماژول',
-                'split-jb-title': 'JBDetection Module چیست؟',
-                'split-jb-desc': 'یک موتور تحلیل تگ و اسناد مهندسی که روی دقت، سرعت و گزارش‌پذیری تمرکز دارد. اینجا نقطه شروع برای بررسی وضعیت پردازش و دسترسی سریع به خروجی‌هاست.',
-                'split-io-title': 'IO Assignment Module چه می‌کند؟',
-                'split-io-desc': 'ماژول آینده برای مدیریت ظرفیت IO، تطابق کابینت‌ها و ساخت گزارش‌های بهینه‌سازی. در فاز بعدی با همین زبان بصری اضافه می‌شود.',
+                'home-kicker': 'فرماندهی VAKAV',
+                'home-title': 'VAKAV IO Mapping',
+                'home-subtitle': 'پلتفرم یکپارچه برای گردش کار JB Detection و IO Assignment.',
+                'intro-link-home': 'خانه',
+                'intro-link-jb': 'JBDetection',
+                'intro-link-io': 'IO Assignment',
+                'intro-link-docs': 'اسناد',
+                'module-jb-chip': 'ماژول JBDetection',
+                'module-jb-title': 'ماژول JB Detection',
+                'module-jb-desc': 'نقشه های Junction Box را پردازش کن، تگ های ابزاردقیق را استخراج کن و رکوردهای استخراج شده را با مراجع IO پیکربندی شده اعتبارسنجی کن.',
+                'module-jb-note': 'از این ماژول زمانی استفاده کن که داده مبنا از نقشه های فیلدی و برنامه ترمینال ها تامین می شود.',
+                'module-jb-meta1': 'JB Detection',
+                'module-jb-meta2': 'استخراج OCR + اعتبارسنجی تگ',
+                'module-jb-side1': 'سمت نقشه فیلدی',
+                'module-jb-side2': 'آرایش ترمینال / گلند',
+                'module-jb-action': 'ورود به ماژول JB Detection',
+                'module-io-chip': 'ماژول IO Assignment',
+                'module-io-title': 'ماژول IO Assignment',
+                'module-io-desc': 'تگ های ابزاردقیق تاییدشده را بر اساس محدودیت ظرفیت و سیاست Spare به کانال های کابینت مارشالینگ تخصیص بده.',
+                'module-io-note': 'از این ماژول برای تعریف مالکیت کانال، رزرو Spare و خروجی های کراس وایرینگ استفاده کن.',
+                'module-io-meta1': 'کابینت مارشالینگ',
+                'module-io-meta2': 'ظرفیت + سیاست Spare',
+                'module-io-side1': 'سمت تخصیص کانال',
+                'module-io-side2': 'ریل ها، کارت ها، ظرفیت رزرو',
+                'module-io-action': 'ورود به ماژول IO Assignment',
                 'nav-kicker': 'VAKAV IO Mapping',
                 'nav-brand': 'VAKAV IO Mapping',
                 'nav-home': 'خانه',
                 'nav-jb': 'ماژول JBDetection',
                 'nav-io': 'ماژول IO Assignment',
-                'nav-reports': 'گزارش‌ها',
+                'nav-reports': 'گزارش ها',
                 'nav-settings': 'تنظیمات',
                 'nav-logout': 'خروج'
             },
             en: {
-                'home-kicker': 'Home',
-                'home-title': 'VAKAV IO Mapping Command Center',
-                'home-subtitle': 'Manage modules and expand reports with a unified visual language.',
-                'hero-kicker': 'Home',
-                'hero-title': 'VAKAV IO Mapping Command Center',
-                'hero-subtitle': 'Run modules from here and expand future reports with the same style.',
-                'hero-notify': 'Notifications',
-                'hero-enter': 'Enter JBDetection Module',
-                'card-jb-title': 'JBDetection Module',
-                'card-jb-desc': 'Tag detection and matching dashboard. PDF + Excel processing with pro reports.',
-                'card-jb-action': 'Enter Module',
-                'card-io-title': 'IO Assignment Module',
-                'card-io-desc': 'IO allocation optimization and cabinet capacity control with reports.',
-                'card-io-action': 'Enter Module',
-                'split-jb-title': 'What is the JBDetection Module?',
-                'split-jb-desc': 'An engineering tag analysis engine focused on accuracy, speed, and reporting. This is the starting point for processing and outputs.',
-                'split-io-title': 'What does the IO Assignment Module do?',
-                'split-io-desc': 'Future module for IO capacity, cabinet alignment, and optimization reporting. Will be added next.',
+                'home-kicker': 'VAKAV Command',
+                'home-title': 'VAKAV IO Mapping',
+                'home-subtitle': 'Integrated platform for JB detection and IO assignment workflows.',
+                'intro-link-home': 'Home',
+                'intro-link-jb': 'JBDetection',
+                'intro-link-io': 'IO Assignment',
+                'intro-link-docs': 'Docs',
+                'module-jb-chip': 'JBDetection Module',
+                'module-jb-title': 'JB Detection Module',
+                'module-jb-desc': 'Process junction box drawings, extract instrument tags, and validate extracted records against configured IO references.',
+                'module-jb-note': 'Use this module when source data originates from field drawings and terminal schedules.',
+                'module-jb-meta1': 'JB Detection',
+                'module-jb-meta2': 'OCR Extraction + Tag Validation',
+                'module-jb-side1': 'Field Drawing Side',
+                'module-jb-side2': 'Terminal / Gland Layout',
+                'module-jb-action': 'Open JB Detection Module',
+                'module-io-chip': 'IO Assignment Module',
+                'module-io-title': 'IO Assignment Module',
+                'module-io-desc': 'Assign validated instrument tags to marshaling cabinet channels based on capacity constraints and spare policy.',
+                'module-io-note': 'Use this module when defining channel ownership, spare reservation, and cross-wiring outputs.',
+                'module-io-meta1': 'Marshaling Cabinet',
+                'module-io-meta2': 'Capacity + Spare Policy',
+                'module-io-side1': 'Channel Assignment Side',
+                'module-io-side2': 'Rails, Cards, Reserved Capacity',
+                'module-io-action': 'Open IO Assignment Module',
                 'nav-kicker': 'VAKAV IO Mapping',
                 'nav-brand': 'VAKAV IO Mapping',
                 'nav-home': 'Home',
@@ -201,8 +252,7 @@
         const themeBtn = document.getElementById('themeBtn');
         const faBtn = document.getElementById('faBtn');
         const enBtn = document.getElementById('enBtn');
-        const settingsBtn = document.getElementById('settingsBtn');
-        const notifyBtn = document.getElementById('notifyBtn');
+        const moduleTriggers = document.querySelectorAll('[data-module]');
         const initialState = window.JBDUI ? window.JBDUI.getState() : {
             lang: localStorage.getItem('lang') || 'fa',
             theme: localStorage.getItem('theme') || 'dark'
@@ -261,16 +311,57 @@
             setTheme(currentTheme);
         });
 
-        if (settingsBtn) {
-            settingsBtn.addEventListener('click', () => {
-                alert(currentLang === 'fa' ? 'تنظیمات به‌زودی فعال می‌شود.' : 'Settings will be enabled soon.');
+        // Smooth-scroll fallback for in-page anchors and same-page Home links.
+        const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const smoothScrollLinks = document.querySelectorAll('a[href^="#"], a[href="/home"]');
+        if (!prefersReducedMotion && smoothScrollLinks.length) {
+            smoothScrollLinks.forEach(link => {
+                link.addEventListener('click', (event) => {
+                    const href = link.getAttribute('href');
+                    if (!href) {
+                        return;
+                    }
+
+                    if (href === '/home' && window.location.pathname === '/home') {
+                        event.preventDefault();
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                        return;
+                    }
+
+                    if (href.startsWith('#')) {
+                        const target = document.querySelector(href);
+                        if (target) {
+                            event.preventDefault();
+                            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                    }
+                });
             });
         }
 
-        if (notifyBtn) {
-            notifyBtn.addEventListener('click', () => {
-                alert(currentLang === 'fa' ? 'اعلان جدیدی وجود ندارد.' : 'No new notifications.');
+        if (moduleTriggers && moduleTriggers.length) {
+            moduleTriggers.forEach(trigger => {
+                trigger.addEventListener('click', () => {
+                    const target = trigger.getAttribute('data-module');
+                    if (target) {
+                        window.location.href = target;
+                    }
+                });
             });
+        }
+
+        const revealItems = document.querySelectorAll('[data-reveal]');
+        if (revealItems.length) {
+            revealItems.forEach(el => el.classList.add('reveal'));
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('reveal-in');
+                        observer.unobserve(entry.target);
+                    }
+                });
+            }, { threshold: 0.2, rootMargin: '0px 0px -10% 0px' });
+            revealItems.forEach(el => observer.observe(el));
         }
 
         setTheme(currentTheme);

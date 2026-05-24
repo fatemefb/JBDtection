@@ -56,20 +56,21 @@ def get_logs(session: Session, run_id, after_id: Optional[int] = None, limit: in
     return list(session.scalars(stmt))
 
 
-def keep_only_latest(session: Session, project_id):
+def keep_only_latest(session: Session, project_id, initiated_by: str = None):
     """
     Delete/archive older runs if keep_latest_only flag is true.
     """
-    stmt = (
-        select(Run.id)
-        .where(Run.project_id == project_id)
-        .order_by(Run.created_at.desc())
-        .offset(1)
-    )
+    stmt = select(Run.id).where(Run.project_id == project_id)
+    if initiated_by is not None:
+        stmt = stmt.where(Run.initiated_by == initiated_by)
+    stmt = stmt.order_by(Run.created_at.desc()).offset(1)
     old_ids = [row for row in session.scalars(stmt)]
     if old_ids:
-        session.execute(
+        update_stmt = (
             update(Run)
             .where(Run.id.in_(old_ids), Run.keep_latest_only.is_(True))
             .values(status=RunStatus.ARCHIVED, finished_at=datetime.utcnow())
         )
+        if initiated_by is not None:
+            update_stmt = update_stmt.where(Run.initiated_by == initiated_by)
+        session.execute(update_stmt)

@@ -38,10 +38,14 @@ services:
       - FLASK_ENV=production
       - TZ=Asia/Tehran
       - DATABASE_URL=postgresql+psycopg2://vakav:vakav_strong_password_change_me@postgres:5432/vakav
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
       # gunicorn timeouts
       - GUNICORN_TIMEOUT=3600
       - GUNICORN_GRACEFUL_TIMEOUT=3600
+    gpus: all
+    runtime: nvidia
     user: "1000:1000"
     cap_add:
       - SYS_ADMIN
@@ -73,11 +77,6 @@ services:
         limits:
           cpus: '2'
           memory: 8G
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
 
   jbdetection_test:
     container_name: jbdetection_test
@@ -95,9 +94,13 @@ services:
       - FLASK_ENV=development
       - TZ=Asia/Tehran
       - DATABASE_URL=postgresql+psycopg2://vakav:vakav_strong_password_change_me@postgres:5432/vakav
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
       - GUNICORN_TIMEOUT=3600
       - GUNICORN_GRACEFUL_TIMEOUT=3600
+    gpus: all
+    runtime: nvidia
     user: "1000:1000"
     cap_add:
       - SYS_ADMIN

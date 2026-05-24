@@ -1,19 +1,20 @@
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
+    {% set asset_v = "20260221-2" %}
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JBDetection Module</title>
-    <link rel="icon" href="{{ url_for('static', filename='images/favicon.png') }}" type="image/png">
-    <link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.png') }}" type="image/png">
-    <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/favicon.png') }}">
-    <link rel="name" href="{{ url_for('static', filename='images/JBD.png') }}" type="image/png">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/home.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/io_assignment.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/JB.css') }}">
+    <link rel="icon" href="{{ url_for('static', filename='images/favicon.png', v=asset_v) }}" type="image/png">
+    <link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.png', v=asset_v) }}" type="image/png">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/favicon.png', v=asset_v) }}">
+    <link rel="name" href="{{ url_for('static', filename='images/JBD.png', v=asset_v) }}" type="image/png">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/home.css', v=asset_v) }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/io_assignment.css', v=asset_v) }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/JB.css', v=asset_v) }}">
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Vazirmatn:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <script src="{{ url_for('static', filename='js/ui_preferences.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/ui_preferences.js', v=asset_v) }}"></script>
 </head>
 <body class="home-body io-body jb-body">
     <div class="home-shell">
@@ -99,7 +100,7 @@
                 
                 <section class="upload-section panel">
                     <h2 id="upload-title"><i class="fas fa-file-upload"></i> بارگذاری فایل‌ها</h2>
-                    <form id="processForm">
+                    <form id="processForm" method="post" action="/process" enctype="multipart/form-data">
                         <!-- بخش اطلاعات پروژه -->
                         <div class="pattern-group">
                             <label for="projectName" id="project-name-label">نام پروژه:</label>
@@ -355,6 +356,13 @@
                             <h3 id="log-title">گزارش پردازش</h3>
                             <pre id="logOutput" class="log-content">آماده پردازش فایل‌ها...</pre>
                         </div>
+                        <div class="pattern-panel card" id="patternAddPanel" style="display:none;">
+                            <div class="panel-subheader">
+                                <h4 id="pattern-panel-title">تگ‌های شناسایی‌شده فقط در تصویر</h4>
+                                <p id="pattern-panel-desc" class="muted">برای هر مورد روی دکمه Add کلیک کنید و اطلاعات را تکمیل کنید.</p>
+                            </div>
+                            <div id="patternAddList" class="pattern-list"></div>
+                        </div>
                         <!-- بخش دانلود فایل‌های خروجی -->
                         <div class="download-box" id="downloadBox" style="display: none;">
                             <h3 id="download-title">دانلود فایل‌های خروجی</h3>
@@ -502,7 +510,30 @@
                                     <button class="secondary-btn" id="addRowBtn"><i class="fas fa-plus"></i> ردیف جدید</button>
                                 </div>
                             </div>
-                            <div class="table-wrapper">
+                            <div class="io-table-nav">
+                                <div class="io-table-controls" id="ioTableControls">
+                                    <div class="io-scroll-controls" role="group" aria-label="IO table horizontal scroll">
+                                        <button class="secondary-btn io-table-btn" type="button" id="ioScrollLeftBtn" aria-label="Scroll left" title="Scroll left">
+                                            <span aria-hidden="true">&#9664;</span>
+                                        </button>
+                                        <button class="secondary-btn io-table-btn" type="button" id="ioScrollRightBtn" aria-label="Scroll right" title="Scroll right">
+                                            <span aria-hidden="true">&#9654;</span>
+                                        </button>
+                                    </div>
+                                    <div class="io-zoom-controls" role="group" aria-label="IO table zoom controls">
+                                        <span class="io-zoom-label" id="ioZoomLabel">Zoom</span>
+                                        <button class="secondary-btn io-table-btn" type="button" id="ioZoomOutBtn" aria-label="Zoom out" title="Zoom out">
+                                            <span aria-hidden="true">-</span>
+                                        </button>
+                                        <span class="io-zoom-value" id="ioZoomValue">100%</span>
+                                        <button class="secondary-btn io-table-btn" type="button" id="ioZoomInBtn" aria-label="Zoom in" title="Zoom in">
+                                            <span aria-hidden="true">+</span>
+                                        </button>
+                                        <button class="secondary-btn io-zoom-reset" type="button" id="ioZoomResetBtn">Reset</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="table-wrapper io-table-wrapper" id="ioTableWrapper">
                                 <table class="data-table" id="ioTable">
                                     <thead>
                                         <tr>
@@ -626,6 +657,11 @@
                 'output-excel': '📊 فایل خروجی Excel: ',
                 'unmatched-excel-tags': '📋 تگ‌های بدون تطابق در Excel:\n',
                 'unmatched-pdf-tags': '\n📋 تگ‌های بدون تطابق در PDF:\n',
+                'pattern-unmatched-tags': '\n🚩 تگ‌های شبیه الگوی IO ولی خارج از IO List:\n',
+                'pattern-panel-title': 'تگ‌های شناسایی‌شده فقط در تصویر',
+                'pattern-panel-desc': 'روی افزودن بزنید و در صورت نیاز فیلدهای خالی IO را کامل کنید.',
+                'pattern-panel-add': 'افزودن',
+                'pattern-panel-no-meta': 'بدون اطلاعات تکمیلی',
                 'no-unmatched-tags': '   هیچ تگ بدون تطابق\n',
                 'error': '❌ خطا: ',
                 'no-file-selected': 'فایلی انتخاب نشده',
@@ -751,6 +787,11 @@
                 'output-excel': '📊 Output Excel saved to: ',
                 'unmatched-excel-tags': '📋 Unmatched Excel Tags:\n',
                 'unmatched-pdf-tags': '\n📋 Unmatched PDF Tags:\n',
+                'pattern-unmatched-tags': '\n🚩 IO-pattern tags not found in IO List:\n',
+                'pattern-panel-title': 'Image-only detected tags',
+                'pattern-panel-desc': 'Click Add and complete any missing IO fields if needed.',
+                'pattern-panel-add': 'Add',
+                'pattern-panel-no-meta': 'No additional metadata',
                 'no-unmatched-tags': '   No unmatched tags\n',
                 'error': '❌ Error: ',
                 'no-file-selected': 'No file selected',
@@ -858,13 +899,27 @@
         let currentRunStatus = 'pending';
         let currentRunStage = 'import';
         let activeRowId = null;
+        let candidateAddEndpoint = null;
+        let candidateAddMethod = 'POST';
+        let candidatePresetValues = null;
+        let candidatePreferInferredIndex = false;
         let activeRunId = null;
+        const currentUser = "{{ username }}";
+        const lastUser = localStorage.getItem('lastUsername') || '';
+        if (lastUser && lastUser !== currentUser) {
+            localStorage.removeItem('lastProjectName');
+            localStorage.removeItem('lastRunId');
+            localStorage.removeItem('lastProjectId');
+        }
+        localStorage.setItem('lastUsername', currentUser);
+
         let lastLoadedRunId = localStorage.getItem('lastRunId');
         let lastLoadedProjectId = localStorage.getItem('lastProjectId');
         let currentIoRows = [];
         let currentIssues = [];
         let allProjectsLookup = [];
         let selectedJbFilter = '';
+        let dbReviewInitialized = false;
 
         // Theme and language switch logic
         const themeBtn = document.getElementById('themeBtn');
@@ -979,6 +1034,30 @@
             setNodeText('.io-panel .table-title', isFa ? 'لیست IO' : 'IO List');
             setNodeText('#refreshIssues', isFa ? 'فیلتر' : 'Filter');
             setNodeHTML('#addRowBtn', `<i class="fas fa-plus"></i> ${isFa ? 'ردیف جدید' : 'Add Row'}`);
+            setNodeText('#ioZoomLabel', isFa ? 'بزرگنمایی' : 'Zoom');
+            setNodeText('#ioZoomResetBtn', isFa ? 'بازنشانی' : 'Reset');
+            const ioScrollLeftBtn = document.getElementById('ioScrollLeftBtn');
+            const ioScrollRightBtn = document.getElementById('ioScrollRightBtn');
+            const ioZoomOutBtn = document.getElementById('ioZoomOutBtn');
+            const ioZoomInBtn = document.getElementById('ioZoomInBtn');
+            if (ioScrollLeftBtn) {
+                ioScrollLeftBtn.title = isFa ? 'اسکرول به چپ' : 'Scroll left';
+                ioScrollLeftBtn.setAttribute('aria-label', ioScrollLeftBtn.title);
+            }
+            if (ioScrollRightBtn) {
+                ioScrollRightBtn.title = isFa ? 'اسکرول به راست' : 'Scroll right';
+                ioScrollRightBtn.setAttribute('aria-label', ioScrollRightBtn.title);
+            }
+            if (ioZoomOutBtn) {
+                ioZoomOutBtn.title = isFa ? 'کوچک‌نمایی جدول' : 'Zoom out table';
+                ioZoomOutBtn.setAttribute('aria-label', ioZoomOutBtn.title);
+            }
+            if (ioZoomInBtn) {
+                ioZoomInBtn.title = isFa ? 'بزرگ‌نمایی جدول' : 'Zoom in table';
+                ioZoomInBtn.setAttribute('aria-label', ioZoomInBtn.title);
+            }
+            setNodeText('#pattern-panel-title', translations[lang]['pattern-panel-title']);
+            setNodeText('#pattern-panel-desc', translations[lang]['pattern-panel-desc']);
             setNodeText('.issues-panel .panel-subheader h4', isFa ? 'پنل ایرادها' : 'Issues Panel');
             const issueHeaders = document.querySelectorAll('#issueTable thead th');
             if (issueHeaders[0]) issueHeaders[0].textContent = isFa ? 'شدت' : 'Severity';
@@ -1051,6 +1130,14 @@
                 excelInputText.setAttribute('title', lang === 'fa' ? 'انتخاب فایل Excel' : 'Select Excel file');
             }
             applyStaticTranslations(lang);
+            if (dbReviewInitialized && Array.isArray(currentIssues)) {
+                renderIssuesTable();
+                renderPatternCandidatesFromIssues(currentIssues);
+            }
+            if (dbReviewInitialized && Array.isArray(currentIoRows)) {
+                renderDetectedJBChips(currentIoRows);
+                applySearchFilter();
+            }
 
             if (window.JBDUI) {
                 window.JBDUI.setLang(lang);
@@ -1695,6 +1782,33 @@
                     logContent += `   • ${tag}\n`;
                 });
             }
+
+            logContent += translations[currentLang]['pattern-unmatched-tags'];
+            const patternUnmatchedTags = result.results.pattern_unmatched_candidates || [];
+            const patternUnmatchedDetails = result.results.pattern_unmatched_details || [];
+            if (patternUnmatchedDetails.length > 0) {
+                patternUnmatchedDetails.forEach((item) => {
+                    const tagText = (item && (item.ocr_text || item.display_text || '')).toString().trim();
+                    if (!tagText) return;
+                    const meta = [];
+                    if (item.pdf_name) meta.push(`PDF: ${item.pdf_name}`);
+                    if (item.page !== undefined && item.page !== null && item.page !== '') meta.push(`Page: ${item.page}`);
+                    if (item.jb) meta.push(`JB: ${item.jb}`);
+                    if (item.mc) meta.push(`MC: ${item.mc}`);
+                    if (item.score !== undefined && item.score !== null && item.score !== '') {
+                        const scoreNum = Number(item.score);
+                        meta.push(`Score: ${Number.isFinite(scoreNum) ? scoreNum.toFixed(2) : item.score}`);
+                    }
+                    const metaText = meta.length ? ` | ${meta.join(' | ')}` : '';
+                    logContent += `   • ${tagText}${metaText}\n`;
+                });
+            } else if (patternUnmatchedTags.length === 0) {
+                logContent += translations[currentLang]['no-unmatched-tags'];
+            } else {
+                patternUnmatchedTags.forEach(tag => {
+                    logContent += `   • ${tag}\n`;
+                });
+            }
             
             document.getElementById('logOutput').textContent = logContent;
             
@@ -1884,9 +1998,10 @@
                 const v = (r.values || {}).Match || (r.values || {}).match_status || '';
                 return v.toString().toLowerCase().includes('match');
             }).length;
-            const errors = currentIssues.filter(i => i.severity === 'error').length;
-            const warnings = currentIssues.filter(i => i.severity === 'warning').length;
-            const unmatched = currentIssues.length;
+            const openIssues = currentIssues.filter(i => (i.status || '').toLowerCase() !== 'resolved');
+            const errors = openIssues.filter(i => i.severity === 'error').length;
+            const warnings = openIssues.filter(i => i.severity === 'warning').length;
+            const unmatched = openIssues.length;
             const pct = total ? Math.round((matched/total)*1000)/10 : 0;
             document.getElementById('metric-total-rows').textContent = total;
             document.getElementById('metric-matched-pct').textContent = pct + '%';
@@ -1913,6 +2028,14 @@
                 return;
             }
             const apiBase = `${window.location.protocol}//${window.location.host}`;
+            const resolveArtifactHref = (rawPath) => {
+                const path = String(rawPath || '').trim();
+                if (!path) return '#';
+                if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('/downloads/')) {
+                    return path;
+                }
+                return `${apiBase}/download?file=${encodeURIComponent(path)}`;
+            };
             files.forEach(f=>{
                 const card = document.createElement('div');
                 card.className='artifact-card';
@@ -1920,7 +2043,7 @@
                     <div class="name">${f.name}</div>
                     <div class="meta">${f.path || ''}</div>
                     <div class="actions">
-                        <a class="secondary-btn small" href="${apiBase}/download?file=${encodeURIComponent(f.path||'')}" target="_blank">Download</a>
+                        <a class="secondary-btn small" href="${resolveArtifactHref(f.path)}" target="_blank">Download</a>
                     </div>
                 `;
                 grid.appendChild(card);
@@ -1930,11 +2053,12 @@
         // تابع برای بررسی دسترسی به API
         async function checkApiAccess() {
             try {
-                const currentPort = window.location.port || '5000';
-                const apiPort = currentPort === '5001' ? '5001' : '5000';
-                const apiBase = `${window.location.protocol}//${window.location.hostname}:${apiPort}`;
+                const apiBase = window.location.origin;
                 
                 const response = await fetch(`${apiBase}/api/status`);
+                if (!response.ok) {
+                    throw new Error(`API status check failed with HTTP ${response.status}`);
+                }
                 const data = await response.json();
                 
                 console.log("API Status:", data);
@@ -2026,17 +2150,84 @@
         // ===== DB review logic =====
         const ioTableBody = document.querySelector('#ioTable tbody');
         const ioTableHeadRow = document.querySelector('#ioTable thead tr');
+        const ioTable = document.getElementById('ioTable');
+        const ioTableWrapper = document.getElementById('ioTableWrapper');
+        const ioTableControls = document.getElementById('ioTableControls');
         const issueTableBody = document.querySelector('#issueTable tbody');
+        const ioScrollLeftBtn = document.getElementById('ioScrollLeftBtn');
+        const ioScrollRightBtn = document.getElementById('ioScrollRightBtn');
+        const ioZoomOutBtn = document.getElementById('ioZoomOutBtn');
+        const ioZoomInBtn = document.getElementById('ioZoomInBtn');
+        const ioZoomResetBtn = document.getElementById('ioZoomResetBtn');
+        const ioZoomValue = document.getElementById('ioZoomValue');
         const toast = document.getElementById('saveToast');
         const modal = document.getElementById('rowModal');
         const closeModalBtn = document.getElementById('closeModal');
         const rowForm = document.getElementById('rowForm');
         const deleteRowBtn = document.getElementById('deleteRowBtn');
+        const IO_TABLE_ZOOM_KEY = 'jb_io_table_zoom';
+        const IO_TABLE_ZOOM_MIN = 70;
+        const IO_TABLE_ZOOM_MAX = 160;
+        const IO_TABLE_ZOOM_STEP = 10;
+        let ioTableZoom = 100;
+        dbReviewInitialized = true;
+
+        function clampIoTableZoom(rawZoom) {
+            const numericZoom = Number(rawZoom);
+            if (!Number.isFinite(numericZoom)) return 100;
+            return Math.min(IO_TABLE_ZOOM_MAX, Math.max(IO_TABLE_ZOOM_MIN, Math.round(numericZoom)));
+        }
+
+        function applyIoTableZoom() {
+            ioTableZoom = clampIoTableZoom(ioTableZoom);
+            if (ioTableControls) {
+                ioTableControls.style.display = 'inline-flex';
+                ioTableControls.style.visibility = 'visible';
+                ioTableControls.style.opacity = '1';
+            }
+            if (ioTableWrapper) {
+                ioTableWrapper.style.setProperty('--io-table-zoom', String(ioTableZoom / 100));
+            }
+            if (ioTable) {
+                ioTable.dataset.zoom = String(ioTableZoom);
+            }
+            if (ioZoomValue) {
+                ioZoomValue.textContent = `${ioTableZoom}%`;
+            }
+            if (ioZoomInBtn) {
+                ioZoomInBtn.disabled = ioTableZoom >= IO_TABLE_ZOOM_MAX;
+            }
+            if (ioZoomOutBtn) {
+                ioZoomOutBtn.disabled = ioTableZoom <= IO_TABLE_ZOOM_MIN;
+            }
+            localStorage.setItem(IO_TABLE_ZOOM_KEY, String(ioTableZoom));
+        }
+
+        function adjustIoTableZoom(delta) {
+            ioTableZoom = clampIoTableZoom(ioTableZoom + delta);
+            applyIoTableZoom();
+        }
+
+        function scrollIoTable(direction) {
+            if (!ioTableWrapper) return;
+            const step = Math.max(120, Math.round(ioTableWrapper.clientWidth * 0.7));
+            ioTableWrapper.scrollBy({ left: direction * step, behavior: 'smooth' });
+        }
+
+        ioTableZoom = clampIoTableZoom(localStorage.getItem(IO_TABLE_ZOOM_KEY));
+        applyIoTableZoom();
 
         function showToast(msg, type='info') {
             toast.textContent = msg;
             toast.className = `notification ${type} show`;
             setTimeout(()=> toast.classList.remove('show'), 1600);
+        }
+
+        function appendEngineerLog(message) {
+            const logOutput = document.getElementById('logOutput');
+            if (!logOutput || !message) return;
+            const existing = String(logOutput.textContent || '').trim();
+            logOutput.textContent = `${existing}\n${message}`.trim();
         }
 
         function normalizeProjectName(value) {
@@ -2295,14 +2486,14 @@
             return label;
         }
 
-        function renderRowFormFields(rowId = null) {
+        function renderRowFormFields(rowId = null, preset = null) {
             const fieldsWrap = document.getElementById('rowFormFields');
             if (!fieldsWrap) return;
             fieldsWrap.innerHTML = '';
 
             const row = rowId ? currentIoRows.find((item) => item.id === rowId) : null;
             const values = (row && row.values && typeof row.values === 'object') ? row.values : {};
-            const nextRowIndex = row ? Number(row.row_index || '') : getNextRowIndex();
+            const nextRowIndex = row ? Number(row.row_index || '') : (preset && preset.row_index ? preset.row_index : getNextRowIndex());
 
             fieldsWrap.appendChild(
                 createDynamicField(
@@ -2314,7 +2505,7 @@
             );
 
             (activeIoColumns || []).forEach((col) => {
-                const val = values[col] ?? '';
+                const val = values[col] ?? (preset && preset.values ? preset.values[col] : '');
                 fieldsWrap.appendChild(createDynamicField(col, col, val));
             });
         }
@@ -2337,17 +2528,23 @@
             return payload;
         }
 
-        function openRowEditor(rowId = null) {
+        function openRowEditor(rowId = null, preset = null) {
             activeRowId = rowId;
+            candidateAddEndpoint = preset && preset.addEndpoint ? preset.addEndpoint : null;
+            candidateAddMethod = (preset && preset.addMethod) ? preset.addMethod : 'POST';
+            candidatePresetValues = preset && preset.values ? preset.values : null;
+            candidatePreferInferredIndex = !!(preset && preset.preferInferredIndex);
             rowForm.reset();
             const rowModalTitle = document.querySelector('#rowModal h3');
             if (rowModalTitle) {
                 rowModalTitle.textContent = rowId
                     ? (currentLang === 'fa' ? 'ویرایش ردیف' : 'Edit Row')
-                    : (currentLang === 'fa' ? 'افزودن ردیف' : 'Add Row');
+                    : (candidateAddEndpoint
+                        ? (currentLang === 'fa' ? 'افزودن از تگ شناسایی‌شده' : 'Add from detected tag')
+                        : (currentLang === 'fa' ? 'افزودن ردیف' : 'Add Row'));
             }
             deleteRowBtn.style.display = rowId ? '' : 'none';
-            renderRowFormFields(rowId);
+            renderRowFormFields(rowId, preset);
             modal.classList.remove('hidden');
         }
 
@@ -2431,6 +2628,11 @@
                     ? 'تگ استخراج‌شده از PDF در لیست Excel پیدا نشد.'
                     : 'A tag detected from PDF was not found in the Excel list.';
             }
+            if (code === 'unmatched_pattern_candidate') {
+                return currentLang === 'fa'
+                    ? 'تگ از تصویر استخراج شده و ساختارش شبیه الگوی IO است، اما در IO List موجود نیست. می‌توانید آن را مستقیم به IO اضافه کنید.'
+                    : 'Tag was extracted from image and matches IO-like structure, but is missing in IO List. You can add it directly to IO.';
+            }
             if (issue.severity === 'error') {
                 return currentLang === 'fa'
                     ? 'خطای بحرانی؛ نیاز به بررسی دستی و اصلاح داده/الگو.'
@@ -2496,16 +2698,95 @@
                     ? (currentLang === 'fa' ? 'بازگشایی' : 'Reopen')
                     : (translations[currentLang]['resolve-btn'] || 'Resolve');
                 const targetStatus = i.status === 'resolved' ? 'open' : 'resolved';
+                const details = i.details || {};
+                const metaParts = [];
+                if (i.pdf_name) metaParts.push(`${currentLang === 'fa' ? 'PDF' : 'PDF'}: ${escapeHtml(i.pdf_name)}`);
+                if (i.page !== undefined && i.page !== null && i.page !== '') metaParts.push(`${currentLang === 'fa' ? 'صفحه' : 'Page'}: ${escapeHtml(i.page)}`);
+                if (i.jb) metaParts.push(`JB: ${escapeHtml(i.jb)}`);
+                if (i.mc) metaParts.push(`MC: ${escapeHtml(i.mc)}`);
+                if (i.score !== undefined && i.score !== null && i.score !== '') metaParts.push(`${currentLang === 'fa' ? 'امتیاز' : 'Score'}: ${escapeHtml(Number(i.score).toFixed ? Number(i.score).toFixed(2) : i.score)}`);
+                if (details.ocr_text || details.display_text) metaParts.push(`${currentLang === 'fa' ? 'متن OCR' : 'OCR'}: ${escapeHtml(details.ocr_text || details.display_text)}`);
+                if (details.tag_number !== undefined && details.tag_number !== null && String(details.tag_number).trim() !== '') {
+                    metaParts.push(`${currentLang === 'fa' ? 'ایندکس پیشنهادی' : 'Suggested index'}: ${escapeHtml(details.tag_number)}`);
+                }
+                const terminalA = details.terminal_first_number || i.terminal_first_number || '';
+                const terminalB = details.terminal_second_number || i.terminal_second_number || '';
+                if (terminalA || terminalB) {
+                    metaParts.push(`${currentLang === 'fa' ? 'ترمینال' : 'Terminals'}: ${escapeHtml([terminalA, terminalB].filter(Boolean).join(' / '))}`);
+                }
+                const wireA = details.wire_code_1 || i.wire_code_1 || '';
+                const wireB = details.wire_code_2 || i.wire_code_2 || '';
+                if (wireA || wireB) {
+                    metaParts.push(`${currentLang === 'fa' ? 'Wire' : 'Wire'}: ${escapeHtml([wireA, wireB].filter(Boolean).join(' / '))}`);
+                }
+                const cableInfo = (details.raw_cable_descriptions || details.cable_descriptions || [])
+                    .filter((c) => c !== undefined && c !== null && String(c).trim() !== '')
+                    .slice(0, 2)
+                    .map((c) => String(c).trim())
+                    .join(' | ');
+                if (cableInfo) metaParts.push(`${currentLang === 'fa' ? 'کابل' : 'Cable'}: ${escapeHtml(cableInfo)}`);
+                const metaHtml = metaParts.length ? `<div class="issue-meta">${metaParts.join(' | ')}</div>` : '';
+                const addLabel = currentLang === 'fa' ? 'افزودن به IO' : 'Add to IO';
+                const linkedLabel = currentLang === 'fa' ? 'اضافه شد به ردیف' : 'Added to row';
+                const previewLabel = currentLang === 'fa' ? 'نمایش PDF' : 'Preview PDF';
+                const previewBtnHtml = i.annotated_preview_url
+                    ? `<button class="secondary-btn small" data-preview-url="${escapeHtml(i.annotated_preview_url)}" data-preview-page="${escapeHtml(i.page ?? '')}">${previewLabel}</button>`
+                    : '';
+                const addBtnHtml = i.can_add_to_io
+                    ? `<button class="primary-btn small" data-add-issue="${escapeHtml(i.id)}">${addLabel}</button>`
+                    : '';
+                const linkedHtml = (!i.can_add_to_io && i.io_list_row_id)
+                    ? `<div class="issue-link-chip">${linkedLabel}: #${escapeHtml(i.linked_row_index || i.io_list_row_id.slice(0, 8))}</div>`
+                    : '';
                 tr.innerHTML = `
                     <td><span class="issue-badge sev-${i.severity}">${escapeHtml(i.severity)}</span></td>
                     <td><span class="issue-status status-${escapeHtml(i.status)}">${escapeHtml(getIssueStatusLabel(i.status))}</span></td>
-                    <td>${escapeHtml(i.message || '')}</td>
+                    <td>${escapeHtml(i.message || '')}${metaHtml}</td>
                     <td class="issue-desc">${escapeHtml(getIssueExplanation(i))}</td>
                     <td>${i.io_list_row_id ? escapeHtml(i.io_list_row_id.slice(0, 8)) : '-'}</td>
                     <td>${i.tag_occurrence_id ? escapeHtml(i.tag_occurrence_id.slice(0, 8)) : '-'}</td>
-                    <td><button class="secondary-btn small" data-issue="${escapeHtml(i.id)}" data-target-status="${targetStatus}">${actionLabel}</button></td>
+                    <td>
+                        <button class="secondary-btn small" data-issue="${escapeHtml(i.id)}" data-target-status="${targetStatus}">${actionLabel}</button>
+                        ${previewBtnHtml}
+                        ${addBtnHtml}
+                        ${linkedHtml}
+                    </td>
                 `;
                 issueTableBody.appendChild(tr);
+            });
+        }
+
+        function renderPatternCandidatesFromIssues(issues) {
+            const panel = document.getElementById('patternAddPanel');
+            const list = document.getElementById('patternAddList');
+            if (!panel || !list) return;
+            const candidates = (issues || []).filter((i) => i.code === 'unmatched_pattern_candidate' && !i.io_list_row_id);
+            if (!candidates.length) {
+                panel.style.display = 'none';
+                list.innerHTML = '';
+                return;
+            }
+            panel.style.display = 'block';
+            list.innerHTML = '';
+            candidates.forEach((i) => {
+                const tagText = (i.details && (i.details.ocr_text || i.details.display_text)) || i.ocr_text || '---';
+                const metaParts = [];
+                if (i.pdf_name) metaParts.push(`${currentLang === 'fa' ? 'PDF' : 'PDF'}: ${escapeHtml(i.pdf_name)}`);
+                if (i.page !== undefined && i.page !== null && i.page !== '') metaParts.push(`${currentLang === 'fa' ? 'صفحه' : 'Page'}: ${escapeHtml(i.page)}`);
+                if (i.jb) metaParts.push(`JB: ${escapeHtml(i.jb)}`);
+                if (i.mc) metaParts.push(`MC: ${escapeHtml(i.mc)}`);
+                if (i.score !== undefined && i.score !== null && i.score !== '') metaParts.push(`${currentLang === 'fa' ? 'امتیاز' : 'Score'}: ${escapeHtml(Number(i.score).toFixed ? Number(i.score).toFixed(2) : i.score)}`);
+                const meta = metaParts.join(' | ');
+                const card = document.createElement('div');
+                card.className = 'pattern-card';
+                card.innerHTML = `
+                    <h5>${escapeHtml(tagText)}</h5>
+                    <div class="pattern-meta">${meta || (translations[currentLang]['pattern-panel-no-meta'] || '')}</div>
+                    <div class="pattern-actions">
+                        <button class="primary-btn small" data-candidate-issue="${escapeHtml(i.id)}">${translations[currentLang]['pattern-panel-add'] || 'Add'}</button>
+                    </div>
+                `;
+                list.appendChild(card);
             });
         }
 
@@ -2560,6 +2841,7 @@
             refreshIssueCodeFilterOptions(currentIssues);
             renderIssuesTable();
             refreshIoIssueMarkers();
+            renderPatternCandidatesFromIssues(currentIssues);
             computeMetrics();
             applySearchFilter();
         }
@@ -2579,7 +2861,120 @@
             openRowEditor(tr.dataset.id);
         });
 
+        function buildIssuePresetValues(issue) {
+            const details = (issue && issue.details) || {};
+            const values = {};
+            const tagText = issue?.ocr_text || details.ocr_text || details.display_text;
+            if (tagText) {
+                values['Tag No'] = tagText;
+                values['Tag/SPARE'] = tagText;
+            }
+            if (issue && issue.jb) {
+                values['JB'] = issue.jb;
+                values['JB No'] = issue.jb;
+            }
+            if (issue && issue.mc) {
+                values['MC'] = issue.mc;
+                values['Multi Cable'] = issue.mc;
+            }
+            if (issue && issue.pdf_name) {
+                values['PDF_Name'] = issue.pdf_name;
+                values['Location'] = issue.page !== undefined && issue.page !== null
+                    ? `${issue.pdf_name} - Page ${issue.page}`
+                    : issue.pdf_name;
+            }
+            if (issue && issue.page !== undefined && issue.page !== null) values['Page'] = issue.page;
+
+            if (details.tag_number !== undefined && details.tag_number !== null) values['Tag_Number'] = details.tag_number;
+            if (details.wire_code_1) values['Wire_Code_1'] = details.wire_code_1;
+            if (details.wire_code_2) values['Wire_Code_2'] = details.wire_code_2;
+            if (details.terminal_first_number) values['Terminal_First_Number'] = details.terminal_first_number;
+            if (details.terminal_second_number) values['Terminal_Second_Number'] = details.terminal_second_number;
+            if (details.scr_terminal_number) values['SCR_Terminal_Number'] = details.scr_terminal_number;
+            if (details.cable_code) values['Cable_Code'] = details.cable_code;
+            if (details.cable_description) values['Cable_Description'] = details.cable_description;
+            if (details.type) values['Type'] = details.type;
+            if (details.tag_number_status) values['Tag_Number_Status'] = details.tag_number_status;
+
+            const wireColors = Array.isArray(details.wire_colors) ? details.wire_colors : [];
+            if (wireColors.length) {
+                values['Wire Colors'] = wireColors.join(', ');
+            } else if (details.wire_colors_text) {
+                values['Wire Colors'] = details.wire_colors_text;
+            } else {
+                const wires = details.raw_cable_descriptions || details.cable_descriptions || [];
+                if (wires && wires.length) values['Wire Colors'] = wires.join(', ');
+            }
+
+            if (details.reason) values['Reason'] = details.reason;
+            if (details.score !== undefined && details.score !== null) values['Candidate_Score'] = details.score;
+            return values;
+        }
+
+        function getSuggestedRowIndexForIssue(issue) {
+            const details = (issue && issue.details) || {};
+            const tagNumber = Number(details.tag_number);
+            if (Number.isFinite(tagNumber) && tagNumber > 0 && issue && issue.jb) {
+                return Math.round(tagNumber);
+            }
+            return getNextRowIndex();
+        }
+
+        const patternAddList = document.getElementById('patternAddList');
+        if (patternAddList) {
+            patternAddList.addEventListener('click', (e) => {
+                const btn = e.target.closest('button[data-candidate-issue]');
+                if (!btn) return;
+                const issueId = btn.dataset.candidateIssue;
+                const issue = (currentIssues || []).find((i) => i.id === issueId);
+                const values = buildIssuePresetValues(issue);
+                appendEngineerLog(
+                    `[REVIEW] ${currentLang === 'fa' ? 'کاندیدا برای افزودن' : 'Candidate ready to add'}: ` +
+                    `${values['Tag No'] || values['Tag/SPARE'] || ''} | JB=${issue?.jb || '-'} | ` +
+                    `${currentLang === 'fa' ? 'ایندکس پیشنهادی' : 'Suggested index'}=${getSuggestedRowIndexForIssue(issue)}`
+                );
+                openRowEditor(null, {
+                    values,
+                    row_index: getSuggestedRowIndexForIssue(issue),
+                    addEndpoint: `/api/issues/${issueId}/add-to-io`,
+                    addMethod: 'POST',
+                    preferInferredIndex: true
+                });
+            });
+        }
+
         issueTableBody.addEventListener('click', async (e)=>{
+            const previewBtn = e.target.closest('button[data-preview-url]');
+            if (previewBtn) {
+                const baseUrl = previewBtn.dataset.previewUrl;
+                const rawPage = parseInt(previewBtn.dataset.previewPage || '', 10);
+                const pageFragment = Number.isFinite(rawPage) && rawPage > 0 ? `#page=${rawPage}` : '';
+                const finalUrl = `${baseUrl}${pageFragment}`;
+                window.open(finalUrl, '_blank');
+                appendEngineerLog(`[PDF] ${currentLang === 'fa' ? 'پیش‌نمایش باز شد' : 'Preview opened'}: ${finalUrl}`);
+                return;
+            }
+
+            const addBtn = e.target.closest('button[data-add-issue]');
+            if (addBtn) {
+                const issueId = addBtn.dataset.addIssue;
+                const issue = (currentIssues || []).find((i) => i.id === issueId);
+                const values = buildIssuePresetValues(issue);
+                appendEngineerLog(
+                    `[REVIEW] ${currentLang === 'fa' ? 'کاندیدا برای افزودن' : 'Candidate ready to add'}: ` +
+                    `${values['Tag No'] || values['Tag/SPARE'] || ''} | JB=${issue?.jb || '-'} | ` +
+                    `${currentLang === 'fa' ? 'ایندکس پیشنهادی' : 'Suggested index'}=${getSuggestedRowIndexForIssue(issue)}`
+                );
+                openRowEditor(null, {
+                    values,
+                    row_index: getSuggestedRowIndexForIssue(issue),
+                    addEndpoint: `/api/issues/${issueId}/add-to-io`,
+                    addMethod: 'POST',
+                    preferInferredIndex: true
+                });
+                return;
+            }
+
             const btn = e.target.closest('button[data-issue]');
             if (!btn) return;
             const id = btn.dataset.issue;
@@ -2666,6 +3061,25 @@
             downloadBox.style.display = 'block';
         }
 
+        if (ioScrollLeftBtn) {
+            ioScrollLeftBtn.addEventListener('click', () => scrollIoTable(-1));
+        }
+        if (ioScrollRightBtn) {
+            ioScrollRightBtn.addEventListener('click', () => scrollIoTable(1));
+        }
+        if (ioZoomOutBtn) {
+            ioZoomOutBtn.addEventListener('click', () => adjustIoTableZoom(-IO_TABLE_ZOOM_STEP));
+        }
+        if (ioZoomInBtn) {
+            ioZoomInBtn.addEventListener('click', () => adjustIoTableZoom(IO_TABLE_ZOOM_STEP));
+        }
+        if (ioZoomResetBtn) {
+            ioZoomResetBtn.addEventListener('click', () => {
+                ioTableZoom = 100;
+                applyIoTableZoom();
+            });
+        }
+
         document.getElementById('ioSearch').addEventListener('input', applySearchFilter);
         document.getElementById('issueSearch').addEventListener('input', applyIssueFilters);
         document.getElementById('issueStatusFilter').addEventListener('change', applyIssueFilters);
@@ -2701,14 +3115,26 @@
         document.getElementById('addRowBtn').addEventListener('click', ()=>{
             openRowEditor(null);
         });
-        closeModalBtn.addEventListener('click', ()=> modal.classList.add('hidden'));
+        closeModalBtn.addEventListener('click', ()=>{
+            modal.classList.add('hidden');
+            candidateAddEndpoint = null;
+            candidateAddMethod = 'POST';
+            candidatePreferInferredIndex = false;
+        });
 
         rowForm.addEventListener('submit', async (e)=>{
             e.preventDefault();
             if (!activeRunId) { showToast('ابتدا Run را بارگذاری کنید','error'); return; }
             const payload = collectRowFormPayload();
             let res;
-            if (activeRowId) {
+            if (candidateAddEndpoint) {
+                payload.prefer_inferred_index = candidatePreferInferredIndex;
+                res = await fetch(candidateAddEndpoint, {
+                    method: candidateAddMethod || 'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify(payload)
+                });
+            } else if (activeRowId) {
                 res = await fetch(`/api/io-list-rows/${activeRowId}`, {
                     method:'PATCH',
                     headers:{'Content-Type':'application/json'},
@@ -2722,10 +3148,32 @@
                 });
             }
             if (res.ok) {
+                let resData = {};
+                try {
+                    resData = await res.json();
+                } catch(_) {}
                 modal.classList.add('hidden');
-                showToast(currentLang === 'fa' ? 'ثبت شد' : 'Saved', 'success');
+                candidateAddEndpoint = null;
+                candidatePresetValues = null;
+                candidatePreferInferredIndex = false;
+                const successMsg = (resData && resData.message)
+                    ? String(resData.message)
+                    : (currentLang === 'fa' ? 'ثبت شد' : 'Saved');
+                showToast(successMsg, 'success');
+                const logOutput = document.getElementById('logOutput');
+                if (logOutput && resData && resData.message) {
+                    const existing = String(logOutput.textContent || '');
+                    logOutput.textContent = `${existing}\n[IO-ADD] ${resData.message}`.trim();
+                }
                 await Promise.all([loadIO(activeRunId), loadIssues(activeRunId)]);
-            } else showToast(currentLang === 'fa' ? 'خطا' : 'Error', 'error');
+            } else {
+                let msg = currentLang === 'fa' ? 'خطا' : 'Error';
+                try {
+                    const err = await res.json();
+                    if (err && err.message) msg = err.message;
+                } catch(_) {}
+                showToast(msg, 'error');
+            }
         });
 
         deleteRowBtn.addEventListener('click', async ()=>{
@@ -2747,6 +3195,34 @@
             buildArtifacts(data);
             showEditedExportDownload(data);
         });
+
+        async function downloadLatestBundleForActiveRun() {
+            if (!activeRunId) {
+                showToast(currentLang === 'fa' ? 'ابتدا Run را بارگذاری کنید' : 'Load a run first', 'error');
+                return;
+            }
+            const res = await fetch(`/api/runs/${activeRunId}/export`, { method: 'POST' });
+            if (!res.ok) {
+                showToast(currentLang === 'fa' ? 'دانلود بسته ناموفق بود' : 'Failed to build/download bundle', 'error');
+                return;
+            }
+            const data = await res.json();
+            if (data.download_url) {
+                window.open(data.download_url, '_blank');
+                appendEngineerLog(`[DOWNLOAD] ${currentLang === 'fa' ? 'بسته خروجی آماده شد' : 'Bundle ready'}: ${data.download_url}`);
+            }
+            buildArtifacts(data);
+            showEditedExportDownload(data);
+        }
+
+        const downloadBundleBtn = document.getElementById('downloadBundleBtn');
+        if (downloadBundleBtn) {
+            downloadBundleBtn.addEventListener('click', downloadLatestBundleForActiveRun);
+        }
+        const downloadLatestBtn = document.getElementById('downloadLatestBtn');
+        if (downloadLatestBtn) {
+            downloadLatestBtn.addEventListener('click', downloadLatestBundleForActiveRun);
+        }
 
         // اضافه کردن CSS برای انیمیشن
         const style = document.createElement('style');
@@ -2798,6 +3274,44 @@
             
             .notification.info {
                 background-color: #3498db;
+            }
+            
+            .pattern-panel {
+                margin-top: 12px;
+                padding: 14px;
+                border: 1px solid var(--border, rgba(0, 20, 60, 0.12));
+                border-radius: 10px;
+                background: var(--bg-card, #ffffff);
+                color: var(--text, #0c1b33);
+            }
+            .pattern-list {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+                gap: 10px;
+                margin-top: 10px;
+            }
+            .pattern-card {
+                border: 1px dashed var(--border, rgba(0, 20, 60, 0.12));
+                border-radius: 10px;
+                padding: 10px;
+                background: var(--bg-card-soft, #f1f4fa);
+                color: var(--text, #0c1b33);
+            }
+            .pattern-card h5 {
+                margin: 0 0 6px 0;
+                font-size: 14px;
+                color: var(--text, #0c1b33);
+            }
+            .pattern-meta {
+                font-size: 12px;
+                color: var(--text-muted, #577199);
+                margin-bottom: 6px;
+                line-height: 1.4;
+            }
+            .pattern-actions {
+                display: flex;
+                justify-content: flex-start;
+                gap: 8px;
             }
             
             .ripple {

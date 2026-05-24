@@ -21,6 +21,10 @@
             padding: 0;
         }
 
+        html {
+            scroll-behavior: smooth;
+        }
+
         body {
             font-family: 'Vazirmatn', 'Space Grotesk', sans-serif;
             background: radial-gradient(circle at 15% 20%, rgba(35, 211, 199, 0.15), transparent 45%),

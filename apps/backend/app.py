@@ -313,6 +313,47 @@ class FileTaskManager:
 # استفاده از FileTaskManager به جای دیکشنری TASKS
 TaskManager = FileTaskManager
 
+
+def _collect_user_task_file_paths(username: str) -> Set[str]:
+    """Collect absolute output file paths from task payloads owned by the user."""
+    collected: Set[str] = set()
+    if not username:
+        return collected
+
+    def _walk(value):
+        if isinstance(value, dict):
+            for v in value.values():
+                _walk(v)
+            return
+        if isinstance(value, list):
+            for v in value:
+                _walk(v)
+            return
+        if isinstance(value, str):
+            candidate = value.strip()
+            if not candidate:
+                return
+            try:
+                abs_candidate = os.path.abspath(candidate)
+            except Exception:
+                return
+            if os.path.exists(abs_candidate):
+                collected.add(abs_candidate)
+
+    try:
+        for filename in os.listdir(TASKS_DIR):
+            if not filename.endswith('.json') or filename.startswith('.'):
+                continue
+            task_id = filename[:-5]
+            task_data = FileTaskManager.get_task(task_id)
+            if not task_data or task_data.get('username') != username:
+                continue
+            _walk(task_data.get('result'))
+    except Exception:
+        return collected
+    return collected
+
+
 class TaskStatus:
     PENDING = 'pending'
     PROCESSING = 'processing'
@@ -384,16 +425,31 @@ def _normalize_project_name_for_lookup(value: str) -> str:
     return re.sub(r'\s+', ' ', (value or '').strip()).lower()
 
 
-def get_latest_excel_from_db(project_id: Optional[str] = None, project_name: Optional[str] = None) -> Optional[str]:
+def _is_admin_username(username: Optional[str]) -> bool:
+    return str(username or "").strip().lower() == "admin"
+
+
+def get_latest_excel_from_db(project_id: Optional[str] = None, project_name: Optional[str] = None,
+                             username: Optional[str] = None) -> Optional[str]:
     """Return path to latest finalized run excel artifact by project name/id."""
     session = SessionLocal()
     try:
+        current_user = str(username or "").strip()
+        user_filter_active = bool(current_user) and not _is_admin_username(current_user)
         run = None
         if project_name:
             normalized_query = _normalize_project_name_for_lookup(project_name)
             if not normalized_query:
                 return None
-            projects = session.scalars(select(Project)).all()
+            if user_filter_active:
+                projects = session.scalars(
+                    select(Project)
+                    .join(Run, Run.project_id == Project.id)
+                    .where(Run.initiated_by == current_user)
+                    .distinct()
+                ).all()
+            else:
+                projects = session.scalars(select(Project)).all()
             exact_matches = [
                 project for project in projects
                 if _normalize_project_name_for_lookup(project.project_name) == normalized_query
@@ -406,11 +462,14 @@ def get_latest_excel_from_db(project_id: Optional[str] = None, project_name: Opt
             latest_candidate = None
             latest_ts = None
             for candidate in candidates:
-                candidate_run = session.scalar(
+                stmt = (
                     select(Run)
                     .where(Run.project_id == candidate.id, Run.status == RunStatus.FINALIZED)
                     .order_by(Run.finished_at.desc(), Run.created_at.desc())
                 )
+                if user_filter_active:
+                    stmt = stmt.where(Run.initiated_by == current_user)
+                candidate_run = session.scalar(stmt)
                 if not candidate_run:
                     continue
                 run_ts = candidate_run.finished_at or candidate_run.started_at or candidate_run.created_at
@@ -419,11 +478,14 @@ def get_latest_excel_from_db(project_id: Optional[str] = None, project_name: Opt
                     latest_ts = run_ts
             run = latest_candidate
         elif project_id:
-            run = session.scalar(
+            stmt = (
                 select(Run)
                 .where(Run.project_id == project_id, Run.status == RunStatus.FINALIZED)
                 .order_by(Run.finished_at.desc(), Run.created_at.desc())
             )
+            if user_filter_active:
+                stmt = stmt.where(Run.initiated_by == current_user)
+            run = session.scalar(stmt)
 
         if not run:
             return None
@@ -445,7 +507,8 @@ def get_io_assignment_logger(project_name: str, username: str):
     return get_logger(logger_name, username=username, project_name=project_name)
 
 def _persist_run_outputs(run_id, project_id, output_excel_path, unmatched_excel_path, report_path, zip_path,
-                         annotated_pdfs, unmatched_excel_tags, unmatched_pdf_tags):
+                         annotated_pdfs, unmatched_excel_tags, unmatched_pdf_tags,
+                         pattern_unmatched_details=None, pattern_unmatched_candidates=None):
     """Persist extractor outputs (rows, artifacts, issues) into the relational DB."""
     with session_scope() as db:
         run = db.get(Run, run_id)
@@ -540,7 +603,79 @@ def _persist_run_outputs(run_id, project_id, output_excel_path, unmatched_excel_
                 )
             )
 
+        pattern_unmatched_details = pattern_unmatched_details or []
+        pattern_unmatched_candidates = pattern_unmatched_candidates or []
+        pattern_tags_upper = set()
+        for item in pattern_unmatched_details:
+            if not isinstance(item, dict):
+                continue
+            ocr_text = str(item.get("ocr_text") or item.get("display_text") or "").strip()
+            if not ocr_text:
+                continue
+            pattern_tags_upper.add(ocr_text.upper())
+            pdf_name = str(item.get("pdf_name") or "").strip()
+            page_no = item.get("page")
+            page_text = f"{page_no}" if page_no is not None else ""
+            page_jb = str(item.get("jb") or "").strip()
+            page_mc = str(item.get("mc") or "").strip()
+            score = item.get("score")
+            reason = str(item.get("reason") or "").strip()
+            loc_parts = [p for p in [pdf_name, f"Page {page_text}" if page_text else "", f"JB {page_jb}" if page_jb else ""] if p]
+            loc_str = " | ".join(loc_parts)
+            message = f"Pattern-like tag not in IO List: {ocr_text}"
+            if loc_str:
+                message = f"{message} ({loc_str})"
+            if score:
+                try:
+                    message = f"{message} [score={float(score):.2f}]"
+                except Exception:
+                    pass
+            if reason:
+                message = f"{message} - {reason}"
+
+            db.add(
+                Issue(
+                    run_id=run.id,
+                    project_id=project.id,
+                    severity=IssueSeverity.WARNING,
+                    status=IssueStatus.OPEN,
+                    code="unmatched_pattern_candidate",
+                    message=message,
+                    details=to_json_safe(item),
+                )
+            )
+
+        # fallback: ensure pattern candidates are still represented as addable issues
+        # even if detailed page/JB metadata could not be assembled upstream
+        for candidate in pattern_unmatched_candidates:
+            candidate_text = str(candidate or "").strip()
+            candidate_upper = candidate_text.upper()
+            if not candidate_text or candidate_upper in pattern_tags_upper:
+                continue
+            pattern_tags_upper.add(candidate_upper)
+            db.add(
+                Issue(
+                    run_id=run.id,
+                    project_id=project.id,
+                    severity=IssueSeverity.WARNING,
+                    status=IssueStatus.OPEN,
+                    code="unmatched_pattern_candidate",
+                    message=f"Pattern-like tag not in IO List: {candidate_text}",
+                    details=to_json_safe(
+                        {
+                            "source_type": "pattern_unmatched_candidate",
+                            "ocr_text": candidate_text,
+                            "display_text": candidate_text,
+                            "reason": "Pattern candidate detected in PDF but context metadata was unavailable",
+                        }
+                    ),
+                )
+            )
+
         for tag in unmatched_pdf_tags:
+            tag_upper = str(tag or "").strip().upper()
+            if tag_upper and tag_upper in pattern_tags_upper:
+                continue
             db.add(
                 Issue(
                     run_id=run.id,
@@ -634,6 +769,8 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
             output_excel_path=output_excel_path,
             output_pdf_dir=annotated_pdf_dir
         )
+        pattern_unmatched_candidates = list(getattr(extractor, 'latest_pattern_unmatched_candidates', []) or [])
+        pattern_unmatched_details = list(getattr(extractor, 'latest_pattern_unmatched_details', []) or [])
         
         TaskManager.update_task(task_id, {'progress': 80})
         logger.info(f"Task {task_id}: پردازش PDF ها کامل شد")
@@ -660,6 +797,8 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
                 'results': {
                     'unmatched_excel_tags': len(unmatched_excel_tags),
                     'unmatched_pdf_tags': len(unmatched_pdf_tags),
+                    'pattern_unmatched_candidates': len(pattern_unmatched_candidates),
+                    'pattern_unmatched_details': len(pattern_unmatched_details),
                     'pdf_count': len(pdf_paths),
                     'pdf_names': [os.path.basename(p) for p in pdf_paths]
                 }
@@ -692,6 +831,8 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
             annotated_pdfs,
             unmatched_excel_tags,
             unmatched_pdf_tags,
+            pattern_unmatched_details,
+            pattern_unmatched_candidates,
         )
         
         # ذخیره نتایج نهایی
@@ -713,8 +854,12 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
                 'results': {
                     'unmatched_excel_tags': unmatched_excel_tags,
                     'unmatched_pdf_tags': unmatched_pdf_tags,
+                    'pattern_unmatched_candidates': pattern_unmatched_candidates,
+                    'pattern_unmatched_details': pattern_unmatched_details,
                     'unmatched_excel_count': len(unmatched_excel_tags),
-                    'unmatched_pdf_count': len(unmatched_pdf_tags)
+                    'unmatched_pdf_count': len(unmatched_pdf_tags),
+                    'pattern_unmatched_count': len(pattern_unmatched_candidates),
+                    'pattern_unmatched_detail_count': len(pattern_unmatched_details)
                 },
                 'patterns_used': pattern_config
             }
@@ -1043,6 +1188,13 @@ def system_info():
 def get_task_status(task_id):
     """دریافت وضعیت task"""
     try:
+        if 'username' not in session:
+            return jsonify({
+                'status': 'error',
+                'message': 'لطفاً ابتدا وارد سیستم شوید'
+            }), 401
+
+        username = session.get('username')
         task = TaskManager.get_task(task_id)
         
         if not task:
@@ -1050,6 +1202,12 @@ def get_task_status(task_id):
                 'status': 'error',
                 'message': 'Task یافت نشد'
             }), 404
+
+        if task.get('username') != username and not _is_admin_username(username):
+            return jsonify({
+                'status': 'error',
+                'message': 'شما مجاز به مشاهده این task نیستید'
+            }), 403
         
         return jsonify({
             'status': task.get('status', 'pending'),
@@ -1252,6 +1410,8 @@ def api_process():
             output_excel_path=output_excel_path,
             output_pdf_dir=annotated_pdf_dir
         )
+        pattern_unmatched_candidates = list(getattr(extractor, 'latest_pattern_unmatched_candidates', []) or [])
+        pattern_unmatched_details = list(getattr(extractor, 'latest_pattern_unmatched_details', []) or [])
         
         unmatched_excel_filename = generate_document_filename(project_name, "UnmatchedTags", "xlsx")
         unmatched_excel_path = os.path.join(project_output_dir, unmatched_excel_filename)
@@ -1283,7 +1443,9 @@ def api_process():
                 },
                 "results": {
                     "unmatched_pdf_tags": unmatched_pdf_tags,
-                    "unmatched_excel_tags": unmatched_excel_tags
+                    "unmatched_excel_tags": unmatched_excel_tags,
+                    "pattern_unmatched_candidates": pattern_unmatched_candidates,
+                    "pattern_unmatched_details": pattern_unmatched_details
                 }
             }
         }
@@ -1327,10 +1489,10 @@ def process_io_assignment():
                 return jsonify({'status': 'error', 'message': 'نام پروژه JB برای استفاده از خروجی DB الزامی است'}), 400
 
             # Preferred path: lookup by project name (exact first, then partial; latest finalized run wins).
-            temp_path = get_latest_excel_from_db(project_name=jb_project_name) if jb_project_name else None
+            temp_path = get_latest_excel_from_db(project_name=jb_project_name, username=username) if jb_project_name else None
             if not temp_path and project_id:
                 # backward compatibility for older clients
-                temp_path = get_latest_excel_from_db(project_id=project_id)
+                temp_path = get_latest_excel_from_db(project_id=project_id, username=username)
 
             if not temp_path:
                 return jsonify({'status': 'error', 'message': 'خروجی Excel نهایی برای این پروژه یافت نشد'}), 404
@@ -1392,6 +1554,9 @@ def download_file():
         فایل برای دانلود
     """
     try:
+        if 'username' not in session:
+            return jsonify({"error": "Unauthorized"}), 401
+        username = session.get('username')
         file_path = request.args.get('file')
         
         if not file_path:
@@ -1417,12 +1582,24 @@ def download_file():
         
         if not os.path.exists(abs_path) or not os.path.isfile(abs_path):
             return jsonify({"error": f"File not found: {abs_path}"}), 404
+
+        if not _is_admin_username(username):
+            with session_scope() as db:
+                permitted = db.scalar(
+                    select(ExportArtifact.id)
+                    .join(Run, Run.id == ExportArtifact.run_id)
+                    .where(ExportArtifact.storage_path == abs_path, Run.initiated_by == username)
+                    .limit(1)
+                )
+                if not permitted:
+                    task_paths = _collect_user_task_file_paths(username)
+                    if abs_path not in task_paths:
+                        return jsonify({"error": "Access denied"}), 403
         
         # تعیین نام فایل برای دانلود
         filename = os.path.basename(abs_path)
         directory = os.path.dirname(abs_path)
         
-        username = session.get('username', 'anonymous')
         logger.info(f"کاربر {username} درخواست دانلود فایل {filename} را ارسال کرد")
         
         # ارسال فایل برای دانلود
@@ -1440,6 +1617,9 @@ def download_artifact(relpath):
     سرو فایل‌های خروجی ذخیره شده در BASE_OUTPUT_DIR از مسیر /downloads/...
     """
     try:
+        if 'username' not in session:
+            return jsonify({"error": "Unauthorized"}), 401
+        username = session.get('username')
         # مشابه منطق /download ولی با الگوی مسیری که get_download_url تولید می‌کند
         version = "v1"
         if request.host.endswith(':5001'):
@@ -1451,9 +1631,21 @@ def download_artifact(relpath):
             return jsonify({"error": "Access denied"}), 403
         if not os.path.exists(abs_path) or not os.path.isfile(abs_path):
             return jsonify({"error": f"File not found: {abs_path}"}), 404
+
+        if not _is_admin_username(username):
+            with session_scope() as db:
+                permitted = db.scalar(
+                    select(ExportArtifact.id)
+                    .join(Run, Run.id == ExportArtifact.run_id)
+                    .where(ExportArtifact.storage_path == abs_path, Run.initiated_by == username)
+                    .limit(1)
+                )
+                if not permitted:
+                    task_paths = _collect_user_task_file_paths(username)
+                    if abs_path not in task_paths:
+                        return jsonify({"error": "Access denied"}), 403
         directory = os.path.dirname(abs_path)
         filename = os.path.basename(abs_path)
-        username = session.get('username', 'anonymous')
         logger.info(f"کاربر {username} دانلود فایل {filename} را از /downloads درخواست کرد")
         return send_from_directory(directory, filename, as_attachment=True)
     except Exception as e:
@@ -1473,6 +1665,9 @@ def download_all_pdfs():
         فایل ZIP حاوی همه PDF‌ها
     """
     try:
+        if 'username' not in session:
+            return jsonify({"error": "Unauthorized"}), 401
+        username = session.get('username')
         project_name = request.args.get('project')
         
         if not project_name:
@@ -1483,25 +1678,38 @@ def download_all_pdfs():
         if request.host.endswith(':5001'):
             version = "v2"
         
-        # مسیر دایرکتوری پروژه
         base_dir = OUTPUT_DIRS[version]
-        project_dir = os.path.join(base_dir, project_name)
-        
-        if not os.path.exists(project_dir) or not os.path.isdir(project_dir):
-            return jsonify({"error": f"Project directory not found: {project_dir}"}), 404
-        
-        # یافتن همه فایل‌های PDF در دایرکتوری پروژه
-        pdf_files = []
-        for root, _, files in os.walk(project_dir):
-            for file in files:
-                if file.lower().endswith('.pdf'):
-                    pdf_files.append(os.path.join(root, file))
+        with session_scope() as db:
+            run_stmt = (
+                select(Run.id)
+                .join(Project, Project.id == Run.project_id)
+                .where(Project.project_name == project_name)
+            )
+            if not _is_admin_username(username):
+                run_stmt = run_stmt.where(Run.initiated_by == username)
+            run_ids = [rid for rid in db.scalars(run_stmt).all()]
+
+            if not run_ids:
+                return jsonify({"error": "Project not found or access denied"}), 404
+
+            pdf_files = [
+                p for p in db.scalars(
+                    select(ExportArtifact.storage_path)
+                    .where(
+                        ExportArtifact.run_id.in_(run_ids),
+                        ExportArtifact.artifact_type == ArtifactType.ANNOTATED_PDF
+                    )
+                ).all()
+                if p and os.path.exists(p) and os.path.isfile(p)
+            ]
         
         if not pdf_files:
             return jsonify({"error": "No PDF files found for this project"}), 404
         
         # ایجاد فایل ZIP موقت
-        zip_filename = f"{project_name}_PDFs.zip"
+        safe_project = secure_filename(project_name) or "project"
+        safe_user = secure_filename(username) or "user"
+        zip_filename = f"{safe_project}_{safe_user}_PDFs.zip"
         zip_path = os.path.join(base_dir, zip_filename)
         
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
@@ -1510,7 +1718,6 @@ def download_all_pdfs():
                 arcname = os.path.basename(pdf_file)
                 zipf.write(pdf_file, arcname)
         
-        username = session.get('username', 'anonymous')
         logger.info(f"کاربر {username} درخواست دانلود همه PDF های پروژه {project_name} را ارسال کرد")
         
         # ارسال فایل ZIP برای دانلود

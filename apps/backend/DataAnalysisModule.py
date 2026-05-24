@@ -288,6 +288,8 @@ class TagJBExtractor:
         self.similar_matches = 0
         self.processing_time = 0
         self.similarity_reports = [] 
+        self.latest_pattern_unmatched_candidates = []
+        self.latest_pattern_unmatched_details = []
         
         # تنظیم مقادیر پیش‌فرض الگوها (به عنوان رشته)
         self.jb_examples = None
@@ -860,6 +862,120 @@ class TagJBExtractor:
             logger.error(f"Error splitting tag {tag}: {e}")
             return "", "", "", ""
 
+    def _normalize_ocr_tag_candidate(self, text: str) -> str:
+        """Normalize raw OCR token so it can be compared against IO-list tag patterns."""
+        if not text:
+            return ""
+        normalized = str(text).strip().upper()
+        normalized = re.sub(r'\s+', '', normalized)
+        normalized = normalized.replace('_', '-')
+        normalized = normalized.strip("-.")
+        return normalized
+
+    def _build_io_pattern_profile(self, io_tags: 'Set[str]') -> Dict[str, Any]:
+        """
+        Build a lightweight pattern profile from IO list to detect tag-like OCR text,
+        even when the exact tag does not exist in IO list.
+        """
+        prefixes: Set[str] = set()
+        lengths: List[int] = []
+        hyphen_count = 0
+        numeric_lengths: List[int] = []
+
+        for raw_tag in io_tags or set():
+            tag = self._normalize_ocr_tag_candidate(raw_tag)
+            if not tag:
+                continue
+            lengths.append(len(tag))
+            if '-' in tag:
+                hyphen_count += 1
+
+            prefix_match = re.match(r'^([A-Z]{2,6})', tag)
+            if prefix_match:
+                prefixes.add(prefix_match.group(1))
+
+            for num_part in re.findall(r'\d+', tag):
+                numeric_lengths.append(len(num_part))
+
+        if not prefixes:
+            # fallback to common instrumentation prefixes
+            prefixes = {
+                'UZSO', 'UZSC', 'FIT', 'PIT', 'TIT', 'LIT', 'FCV', 'PCV',
+                'TCV', 'LCV', 'TY', 'LA', 'UY', 'UHSL', 'UHSH'
+            }
+
+        min_len = min(lengths) if lengths else 5
+        max_len = max(lengths) if lengths else 16
+        avg_num_len = (sum(numeric_lengths) / len(numeric_lengths)) if numeric_lengths else 3.0
+        hyphen_ratio = (hyphen_count / len(lengths)) if lengths else 0.5
+
+        return {
+            'prefixes': prefixes,
+            'min_len': min_len,
+            'max_len': max_len,
+            'avg_num_len': avg_num_len,
+            'hyphen_ratio': hyphen_ratio
+        }
+
+    def _score_pattern_candidate(self, candidate: str, io_profile: Dict[str, Any]) -> float:
+        """
+        Score how likely a token is a valid tag based on IO-list-derived structure.
+        """
+        tag = self._normalize_ocr_tag_candidate(candidate)
+        if not tag:
+            return 0.0
+
+        if len(tag) < 4:
+            return 0.0
+        if not re.search(r'[A-Z]', tag) or not re.search(r'\d', tag):
+            return 0.0
+
+        generic_patterns = [
+            r'^[A-Z]{2,6}-\d{1,5}(?:-[A-Z0-9]{1,5})?$',
+            r'^[A-Z]{2,6}\d{2,5}(?:[A-Z]{0,2})?$',
+            r'^[A-Z]{2,6}-[A-Z0-9]{2,8}(?:-[A-Z0-9]{1,5})?$'
+        ]
+
+        if not any(re.match(pattern, tag) for pattern in generic_patterns):
+            return 0.0
+
+        score = 0.35
+        profile_prefixes = io_profile.get('prefixes', set()) if io_profile else set()
+        prefix = self._extract_tag_prefix(tag)
+
+        if prefix and profile_prefixes:
+            if prefix in profile_prefixes:
+                score += 0.35
+            else:
+                # tolerate one-char OCR drift in prefix
+                close_prefix = any(
+                    abs(len(prefix) - len(ref_prefix)) <= 1 and
+                    Levenshtein.distance(prefix, ref_prefix) <= 1
+                    for ref_prefix in profile_prefixes
+                )
+                if close_prefix:
+                    score += 0.22
+        elif prefix:
+            score += 0.2
+
+        min_len = io_profile.get('min_len', 5) if io_profile else 5
+        max_len = io_profile.get('max_len', 16) if io_profile else 16
+        if min_len - 2 <= len(tag) <= max_len + 2:
+            score += 0.15
+
+        avg_num_len = io_profile.get('avg_num_len', 3.0) if io_profile else 3.0
+        digit_parts = re.findall(r'\d+', tag)
+        if digit_parts:
+            digit_score = max(0.0, 1.0 - (abs(len(digit_parts[0]) - avg_num_len) / max(avg_num_len, 1.0)))
+            score += 0.1 * digit_score
+
+        hyphen_ratio = io_profile.get('hyphen_ratio', 0.5) if io_profile else 0.5
+        has_hyphen = '-' in tag
+        if (hyphen_ratio >= 0.5 and has_hyphen) or (hyphen_ratio < 0.5 and not has_hyphen):
+            score += 0.1
+
+        return max(0.0, min(1.0, score))
+
     def validate_tag_candidates(self, query_tag, candidates):
         """
         اعتبارسنجی و فیلتر کردن کاندیداهای تگ با قوانین سخت‌گیرانه‌تر
@@ -1207,6 +1323,100 @@ class TagJBExtractor:
 
         return text
 
+    def _normalize_code_token(self, token: 'Any') -> str:
+        """
+        Normalize a single OCR token into a code-like identifier.
+        Keeps only A-Z, 0-9, '.', '_' and '-' and strips leading/trailing separators.
+        """
+        if token is None:
+            return ""
+        token_str = str(token).strip().upper()
+        if not token_str:
+            return ""
+        token_str = re.sub(r"[^A-Z0-9._-]", "", token_str)
+        token_str = token_str.strip("._-")
+        return token_str
+
+    def _is_prefixed_identifier(self, token: str, prefix: str, *, require_digit: bool = True) -> bool:
+        """
+        Heuristic check that token is an identifier starting with prefix (not merely containing it).
+        Designed to reduce false-positives like 'ATACHONICAL' when prefix='IC'.
+        """
+        if not token or not prefix:
+            return False
+        prefix = str(prefix).strip().upper()
+        if not prefix:
+            return False
+        token = str(token).strip().upper()
+
+        if not token.startswith(prefix):
+            return False
+        if len(token) <= len(prefix):
+            return False
+
+        if require_digit and not any(ch.isdigit() for ch in token):
+            return False
+
+        # If prefix ends with alnum, require a separator or digit next (avoid prefix as substring of longer word)
+        if prefix[-1].isalnum():
+            next_ch = token[len(prefix)]
+            if next_ch.isalpha():
+                return False
+
+        return True
+
+    def _select_best_mc_identifier(self, mc_identifiers: 'Union[Set[str], List[str]]', jb_identifiers: 'Union[Set[str], List[str]]') -> str:
+        """
+        Select a single best MC identifier for a page in a deterministic way.
+        Prefers codes that start with mc_examples and look structurally valid; when a JB exists,
+        prefers MC that matches the JB suffix (e.g., JB-EEV-101 -> IC-EEV-101).
+        """
+        mc_prefix = (getattr(self, "mc_examples", "") or "").strip().upper()
+        if not mc_prefix:
+            return ""
+
+        raw_candidates = list(mc_identifiers) if mc_identifiers else []
+        norm_candidates_all = []
+        for c in raw_candidates:
+            norm = self._normalize_code_token(c)
+            if norm:
+                norm_candidates_all.append(norm)
+
+        # Pass 1: strict filter (prefix + digit)
+        norm_candidates = [c for c in norm_candidates_all if self._is_prefixed_identifier(c, mc_prefix, require_digit=True)]
+        # Pass 2: relax digit requirement (still must start with prefix)
+        if not norm_candidates:
+            norm_candidates = [c for c in norm_candidates_all if self._is_prefixed_identifier(c, mc_prefix, require_digit=False)]
+        if not norm_candidates:
+            return ""
+
+        jb_prefix = (getattr(self, "jb_examples", "") or "").strip().upper()
+        expected_mc = None
+        if jb_identifiers:
+            jb_raw = list(jb_identifiers)[0]
+            jb_norm = self._normalize_code_token(jb_raw)
+            if jb_norm and jb_prefix and jb_norm.startswith(jb_prefix):
+                expected_mc = mc_prefix + jb_norm[len(jb_prefix):]
+
+        def candidate_score(cand: str) -> 'Tuple[float, int, int, int]':
+            digits = sum(ch.isdigit() for ch in cand)
+            separators = cand.count("-") + cand.count("_") + cand.count(".")
+            # Higher is better; shorter is slightly preferred when all else equal
+            length_penalty = -len(cand)
+
+            similarity = 0.0
+            if expected_mc:
+                try:
+                    similarity = float(Levenshtein.ratio(cand, expected_mc))
+                except Exception:
+                    similarity = 0.0
+            return (similarity, digits, separators, length_penalty)
+
+        # Deterministic: tie-break by lexicographic order
+        norm_candidates_sorted = sorted(set(norm_candidates))
+        best = max(norm_candidates_sorted, key=lambda c: (candidate_score(c), c))
+        return best
+
 
     def extract_from_image(self, image: np.ndarray) -> 'Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str], Dict[str, Dict]]':
         """
@@ -1265,9 +1475,9 @@ class TagJBExtractor:
                 io_list_tags = set(str(tag).strip().upper() for tag in self.excel_df[tag_col] if pd.notna(tag))
         
         cable_patterns = [
-            re.compile(r'(\d+)\s*(P|PR|PAIR)', re.IGNORECASE),
-            re.compile(r'(\d+)\s*(T|TR|TRIPLE)', re.IGNORECASE),
-            re.compile(r'(\d+)\s*(C|CR|CORE)', re.IGNORECASE),
+            ('pair', re.compile(r'\b(\d{1,4})\s*(?:PAIR|PR|P)(?=\b|X|×|\*|/|-|\.|\d)', re.IGNORECASE)),
+            ('triple', re.compile(r'\b(\d{1,4})\s*(?:TRIPLE|TR|T)(?=\b|X|×|\*|/|-|\.|\d)', re.IGNORECASE)),
+            ('core', re.compile(r'\b(\d{1,4})\s*(?:CORE|CR|C)(?=\b|X|×|\*|/|-|\.|\d)', re.IGNORECASE)),
         ]
         
         mc_positions = []
@@ -1276,9 +1486,12 @@ class TagJBExtractor:
         
         processed_tag_texts = set()
         processed_spare_indices = set()
+        ocr_candidate_scores: Dict[str, float] = {}
+        ocr_tag_positions: Dict[str, Dict[str, int]] = {}
         
         GENERAL_TAG_PATTERN = re.compile(r'^[A-Z]{2,5}-[\w\d]+(?:-\w+)?$', re.IGNORECASE)
         spare_pattern = re.compile(r'\b(spare)\b', re.IGNORECASE)
+        io_pattern_profile = self._build_io_pattern_profile(io_list_tags)
         
         # ============================================================
         # 🆕 ذخیره موقعیت‌های تگ‌ها و SPARE ها
@@ -1292,17 +1505,29 @@ class TagJBExtractor:
         logger.info("Phase 0: Extracting ALL OCR tags...")
         
         for i, word in enumerate(ocr_data['text']):
-            word_clean = word.strip().upper()
+            word_clean = self._normalize_ocr_tag_candidate(word)
             if not word_clean or len(word_clean) < 4:
                 continue
             
-            if (self.jb_examples in word_clean or 
-                self.mc_examples in word_clean or 
-                spare_pattern.search(word_clean)):
+            if (
+                (self.jb_examples and word_clean.startswith(self.jb_examples)) or
+                self._is_prefixed_identifier(word_clean, self.mc_examples, require_digit=False) or
+                spare_pattern.search(word_clean)
+            ):
                 continue
             
-            if GENERAL_TAG_PATTERN.match(word_clean):
+            pattern_score = self._score_pattern_candidate(word_clean, io_pattern_profile)
+
+            if GENERAL_TAG_PATTERN.match(word_clean) or pattern_score >= 0.62:
                 all_ocr_tags.add(word_clean)
+                ocr_candidate_scores[word_clean] = max(ocr_candidate_scores.get(word_clean, 0.0), pattern_score)
+                if word_clean not in ocr_tag_positions:
+                    ocr_tag_positions[word_clean] = {
+                        'y': int(ocr_data['top'][i]),
+                        'x': int(ocr_data['left'][i]),
+                        'width': int(ocr_data['width'][i]),
+                        'height': int(ocr_data['height'][i]),
+                    }
                 logger.debug(f"Found OCR tag: {word_clean}")
         
         logger.info(f"Phase 0 complete: {len(all_ocr_tags)} OCR tags")
@@ -1444,6 +1669,42 @@ class TagJBExtractor:
                     logger.info(f"⚠️ SIMILAR: {ocr_tag} → {best_match} ({best_score:.3f})")
 
         logger.info(f"Phase 2 complete: {len(similar_matched_tags)} similar, {similar_rejected_count} rejected")
+
+        # ============================================================
+        # Phase 2.5: Pattern-based unmatched candidates
+        # ============================================================
+        logger.info("Phase 2.5: Detecting IO-pattern candidates not found in IO List...")
+        unmatched_pattern_count = 0
+        for idx, ocr_tag in enumerate(sorted(all_ocr_tags)):
+            if ocr_tag in processed_tag_texts:
+                continue
+
+            candidate_score = ocr_candidate_scores.get(ocr_tag, 0.0)
+            if candidate_score < 0.62:
+                continue
+
+            candidate_key = f"UNMATCHED_CANDIDATE::{ocr_tag}::{idx}"
+            candidate_pos = ocr_tag_positions.get(ocr_tag)
+            if candidate_pos:
+                tags_with_positions.append({
+                    'tag': ocr_tag,
+                    'y': candidate_pos.get('y', 0),
+                    'x': candidate_pos.get('x', 0),
+                    'width': candidate_pos.get('width', 0),
+                    'height': candidate_pos.get('height', 0),
+                    'ocr_text': ocr_tag
+                })
+            tag_match_info[candidate_key] = {
+                'match_type': 'unmatched_candidate',
+                'score': round(candidate_score, 3),
+                'ocr_text': ocr_tag,
+                'display_text': ocr_tag,
+                'reason': 'IO-pattern-like tag not found in IO List',
+                'bbox': candidate_pos if candidate_pos else {}
+            }
+            unmatched_pattern_count += 1
+
+        logger.info(f"Phase 2.5 complete: {unmatched_pattern_count} pattern-based unmatched candidates")
         
         # ============================================================
         # Phase 3: Process JB, MC, SPARE
@@ -1483,12 +1744,13 @@ class TagJBExtractor:
                 continue
             
             # MC
-            if len(word_clean) >= len(self.mc_examples) + 1 and self.mc_examples in word_clean and 'AS' not in word_clean:
+            mc_token = self._normalize_code_token(word_clean)
+            if self._is_prefixed_identifier(mc_token, self.mc_examples, require_digit=False):
                 x, y = ocr_data['left'][i], ocr_data['top'][i]
                 mc_positions.append((x, y))
                 mc_indices.append(i)
-                mc_identifiers.add(word_clean)
-                logger.info(f"MC: {word_clean}")
+                mc_identifiers.add(mc_token)
+                logger.info(f"MC: {mc_token}")
                 continue
             
             # JB
@@ -1504,60 +1766,129 @@ class TagJBExtractor:
         
         for mc_i in mc_indices:
             mc_x, mc_y = ocr_data['left'][mc_i], ocr_data['top'][mc_i]
-            
-            search_radius_x = 300
-            search_radius_y = 100
-            
-            nearby_words = []
-            for j, word_j in enumerate(ocr_data['text']):
-                if not word_j.strip():
+            mc_text = str(ocr_data['text'][mc_i]).strip().upper()
+
+            # جستجوی چندمرحله‌ای:
+            # 1) پنجره محدود نزدیک MC
+            # 2) در صورت عدم یافتن، پنجره کمی بازتر برای جابه‌جایی OCR
+            window_candidates = [
+                (40, 180, 100, 18),
+                (120, 300, 130, 24),
+                (220, 380, 170, 30),
+            ]
+
+            best_hit = None
+            for win_idx, (max_left_offset, max_right_offset, search_radius_y, same_row_tolerance) in enumerate(window_candidates):
+                nearby_entries = []
+                for j, word_j in enumerate(ocr_data['text']):
+                    token = str(word_j).strip().upper()
+                    if not token:
+                        continue
+
+                    word_x, word_y = ocr_data['left'][j], ocr_data['top'][j]
+                    distance_y = abs(word_y - mc_y)
+                    x_offset = int(word_x) - int(mc_x)
+
+                    if (distance_y <= search_radius_y and
+                        -max_left_offset <= x_offset <= max_right_offset):
+                        nearby_entries.append({
+                            'idx': j,
+                            'text': token,
+                            'x': int(word_x),
+                            'y': int(word_y)
+                        })
+
+                if not nearby_entries:
                     continue
-                
-                word_x, word_y = ocr_data['left'][j], ocr_data['top'][j]
-                distance_x = abs(word_x - mc_x)
-                distance_y = abs(word_y - mc_y)
-                
-                if distance_x <= search_radius_x and distance_y <= search_radius_y:
-                    nearby_words.append(word_j.strip())
-            
-            combined_text = ' '.join(nearby_words).upper()
-            
-            if combined_text:
-                clean_text = self.clean_cable_description(combined_text, mc_identifiers)
-                raw_cable_descriptions.append(clean_text)
-            
-            for pattern in cable_patterns:
-                matches = pattern.findall(combined_text)
-                for match in matches:
-                    if isinstance(match, tuple):
-                        number = match[0]
-                        cable_type = match[1] if len(match) > 1 else ''
-                    else:
-                        number = match
-                        cable_type = ''
-                    
-                    cable_type_full = ''
-                    if cable_type:
-                        cable_type_upper = cable_type.upper()
-                        if cable_type_upper in ['P', 'PR', 'PAIR']:
-                            cable_type_full = 'pair'
-                        elif cable_type_upper in ['T', 'TR', 'TRIPLE']:
-                            cable_type_full = 'triple'
-                        elif cable_type_upper in ['C', 'CR', 'CORE']:
-                            cable_type_full = 'core'
-                    else:
-                        if 'PAIR' in combined_text:
-                            cable_type_full = 'pair'
-                        elif 'TRIPLE' in combined_text:
-                            cable_type_full = 'triple'
-                        elif 'CORE' in combined_text:
-                            cable_type_full = 'core'
-                        else:
-                            cable_type_full = 'pair'
-                    
-                    cable_desc = f"{number} {cable_type_full}"
-                    if cable_desc not in cable_descriptions:
-                        cable_descriptions.append(cable_desc)
+
+                candidate_hits = []
+                seen_hits = set()
+
+                def _collect_cable_matches(source_text, source_x, source_y):
+                    normalized_text = re.sub(r'\s+', ' ', str(source_text).upper()).strip()
+                    if not normalized_text:
+                        return
+
+                    for cable_type_full, pattern in cable_patterns:
+                        for match in pattern.finditer(normalized_text):
+                            number_raw = match.group(1)
+                            try:
+                                number = int(number_raw)
+                            except Exception:
+                                continue
+
+                            if number <= 0:
+                                continue
+
+                            cable_desc = f"{number} {cable_type_full}"
+                            is_above_mc = int(source_y) < int(mc_y)
+                            distance_score = abs(int(source_x) - int(mc_x)) + (3.0 * abs(int(source_y) - int(mc_y)))
+                            if is_above_mc:
+                                distance_score += 40.0
+                            hit_key = (cable_desc, int(source_x), int(source_y), normalized_text)
+                            if hit_key in seen_hits:
+                                continue
+
+                            seen_hits.add(hit_key)
+                            candidate_hits.append({
+                                'cable_desc': cable_desc,
+                                'source_text': normalized_text,
+                                'distance': distance_score
+                            })
+
+                # کاندید مستقیم از خود توکن (مثل FRT-12PX0.75MM2)
+                for entry in nearby_entries:
+                    _collect_cable_matches(entry['text'], entry['x'], entry['y'])
+
+                # کاندید ترکیبی از دو توکن هم‌ردیف (مثل "12" + "PAIR")
+                row_tolerance = same_row_tolerance
+                max_pair_gap = 150 if win_idx == 0 else 220
+                for i in range(len(nearby_entries)):
+                    for j in range(i + 1, len(nearby_entries)):
+                        e1 = nearby_entries[i]
+                        e2 = nearby_entries[j]
+
+                        if abs(e1['y'] - e2['y']) > row_tolerance:
+                            continue
+
+                        left, right = (e1, e2) if e1['x'] <= e2['x'] else (e2, e1)
+                        if (right['x'] - left['x']) > max_pair_gap:
+                            continue
+
+                        center_x = int((left['x'] + right['x']) / 2)
+                        center_y = int((left['y'] + right['y']) / 2)
+                        _collect_cable_matches(f"{left['text']} {right['text']}", center_x, center_y)
+                        _collect_cable_matches(f"{left['text']}{right['text']}", center_x, center_y)
+
+                if candidate_hits:
+                    best_hit = min(candidate_hits, key=lambda item: (item['distance'], len(item['source_text'])))
+                    break
+
+            if not best_hit:
+                debug_nearby = []
+                for j, word_j in enumerate(ocr_data['text']):
+                    token = str(word_j).strip().upper()
+                    if not token:
+                        continue
+                    word_x, word_y = int(ocr_data['left'][j]), int(ocr_data['top'][j])
+                    dx = abs(word_x - int(mc_x))
+                    dy = abs(word_y - int(mc_y))
+                    if dx <= 420 and dy <= 200:
+                        debug_nearby.append((dx + dy, token))
+                debug_nearby.sort(key=lambda x: x[0])
+                sample_tokens = [t for _, t in debug_nearby[:10]]
+                logger.warning(f"No cable description matched near MC '{mc_text}' at ({mc_x},{mc_y}). Nearby OCR sample: {sample_tokens}")
+                continue
+
+            best_desc = best_hit['cable_desc']
+            best_text = self.clean_cable_description(best_hit['source_text'], mc_identifiers)
+            logger.info(f"Cable matched near MC '{mc_text}': code='{best_desc}', raw='{best_text}'")
+
+            if best_desc not in cable_descriptions:
+                cable_descriptions.append(best_desc)
+
+            if best_text and best_text not in raw_cable_descriptions:
+                raw_cable_descriptions.append(best_text)
         
         # ============================================================
         # 🆕 Phase 5: شماره‌گذاری بر اساس موقعیت عمودی
@@ -1578,7 +1909,39 @@ class TagJBExtractor:
                     'score': 1.0,
                     'ocr_text': spares_with_positions[idx].get('spare', 'SPARE')
                 }
-        
+
+        # Enrich unmatched candidates with position-based numbering and derived columns
+        default_cable_desc = raw_cable_descriptions[0] if raw_cable_descriptions else ''
+        default_cable_code = cable_descriptions[0] if cable_descriptions else ''
+        for candidate_key, info in tag_match_info.items():
+            if not isinstance(info, dict) or info.get('match_type') != 'unmatched_candidate':
+                continue
+            candidate_text = self._normalize_ocr_tag_candidate(info.get('ocr_text', info.get('display_text', '')))
+            if not candidate_text:
+                continue
+            candidate_number = tag_to_number.get(candidate_text)
+            if not candidate_number:
+                continue
+
+            terminal_info = self.generate_terminal_numbers(candidate_number)
+            wire_colors_str = self.generate_mc_wire_colors_enhanced(candidate_number)
+            wire_colors = [c.strip() for c in str(wire_colors_str).split(',') if str(c).strip()]
+            wire_code_1 = wire_colors[0] if len(wire_colors) > 0 else ''
+            wire_code_2 = wire_colors[1] if len(wire_colors) > 1 else ''
+
+            info['tag_number'] = int(candidate_number)
+            info['wire_colors_text'] = wire_colors_str
+            info['wire_colors'] = wire_colors
+            info['wire_code_1'] = wire_code_1
+            info['wire_code_2'] = wire_code_2
+            info['terminal_first_number'] = terminal_info.get('terminal_first', '')
+            info['terminal_second_number'] = terminal_info.get('terminal_second', '')
+            info['scr_terminal_number'] = terminal_info.get('scr_terminal', '')
+            info['cable_code'] = default_cable_code
+            info['cable_description'] = default_cable_desc
+            info['type'] = 'Tag'
+            info['tag_number_status'] = 'Assigned (Position-based candidate)'
+
         # ============================================================
         # Final logging
         # ============================================================
@@ -2279,7 +2642,7 @@ class TagJBExtractor:
 
     def draw_bounding_boxes(self, image, tags=None, jb_identifiers=None, mc_identifiers=None,
                         cable_descriptions=None, spare_identifiers=None, tag_to_number=None,
-                        tag_match_info=None ):
+                        tag_match_info=None, all_ocr_tags=None ):
         """
         ✅ بازنویسی کامل: رسم باندینگ باکس‌ها با شماره‌های صحیح (بر اساس موقعیت عمودی)
         """
@@ -2306,10 +2669,17 @@ class TagJBExtractor:
             self.mc_examples = "MC"
         if not hasattr(self, 'spare_examples') or self.spare_examples is None:
             self.spare_examples = "SPARE"
-        
+
+        raw_mc_count = len(mc_identifiers) if mc_identifiers else 0
+        selected_mc = self._select_best_mc_identifier(mc_identifiers, jb_identifiers)
+        mc_identifiers = {selected_mc} if selected_mc else set()
+
         logger.info(f"="*70)
         logger.info(f"🎨 Drawing bounding boxes with POSITION-BASED numbering")
-        logger.info(f"  Tags: {len(tags)}, JBs: {len(jb_identifiers)}, MCs: {len(mc_identifiers)}, SPAREs: {len(spare_identifiers)}")
+        logger.info(
+            f"  Tags: {len(tags)}, JBs: {len(jb_identifiers)}, MCs: {raw_mc_count} (selected: {selected_mc or '-'})"
+            f", SPAREs: {len(spare_identifiers)}"
+        )
         logger.info(f"  tag_to_number entries: {len(tag_to_number)}")
         logger.info(f"="*70)
         
@@ -2410,6 +2780,49 @@ class TagJBExtractor:
         logger.info(f"Phase 2: Found {similar_found_count} similar matches")
         
         # ============================================================
+        # Phase 2.5: Pattern-based unmatched candidates
+        # ============================================================
+        logger.info("Phase 2.5: Collecting unmatched pattern candidates...")
+        unmatched_candidate_found_count = 0
+        for info in tag_match_info.values():
+            if not isinstance(info, dict):
+                continue
+            if info.get('match_type') != 'unmatched_candidate':
+                continue
+
+            candidate_text = self._normalize_ocr_tag_candidate(
+                info.get('ocr_text', info.get('display_text', ''))
+            )
+            if not candidate_text:
+                continue
+
+            for i, text in enumerate(ocr_data['text']):
+                text_clean = self._normalize_ocr_tag_candidate(text)
+                if not text_clean:
+                    continue
+
+                region_key = (
+                    ocr_data['left'][i], ocr_data['top'][i],
+                    ocr_data['width'][i], ocr_data['height'][i]
+                )
+                if region_key in processed_regions:
+                    continue
+
+                if text_clean == candidate_text:
+                    all_found_items.append({
+                        'type': 'unmatched_candidate',
+                        'text': info.get('display_text', candidate_text),
+                        'position': region_key,
+                        'score': info.get('score', 0.0),
+                        'y_position': ocr_data['top'][i]
+                    })
+                    processed_regions.add(region_key)
+                    unmatched_candidate_found_count += 1
+                    break
+
+        logger.info(f"Phase 2.5: Found {unmatched_candidate_found_count} unmatched candidates")
+
+        # ============================================================
         # Phase 3: JB identifiers
         # ============================================================
         logger.info("Phase 3: Collecting JB identifiers...")
@@ -2442,8 +2855,8 @@ class TagJBExtractor:
         
         for mc in mc_identifiers:
             for i, text in enumerate(ocr_data['text']):
-                text_clean = text.strip().upper()
-                if text_clean == mc.upper():
+                text_norm = self._normalize_code_token(text)
+                if text_norm and text_norm == self._normalize_code_token(mc):
                     region_key = (ocr_data['left'][i], ocr_data['top'][i],
                                 ocr_data['width'][i], ocr_data['height'][i])
                     if region_key not in processed_regions:
@@ -2584,6 +2997,17 @@ class TagJBExtractor:
                 cv2.rectangle(image, (x, y), (x + w, y + h), (0, 200, 200), 2)  # زرد
                 cv2.putText(image, f"Cable: {text}", (x, y - 10), 
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 200, 200), 2)
+
+            elif item_type == 'unmatched_candidate':
+                # Distinct color for "IO-like but not in IO list" candidates.
+                candidate_text = self.clean_text_for_display(text)
+                score = item.get('score', 0.0)
+                color = (0, 0, 0)
+                cv2.rectangle(image, (x, y), (x + w, y + h), color, 2)
+                label = f"! {candidate_text}"
+                if score:
+                    label = f"! {candidate_text} ({score:.2f})"
+                cv2.putText(image, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
         
         # ============================================================
         # آمار و Legend
@@ -2591,6 +3015,7 @@ class TagJBExtractor:
         exact_count = len([item for item in all_found_items if item.get('type') == 'tag' and item.get('match_type') == 'exact'])
         similar_count = len([item for item in all_found_items if item.get('type') == 'tag' and item.get('match_type') == 'similar'])
         spare_count = len([item for item in all_found_items if item.get('type') == 'spare'])
+        candidate_count = len([item for item in all_found_items if item.get('type') == 'unmatched_candidate'])
         
         legend_y_pos = image.shape[0] - 100
         legend_x_pos = 10
@@ -2604,6 +3029,8 @@ class TagJBExtractor:
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
         cv2.putText(image, f"Similar: {similar_count}", (legend_x_pos + 150, legend_y_pos - 15), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
+        cv2.putText(image, f"Not in IO (Pattern): {candidate_count}", (legend_x_pos + 300, legend_y_pos - 15),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
         
         # Components
         cv2.putText(image, f"JB: {jb_found_count}", (legend_x_pos, legend_y_pos + 10), 
@@ -2616,12 +3043,16 @@ class TagJBExtractor:
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 200), 2)
         
         # Stats summary
-        stats_text = f"Total: {exact_count + similar_count} tags, {spare_count} spares (numbered by position)"
+        stats_text = (
+            f"Total: {exact_count + similar_count} tags, "
+            f"{candidate_count} pattern-candidates, {spare_count} spares"
+        )
         cv2.putText(image, stats_text, (legend_x_pos, legend_y_pos + 35), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
         
         logger.info(f"✅ Bounding boxes drawn with position-based numbering:")
         logger.info(f"   Tags: {exact_count} exact, {similar_count} similar")
+        logger.info(f"   Pattern-based unmatched candidates: {candidate_count}")
         logger.info(f"   Components: {jb_found_count} JBs, {mc_found_count} MCs, {spare_count} SPAREs")
         logger.info(f"="*70)
         
@@ -2701,6 +3132,8 @@ class TagJBExtractor:
                             (tags, jb_identifiers, mc_identifiers, cable_descriptions, 
                             spare_identifiers, tag_to_number, raw_cable_descriptions, 
                             tag_match_info, all_ocr_tags) = result
+
+                        selected_mc = self._select_best_mc_identifier(mc_identifiers, jb_identifiers)
                         
                         # رسم bounding boxes
                         try:
@@ -2721,7 +3154,7 @@ class TagJBExtractor:
                         try:
                             info_text = [
                                 f"Page {page_num + 1}/{total_pages}",
-                                f"Tags: {len(tags)}, JBs: {len(jb_identifiers)}, MCs: {len(mc_identifiers)}",
+                                f"Tags: {len(tags)}, JBs: {len(jb_identifiers)}, MC: {selected_mc or '-'}",
                                 f"Numbered by vertical position (top to bottom)"
                             ]
                             
@@ -3034,6 +3467,8 @@ class TagJBExtractor:
             
             all_pdf_tags = set()  # 🆕 جمع‌آوری تمام تگ‌های PDF
             all_pdf_ocr_tags = set()  # 🆕 تگ‌های خام OCR (همه تگ‌های شناسایی شده)
+            all_pattern_unmatched_candidates = set()  # 🆕 کاندیداهای مشابه الگوی IO ولی خارج از IO List
+            all_pattern_unmatched_details = []
 
             logger.info("\n" + "="*80)
             logger.info(f"📄 Step 2: Processing {len(pdf_paths)} PDF file(s)...")
@@ -3085,6 +3520,101 @@ class TagJBExtractor:
                                     logger.warning(f"      Page {page_num}: ocr_tags is empty or None!")
                             else:
                                 logger.warning(f"      Page {page_num}: page_data has only {len(page_data)} elements (expected 9)")
+
+                            # 🆕 جمع‌آوری کاندیداهای unmatched pattern (index 7 = tag_match_info)
+                            if len(page_data) >= 8 and isinstance(page_data[7], dict):
+                                page_match_info = page_data[7]
+                                page_tag_to_number = page_data[5] if len(page_data) > 5 and isinstance(page_data[5], dict) else {}
+                                page_jbs = []
+                                page_mcs = []
+                                page_cables = []
+                                page_raw_cables = []
+                                if len(page_data) > 1 and page_data[1]:
+                                    page_jbs = sorted([str(jb).strip() for jb in page_data[1] if str(jb).strip()])
+                                if len(page_data) > 2 and page_data[2]:
+                                    page_mcs = sorted([str(mc).strip() for mc in page_data[2] if str(mc).strip()])
+                                if len(page_data) > 3 and page_data[3]:
+                                    page_cables = [str(c).strip() for c in page_data[3] if str(c).strip()]
+                                if len(page_data) > 6 and page_data[6]:
+                                    page_raw_cables = [str(c).strip() for c in page_data[6] if str(c).strip()]
+
+                                for info in page_match_info.values():
+                                    if not isinstance(info, dict):
+                                        continue
+                                    if info.get('match_type') != 'unmatched_candidate':
+                                        continue
+                                    candidate_text = self._normalize_ocr_tag_candidate(
+                                        info.get('ocr_text', info.get('display_text', ''))
+                                    )
+                                    if candidate_text:
+                                        candidate_number = info.get('tag_number') or page_tag_to_number.get(candidate_text)
+                                        if candidate_number:
+                                            try:
+                                                candidate_number = int(candidate_number)
+                                            except Exception:
+                                                candidate_number = None
+
+                                        wire_code_1 = str(info.get('wire_code_1') or '').strip()
+                                        wire_code_2 = str(info.get('wire_code_2') or '').strip()
+                                        terminal_first = str(info.get('terminal_first_number') or '').strip()
+                                        terminal_second = str(info.get('terminal_second_number') or '').strip()
+                                        scr_terminal = str(info.get('scr_terminal_number') or '').strip()
+                                        cable_code = str(info.get('cable_code') or (page_cables[0] if page_cables else '')).strip()
+                                        cable_description = str(info.get('cable_description') or (page_raw_cables[0] if page_raw_cables else '')).strip()
+                                        wire_colors_text = str(info.get('wire_colors_text') or '').strip()
+                                        wire_colors = info.get('wire_colors') if isinstance(info.get('wire_colors'), list) else []
+
+                                        if candidate_number and (not terminal_first or not terminal_second):
+                                            try:
+                                                terminal_info = self.generate_terminal_numbers(candidate_number)
+                                                terminal_first = terminal_first or str(terminal_info.get('terminal_first', '')).strip()
+                                                terminal_second = terminal_second or str(terminal_info.get('terminal_second', '')).strip()
+                                                scr_terminal = scr_terminal or str(terminal_info.get('scr_terminal', '')).strip()
+                                            except Exception:
+                                                pass
+
+                                        if candidate_number and (not wire_code_1 and not wire_code_2):
+                                            try:
+                                                generated_wire = self.generate_mc_wire_colors_enhanced(candidate_number)
+                                                parts = [p.strip() for p in str(generated_wire).split(',') if str(p).strip()]
+                                                wire_code_1 = parts[0] if len(parts) > 0 else wire_code_1
+                                                wire_code_2 = parts[1] if len(parts) > 1 else wire_code_2
+                                                if not wire_colors:
+                                                    wire_colors = parts
+                                                if not wire_colors_text:
+                                                    wire_colors_text = generated_wire
+                                            except Exception:
+                                                pass
+
+                                        all_pattern_unmatched_candidates.add(candidate_text)
+                                        all_pattern_unmatched_details.append({
+                                            'source_type': 'pattern_unmatched_candidate',
+                                            'ocr_text': candidate_text,
+                                            'display_text': str(info.get('display_text', candidate_text)).strip(),
+                                            'score': float(info.get('score', 0.0) or 0.0),
+                                            'reason': str(info.get('reason', '')).strip(),
+                                            'bbox': info.get('bbox') if isinstance(info.get('bbox'), dict) else {},
+                                            'pdf_name': pdf_filename,
+                                            'page': int(page_num),
+                                            'jb': page_jbs[0] if page_jbs else '',
+                                            'jb_all': page_jbs,
+                                            'mc': page_mcs[0] if page_mcs else '',
+                                            'mc_all': page_mcs,
+                                            'tag_number': candidate_number if candidate_number else None,
+                                            'wire_code_1': wire_code_1,
+                                            'wire_code_2': wire_code_2,
+                                            'terminal_first_number': terminal_first,
+                                            'terminal_second_number': terminal_second,
+                                            'scr_terminal_number': scr_terminal,
+                                            'wire_colors_text': wire_colors_text,
+                                            'wire_colors': wire_colors,
+                                            'cable_code': cable_code,
+                                            'cable_description': cable_description,
+                                            'type': str(info.get('type') or 'Tag').strip(),
+                                            'tag_number_status': str(info.get('tag_number_status') or 'Assigned (Position-based candidate)').strip(),
+                                            'cable_descriptions': page_cables,
+                                            'raw_cable_descriptions': page_raw_cables
+                                        })
                     
                     logger.info(f"   ✅ PDF {pdf_filename}: {len(all_pdf_tags)} matched, {len(all_pdf_ocr_tags)} OCR total")
                     
@@ -3108,6 +3638,7 @@ class TagJBExtractor:
             logger.info(f"   - Total matched tags: {len(all_pdf_tags)}")
             logger.info(f"   - Total OCR tags: {len(all_pdf_ocr_tags)}")  # ✅ نام صحیح
             logger.info(f"   - Sample OCR tags: {list(all_pdf_ocr_tags)[:10]}")
+            logger.info(f"   - Pattern-based unmatched candidates: {len(all_pattern_unmatched_candidates)}")
 
             # ✅ چک کردن خالی بودن
             if not all_pdf_ocr_tags:
@@ -3331,6 +3862,7 @@ class TagJBExtractor:
             logger.info(f"✅ Tags numbered: {len(master_tag_numbers)}")
             logger.info(f"⚠️  Unmatched PDF tags: {len(unmatched_pdf_tags)}")
             logger.info(f"⚠️  Unmatched IO tags: {len(unmatched_io_tags)}")
+            logger.info(f"🚩 Pattern-based unmatched candidates: {len(all_pattern_unmatched_candidates)}")
             logger.info(f"📁 Output files created: {len(output_files)}")
             
             logger.info("\n📂 Output Files:")
@@ -3341,6 +3873,24 @@ class TagJBExtractor:
             logger.info("\n" + "="*80)
             logger.info("✅ PROCESSING COMPLETED SUCCESSFULLY")
             logger.info("="*80 + "\n")
+
+            # برای نمایش در UI
+            self.latest_pattern_unmatched_candidates = sorted(all_pattern_unmatched_candidates)
+            # جزئیات برای ذخیره در DB و نمایش در داشبورد
+            unique_details = []
+            seen_keys = set()
+            for item in all_pattern_unmatched_details:
+                key = (
+                    str(item.get('pdf_name', '')).upper(),
+                    int(item.get('page', 0) or 0),
+                    str(item.get('ocr_text', '')).upper(),
+                    str(item.get('jb', '')).upper()
+                )
+                if key in seen_keys:
+                    continue
+                seen_keys.add(key)
+                unique_details.append(item)
+            self.latest_pattern_unmatched_details = unique_details
             
             return list(io_only_tags), list(ocr_only_unmatched)
             
@@ -3351,6 +3901,8 @@ class TagJBExtractor:
             logger.error(f"Error: {e}")
             logger.error(traceback.format_exc())
             logger.error("="*80)
+            self.latest_pattern_unmatched_candidates = []
+            self.latest_pattern_unmatched_details = []
             return [], []
         
     def set_wire_color_rule(self, rule):
@@ -3813,6 +4365,8 @@ class TagJBExtractor:
                             logger.warning(f"Skipping page {page_num} of PDF {pdf_name} - Multiple JBs detected: {jb_identifiers}")
                             skipped_pages_multiple_jb += 1
                             continue
+
+                        selected_mc = self._select_best_mc_identifier(mc_identifiers, jb_identifiers)
                         
                         # شرط 2: بررسی مطابقت کامل تگ‌ها
                         # ابتدا بررسی می‌کنیم آیا حداقل یکی از تگ‌ها مطابقت کامل دارد
@@ -3837,7 +4391,7 @@ class TagJBExtractor:
                                 'Page': page_num,
                                 'Tag/SPARE': tag,
                                 'JB': jb_identifiers[0] if jb_identifiers else '',
-                                'MC': mc_identifiers[0] if mc_identifiers else '',
+                                'MC': selected_mc,
                                 'Tag_Number': tag_number if tag_number else row_counter,
                                 'Wire_Code_1': self.generate_mc_wire_colors(tag_number) if tag_number else '',
                                 'Wire_Code_2': '',
@@ -3867,7 +4421,7 @@ class TagJBExtractor:
                                 'Page': page_num,
                                 'Tag/SPARE': spare,
                                 'JB': jb_identifiers[0] if jb_identifiers else '',
-                                'MC': mc_identifiers[0] if mc_identifiers else '',
+                                'MC': selected_mc,
                                 'Tag_Number': spare_number,
                                 'Wire_Code_1': self.generate_mc_wire_colors(spare_number),
                                 'Wire_Code_2': '',
@@ -4016,6 +4570,8 @@ class TagJBExtractor:
             if len(jb_identifiers) > 1:
                 logger.warning(f"⚠️ Skipping page {page_num}: Multiple JBs {jb_identifiers}")
                 return
+
+            selected_mc = self._select_best_mc_identifier(mc_identifiers, jb_identifiers)
             
             # ============================================================
             # پردازش تگ‌ها با استفاده از شماره‌های از قبل تعیین شده
@@ -4057,7 +4613,7 @@ class TagJBExtractor:
                     'Page': page_num,
                     'Tag/SPARE': tag,
                     'JB': jb_identifiers[0] if jb_identifiers else '',
-                    'MC': mc_identifiers[0] if mc_identifiers else '',
+                    'MC': selected_mc,
                     'Tag_Number': tag_number,
                     'Wire_Code_1': wire_code_1,
                     'Wire_Code_2': wire_code_2,
@@ -4099,7 +4655,7 @@ class TagJBExtractor:
                     'Page': page_num,
                     'Tag/SPARE': spare,
                     'JB': jb_identifiers[0] if jb_identifiers else '',
-                    'MC': mc_identifiers[0] if mc_identifiers else '',
+                    'MC': selected_mc,
                     'Tag_Number': spare_number,
                     'Wire_Code_1': wire_code_1,
                     'Wire_Code_2': wire_code_2,
