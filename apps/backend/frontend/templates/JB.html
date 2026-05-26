@@ -9,10 +9,7 @@
     <link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.png', v=asset_v) }}" type="image/png">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/favicon.png', v=asset_v) }}">
     <link rel="name" href="{{ url_for('static', filename='images/JBD.png', v=asset_v) }}" type="image/png">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/home.css', v=asset_v) }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/io_assignment.css', v=asset_v) }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/JB.css', v=asset_v) }}">
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Vazirmatn:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/global.css', v=asset_v) }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <script src="{{ url_for('static', filename='js/ui_preferences.js', v=asset_v) }}"></script>
 </head>
@@ -1058,6 +1055,16 @@
             }
             setNodeText('#pattern-panel-title', translations[lang]['pattern-panel-title']);
             setNodeText('#pattern-panel-desc', translations[lang]['pattern-panel-desc']);
+            const logOutput = document.getElementById('logOutput');
+            if (logOutput) {
+                const readyTexts = [
+                    translations.fa['log-ready'],
+                    translations.en['log-ready']
+                ];
+                if (readyTexts.includes(logOutput.textContent.trim())) {
+                    logOutput.textContent = translations[lang]['log-ready'];
+                }
+            }
             setNodeText('.issues-panel .panel-subheader h4', isFa ? 'پنل ایرادها' : 'Issues Panel');
             const issueHeaders = document.querySelectorAll('#issueTable thead th');
             if (issueHeaders[0]) issueHeaders[0].textContent = isFa ? 'شدت' : 'Severity';
@@ -3294,7 +3301,7 @@
                 border: 1px dashed var(--border, rgba(0, 20, 60, 0.12));
                 border-radius: 10px;
                 padding: 10px;
-                background: var(--bg-card-soft, #f1f4fa);
+                background: var(--bg-soft, #f1f4fa);
                 color: var(--text, #0c1b33);
             }
             .pattern-card h5 {
