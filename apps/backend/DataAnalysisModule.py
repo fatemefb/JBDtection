@@ -22,6 +22,10 @@ import string
 import shutil
 import random
 import sys
+try:
+    from PDFClassifier import PDFClassifier as _PDFClassifierClass
+except ImportError:
+    _PDFClassifierClass = None
 # اصلاح مسیرهای import
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(os.path.dirname(current_dir))
@@ -34,7 +38,6 @@ from apps.backend.utils.file_utils import standardize_path, copy_to_output_paths
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
 
 
 class VectorMatcher:
@@ -308,6 +311,23 @@ class TagJBExtractor:
         
         # کامپایل اولیه الگوها
         self._compile_regex_patterns()
+        self._classifier = None         
+        self._current_pdf_type = "diagrams" 
+
+    def set_classifier(self, classifier) -> None:
+        """
+        Inject a PDFClassifier instance for automatic diagram/table routing.
+        Call once after construction, before processing any PDFs.
+ 
+        Args:
+            classifier: A PDFClassifier instance (from PDFClassifier.py).
+                        Pass None to disable classification (diagram mode only).
+        """
+        self._classifier = classifier
+        logger.info(
+            "PDFClassifier injected: %s",
+            type(classifier).__name__ if classifier is not None else "None (diagram-only mode)"
+        )
         
     def build_tag_vectors_from_excel(self, excel_path: str) -> None:
         """
@@ -1441,8 +1461,21 @@ class TagJBExtractor:
         if len(image.shape) == 2:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
         
-        custom_config = r'--oem 3 --psm 11 -c tessedit_char_whiteList=ABCDEFGHIJKLMNOPQRSTUVWXYZsparetcoilpr0123456789-.'
-        
+        pdf_type = getattr(self, '_current_pdf_type', 'diagrams')
+ 
+        if pdf_type == 'table':
+            # Table-optimised OCR config:
+            #   psm 6  → treat image as a single uniform block of text;
+            #            more reliable for horizontally aligned table rows
+            custom_config = (
+                r'--oem 3 --psm 6 '
+                r'-c tessedit_char_whiteList=ABCDEFGHIJKLMNOPQRSTUVWXYZsparetcoilpr0123456789-.'
+            )
+            logger.info("extract_from_image: using TABLE OCR config (psm 6)")
+        else:
+            # Diagram path — byte-for-byte identical to original
+            custom_config = r'--oem 3 --psm 11 -c tessedit_char_whiteList=ABCDEFGHIJKLMNOPQRSTUVWXYZsparetcoilpr0123456789-.'
+
         logger.info("Starting OCR extraction...")
         ocr_data = pytesseract.image_to_data(image, config=custom_config, output_type=pytesseract.Output.DICT)
         dominant_prefix = self._detect_dominant_prefix_in_page(ocr_data, ['UZSO', 'UZSC'])
@@ -1498,7 +1531,11 @@ class TagJBExtractor:
         # ============================================================
         tags_with_positions = []
         spares_with_positions = []
-        
+        phase0_pattern_threshold = 0.50 if pdf_type == 'table' else 0.62
+        logger.info(
+            "extract_from_image Phase 0 pattern threshold: %.2f (%s mode)",
+            phase0_pattern_threshold, pdf_type
+        )
         # ============================================================
         # Phase 0: Extract ALL OCR tags
         # ============================================================
@@ -1578,6 +1615,11 @@ class TagJBExtractor:
         # Phase 2: STRICT Similar matches
         # ============================================================
         logger.info("Phase 2: Searching for SIMILAR matches (STRICT mode)...")
+        phase2_lower_gate = 0.94 if pdf_type == 'table' else 0.96
+        logger.info(
+            "extract_from_image Phase 2 similarity gate: %.2f (%s mode)",
+            phase2_lower_gate, pdf_type
+        )
         
         similar_rejected_count = 0
         
@@ -1996,34 +2038,53 @@ class TagJBExtractor:
         sorted_reports = sorted(self.similarity_reports, key=lambda x: x['similarity_score'], reverse=True)
         return sorted_reports[:n]
     
-    def preprocess_image(self, image: np.ndarray) -> np.ndarray:
+    def preprocess_image(self, image: np.ndarray, pdf_type: str = "diagrams") -> np.ndarray:
         """Preprocess the image to improve OCR accuracy for tags."""
         if len(image.shape) == 3:
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         else:
             gray = image.copy()
-        
-        # Enhance resolution for better character detection
+ 
+        if pdf_type == 'table':
+            # ── TABLE preprocessing branch ───────────────────────────────────
+            logger.info("preprocess_image: using TABLE preprocessing path")
+ 
+            # No upscale — table text is typically large; upscaling wastes
+            # memory and can blur cell borders
+ 
+            # CLAHE for contrast (same params as diagram path)
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            gray = clahe.apply(gray)
+ 
+            # Median blur only — removes salt-and-pepper noise without
+            # smearing the straight cell-boundary lines
+            gray = cv2.medianBlur(gray, 3)
+ 
+            # Otsu global threshold — works well when background/foreground
+            # contrast is globally consistent (typical in printed tables)
+            _, gray = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+ 
+            # No morphological operations — avoids fusing adjacent cell lines
+            return gray
+            # ─────────────────────────────────────────────────────────────────
+ 
+        # ── DIAGRAM preprocessing branch (original, byte-for-byte) ───────────
+        # Diagram path: UNCHANGED ✓
         scale_factor = 2
         gray = cv2.resize(gray, None, fx=scale_factor, fy=scale_factor, interpolation=cv2.INTER_CUBIC)
         
-        # Apply CLAHE for better contrast
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         gray = clahe.apply(gray)
         
-        # Reduce noise
         gray = cv2.medianBlur(gray, 3)
         gray = cv2.GaussianBlur(gray, (3, 3), 0)
         
-        # Apply adaptive thresholding
         gray = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
                                     cv2.THRESH_BINARY, 31, 2)
         
-        # Morphological operations to close gaps in characters
         kernel = np.ones((2, 2), np.uint8)
         gray = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, kernel)
         
-        # Dilate slightly to connect broken character components
         kernel_dilate = np.ones((1, 1), np.uint8)
         gray = cv2.dilate(gray, kernel_dilate, iterations=1)
         
@@ -2383,7 +2444,7 @@ class TagJBExtractor:
         return new_tags
 
 
-    def process_pdf_page(self, page_info: 'Tuple[fitz.Page, str, int]') -> 'Tuple[int, Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str], Dict[str, Dict], Set[str]]':
+    def process_pdf_page(self, page_info: 'Tuple[fitz.Page, str, int]') -> 'Tuple[int, Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str], Dict[str, Dict], Set[str]]':        
         """
         ✅ بازنویسی: پردازش یک صفحه PDF با شماره‌گذاری بر اساس موقعیت
         """
@@ -2392,6 +2453,13 @@ class TagJBExtractor:
         try:
             # Create image path
             image_path = os.path.join(temp_dir, f"page_{page_num + 1}.png")
+            
+            pdf_type = getattr(self, '_current_pdf_type', 'diagrams')
+            if pdf_type == 'table':
+                dpi_factor = 150 / 72
+                logger.info(f"process_pdf_page {page_num + 1}: TABLE mode — dpi_factor={dpi_factor:.3f}")
+            else:
+                dpi_factor = 300 / 72  # original diagram value, unchanged
             
             # Convert page to image
             pix = page.get_pixmap(matrix=fitz.Matrix(300/72, 300/72))
@@ -2438,15 +2506,9 @@ class TagJBExtractor:
     def process_pdf(self, pdf_path: str) -> 'Dict[int, Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str], Dict[str, Dict] ,Set[str]]]':
         """
         Process all pages in a PDF file.
-        
-        Returns:
-            Dictionary mapping page numbers to Tuples of (tags, jb_identifiers, mc_identifiers, 
-                                                        cable_descriptions, spare_identifiers, 
-                                                        tag_to_number, raw_cable_descriptions, tag_match_info , all_ocr_tags)
         """
         results = {}
         
-        # Reinitialize Tesseract
         try:
             common_locations = [
                 r'C:\Program Files\Tesseract-OCR\tesseract.exe',
@@ -2465,29 +2527,57 @@ class TagJBExtractor:
         except Exception as e:
             logger.error(f"Error initializing Tesseract in process: {e}")
             return {}
-        
+
+        if self._classifier is not None:
+            try:
+                pdf_type = self._classifier.classify_pdf(pdf_path)
+                self._current_pdf_type = pdf_type
+                logger.info(
+                    "PDF classified as: '%s' → routing to corresponding detection config  [%s]",
+                    pdf_type,
+                    os.path.basename(pdf_path)
+                )
+            except Exception as clf_err:
+                logger.warning(
+                    "PDFClassifier raised an exception for '%s': %s — falling back to 'diagrams'",
+                    os.path.basename(pdf_path),
+                    clf_err
+                )
+                self._current_pdf_type = "diagrams"
+        else:
+            # No classifier injected — default to diagram mode (original behaviour)
+            self._current_pdf_type = "diagrams"
+            logger.info(
+                "No PDFClassifier injected — defaulting to 'diagrams' mode for '%s'",
+                os.path.basename(pdf_path)
+            )
+        # ─────────────────────────────────────────────────────────────────────
+ 
         logger.info(f"Opening PDF: {pdf_path}")
         pdf_document = fitz.open(pdf_path)
         pdf_filename = os.path.basename(pdf_path)
         print(f"\nProcessing PDF: {pdf_filename}")
         print("-" * 50)
         
-        # Create temporary directory for image processing
         with tempfile.TemporaryDirectory() as temp_dir:
-            # Process pages sequentially
             for page_num in range(len(pdf_document)):
                 try:
                     logger.info(f"Processing page {page_num + 1}/{len(pdf_document)}")
                     
-                    # Get page
                     page = pdf_document[page_num]
-                    
-                    # Convert page to image
-                    pix = page.get_pixmap(matrix=fitz.Matrix(300/72, 300/72))
+ 
+                    # ── CHANGE 5 (process_pdf loop): same DPI branch as process_pdf_page
+                    # Diagram path: UNCHANGED ✓  (300/72)
+                    # Table path: 150/72
+                    if self._current_pdf_type == 'table':
+                        dpi_factor = 150 / 72
+                    else:
+                        dpi_factor = 300 / 72
+ 
+                    pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor))
                     image_path = os.path.join(temp_dir, f"page_{page_num + 1}.png")
                     pix.save(image_path)
                     
-                    # Load image
                     image = cv2.imread(image_path)
                     if image is None:
                         logger.error(f"Failed to load image for page {page_num + 1}")
@@ -2495,7 +2585,6 @@ class TagJBExtractor:
                     
                     extract_result = self.extract_from_image(image)
                     
-                    # ✅ DEBUG: چک کردن
                     logger.info(f"   📊 extract_result length: {len(extract_result)}")
                     if len(extract_result) >= 9:
                         logger.info(f"   📊 all_ocr_tags at index 8: {extract_result[8]}")
@@ -2504,14 +2593,12 @@ class TagJBExtractor:
                         logger.error(f"❌ Expected 9 values, got {len(extract_result)}")
                         continue
                     
-                    # ✅ Unpack ساده
                     (tags, jb_identifiers, mc_identifiers, cable_descriptions, 
                     spare_identifiers, tag_to_number, raw_cable_descriptions, 
                     tag_match_info, all_ocr_tags) = extract_result
                     
                     logger.info(f"✅ Page {page_num + 1}: {len(tags)} matched, {len(all_ocr_tags)} OCR tags")
                     
-                    # ✅ ذخیره کامل
                     results[page_num + 1] = extract_result
                     
                 except Exception as e:
