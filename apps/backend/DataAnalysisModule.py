@@ -944,6 +944,9 @@ class TagJBExtractor:
         tag = self._normalize_ocr_tag_candidate(candidate)
         if not tag:
             return 0.0
+        
+        if self._is_non_tag_pattern(tag):
+            return 0.0
 
         if len(tag) < 4:
             return 0.0
@@ -1437,6 +1440,110 @@ class TagJBExtractor:
         best = max(norm_candidates_sorted, key=lambda c: (candidate_score(c), c))
         return best
 
+    def _is_non_tag_pattern(self, token: str) -> bool:
+        """
+        True = این توکن یک الگوی غیر-تگ است و باید رد شود.
+ 
+        الگوهای چک‌شده:
+          1. JB identifier
+          2. MC identifier
+          3. SPARE keyword
+          4. Cable descriptions (built-in + cable_examples کاربر)
+             ─ مهم: «PREFIX-NxUNIT» مثل FRT-2P هم رد می‌شود
+          5. Wire color codes
+          6. SCR terminal
+        """
+        if not token:
+            return False
+ 
+        t = str(token).strip().upper()
+ 
+        # ── 1. JB ──────────────────────────────────────────────────────────
+        jb_prefix = (getattr(self, 'jb_examples', '') or 'JB').strip().upper()
+        if jb_prefix and self._is_prefixed_identifier(t, jb_prefix, require_digit=False):
+            return True
+ 
+        # ── 2. MC ──────────────────────────────────────────────────────────
+        mc_prefix = (getattr(self, 'mc_examples', '') or 'MC').strip().upper()
+        if mc_prefix and self._is_prefixed_identifier(t, mc_prefix, require_digit=False):
+            return True
+ 
+        # ── 3. SPARE ───────────────────────────────────────────────────────
+        spare_prefix = (getattr(self, 'spare_examples', '') or 'SPARE').strip().upper()
+        if re.search(rf'\b{re.escape(spare_prefix)}\b', t, re.IGNORECASE):
+            return True
+ 
+        # ── 4. Cable patterns ──────────────────────────────────────────────
+        # 4a. built-in: خالص «عدد + واحد» مثل 9P، 12PAIR، 4CORE
+        cable_builtin = re.compile(
+            r'^\d{1,4}\s*(?:PAIR|PR|TRIPLE|TR|CORE|CR)(?:\b|X|×|\*|/|-|\.|\d|$)'
+            r'|^\d{1,4}[PTC](?:\b|\d|X|×|$)',
+            re.IGNORECASE,
+        )
+        if cable_builtin.match(t):
+            return True
+ 
+        # 4b. cable_examples کاربر — چند استراتژی همزمان
+        cable_examples_str = getattr(self, 'cable_examples', '') or ''
+        if cable_examples_str:
+            for sample in re.split(r'[,;\s]+', cable_examples_str):
+                sample = sample.strip().upper()
+                if not sample:
+                    continue
+ 
+                # استراتژی A: sample دقیقاً «عدد + واحد» است  (مثل «12P» یا «12PAIR»)
+                # → الگوی عمومی: هر prefix-NxUNIT یا NxUNIT همان واحد را رد کن
+                cable_sample_m = re.match(
+                    r'^(\d+)\s*(PAIR|PR|TRIPLE|TR|CORE|CR|[PTC])$',
+                    sample, re.IGNORECASE
+                )
+                if cable_sample_m:
+                    unit = cable_sample_m.group(2).upper()
+                    # مستقیم: «NxUNIT»
+                    if re.match(rf'^\d+\s*{re.escape(unit)}(?:\b|\d|X|×|$)', t, re.IGNORECASE):
+                        return True
+                    # غیر مستقیم: «PREFIX-NxUNIT» مثل FRT-2P  یا  FRT-7PX1MM
+                    if re.match(
+                        rf'^[A-Z]{{2,6}}[-_]\d+\s*{re.escape(unit)}(?:\b|X|×|\*|/|-|\.|\d|$)',
+                        t, re.IGNORECASE
+                    ):
+                        return True
+                    continue
+ 
+                # استراتژی B: sample پیشوند حرفی ثابت دارد  (مثل «FRT-12PX1MM2»)
+                # → هر توکنی که با همان پیشوند شروع شود را رد کن
+                alpha_prefix_m = re.match(r'^([A-Z]{2,})', sample)
+                if alpha_prefix_m:
+                    prefix_str = alpha_prefix_m.group(1)
+                    if t.startswith(prefix_str):
+                        return True
+ 
+        # ── 5. Wire color codes ────────────────────────────────────────────
+        if re.match(r'^(?:BK|WT|RD|BL|GN|YL|WH|OR|GY|VI|BN|PK)\d{1,3}$', t):
+            return True
+        wire_rule = getattr(self, 'wire_color_rule', '') or ''
+        if wire_rule:
+            for part in re.split(r'[,;\s]+', wire_rule):
+                part = part.strip()
+                alpha_m = re.match(r'^([A-Za-z]{2,})', part)
+                if alpha_m:
+                    prefix_str = alpha_m.group(1).upper()
+                    if len(prefix_str) >= 2 and t.startswith(prefix_str) and any(c.isdigit() for c in t):
+                        return True
+ 
+        # ── 6. SCR terminal ────────────────────────────────────────────────
+        if re.match(r'^SCR[-_]?\d*$', t):
+            return True
+        scr_rule = getattr(self, 'scr_number_rule', '') or ''
+        if scr_rule:
+            scr_alpha_m = re.match(r'^([A-Za-z]{2,})', scr_rule)
+            if scr_alpha_m:
+                scr_prefix = scr_alpha_m.group(1).upper()
+                if t.startswith(scr_prefix) and any(c.isdigit() for c in t):
+                    return True
+ 
+        return False
+
 
     def extract_from_image(self, image: np.ndarray) -> 'Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str], Dict[str, Dict]]':
         """
@@ -1549,7 +1656,8 @@ class TagJBExtractor:
             if (
                 (self.jb_examples and word_clean.startswith(self.jb_examples)) or
                 self._is_prefixed_identifier(word_clean, self.mc_examples, require_digit=False) or
-                spare_pattern.search(word_clean)
+                spare_pattern.search(word_clean) or
+                self._is_non_tag_pattern(word_clean) 
             ):
                 continue
             
@@ -1758,18 +1866,30 @@ class TagJBExtractor:
             if not word_clean:
                 continue
             
-            # SPARE
             if spare_pattern.search(word_clean):
-                if i not in processed_spare_indices:
+                curr_x = ocr_data['left'][i]
+                curr_y = ocr_data['top'][i]
+                
+                # position-based duplicate check به جای index-based
+                is_duplicate = any(
+                    abs(s['x'] - curr_x) < 30 and abs(s['y'] - curr_y) < 15
+                    for s in spares_with_positions
+                )
+                
+                logger.info(
+                    f"SPARE candidate: '{word_clean}' "
+                    f"index={i} x={curr_x} y={curr_y} "
+                    f"duplicate={is_duplicate}"
+                )
+                
+                if not is_duplicate:
                     spare_identifiers.append(word_clean)
-                    processed_spare_indices.add(i)
                     spare_found_count += 1
                     
-                    # 🆕 ذخیره موقعیت SPARE
                     spares_with_positions.append({
                         'spare': word_clean,
-                        'y': ocr_data['top'][i],
-                        'x': ocr_data['left'][i],
+                        'y': curr_y,
+                        'x': curr_x,
                         'width': ocr_data['width'][i],
                         'height': ocr_data['height'][i]
                     })
@@ -1782,7 +1902,7 @@ class TagJBExtractor:
                         'ocr_text': word_clean
                     }
                     
-                    logger.info(f"✅ SPARE FOUND: {word_clean}")
+                    logger.info(f"✅ SPARE FOUND: {word_clean} → ID: {spare_id} x={curr_x} y={curr_y}")
                 continue
             
             # MC
@@ -4721,22 +4841,50 @@ class TagJBExtractor:
             # ============================================================
             for spare_idx, spare in enumerate(spare_identifiers):
                 spare_id = f"{getattr(self, 'spare_examples', 'SPARE')}_{spare_idx + 1}"
-                spare_number = page_tag_to_number.get(spare_id) or tag_to_number.get(spare_id)
-                
+ 
+                # ── روش ۱: مستقیم از page_tag_to_number ─────────────────
+                spare_number = page_tag_to_number.get(spare_id)
+ 
+                # ── روش ۲: از master tag_to_number ───────────────────────
                 if not spare_number:
-                    logger.warning(f"⚠️ SPARE '{spare_id}' has no number assigned, skipping")
-                    continue
-                
-                # تولید اطلاعات ترمینال برای SPARE
+                    spare_number = tag_to_number.get(spare_id)
+ 
+                # ── روش ۳: اگر spare_id با SPARE_ شروع می‌شود،
+                #           بررسی کن آیا کلید مشابهی وجود دارد ──────────
+                if not spare_number:
+                    spare_prefix_key = getattr(self, 'spare_examples', 'SPARE').strip().upper()
+                    for k, v in page_tag_to_number.items():
+                        if str(k).upper().startswith(spare_prefix_key + '_'):
+                            # بررسی index
+                            try:
+                                idx_in_key = int(str(k).rsplit('_', 1)[-1])
+                                if idx_in_key == spare_idx + 1:
+                                    spare_number = v
+                                    break
+                            except ValueError:
+                                pass
+ 
+                # ── اگر هیچ شماره‌ای پیدا نشد → WARNING (نه skip) ────────
+                if not spare_number:
+                    logger.warning(
+                        f"⚠️ WARNING: SPARE '{spare_id}' has no number in tag_to_number "
+                        f"(page={page_num}, pdf={pdf_name}). "
+                        f"Available keys: {list(page_tag_to_number.keys())[:10]}"
+                    )
+                    # تخصیص شماره بر اساس موقعیت نسبی (بعد از آخرین تگ)
+                    max_existing = max(page_tag_to_number.values()) if page_tag_to_number else 0
+                    spare_number = max_existing + spare_idx + 1
+                    logger.warning(
+                        f"   Auto-assigned number {spare_number} to {spare_id}"
+                    )
+ 
+                # ── تولید اطلاعات ترمینال و سیم برای SPARE ────────────────
                 terminal_info = self.generate_terminal_numbers(spare_number)
-                
-                # تولید رنگ‌های سیم برای SPARE
                 wire_colors_str = self.generate_mc_wire_colors_enhanced(spare_number)
                 wire_colors = [c.strip() for c in wire_colors_str.split(',')]
-                
                 wire_code_1 = wire_colors[0] if len(wire_colors) > 0 else ''
                 wire_code_2 = wire_colors[1] if len(wire_colors) > 1 else ''
-                
+ 
                 row_data = {
                     'PDF_Name': pdf_name,
                     'Page': page_num,
@@ -4753,10 +4901,12 @@ class TagJBExtractor:
                     'Cable_Description': raw_cable_descriptions[0] if raw_cable_descriptions else '',
                     'Type': 'SPARE',
                     'Tag_Number_Status': 'Assigned (Position-based)'
+                    if page_tag_to_number.get(spare_id) or tag_to_number.get(spare_id)
+                    else 'Auto-assigned (WARNING: not in tag_to_number)'
                 }
-                
+ 
                 new_df_data.append(row_data)
-                logger.debug(f"✅ Added SPARE: {spare} with number #{spare_number}")
+                logger.info(f"✅ Added SPARE: {spare} → ID: {spare_id} → #{spare_number}")
                 
             logger.info(f"✅ Page {page_num} processed: {len([d for d in new_df_data if d.get('Page') == page_num])} rows added")
         
