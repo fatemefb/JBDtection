@@ -23,9 +23,12 @@ import shutil
 import random
 import sys
 try:
-    from PDFClassifier import PDFClassifier as _PDFClassifierClass
+    from pdf_classifier import PDFClassifier as _PDFClassifierClass
 except ImportError:
-    _PDFClassifierClass = None
+    try:
+        from PDFClassifier import PDFClassifier as _PDFClassifierClass
+    except ImportError:
+        _PDFClassifierClass = None
 # اصلاح مسیرهای import
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(os.path.dirname(current_dir))
@@ -311,8 +314,10 @@ class TagJBExtractor:
         
         # کامپایل اولیه الگوها
         self._compile_regex_patterns()
-        self._classifier = None         
-        self._current_pdf_type = "diagrams" 
+        self._classifier = None
+        self._current_pdf_type = "diagrams"
+        self.document_type_by_path = {}
+        self.document_nature_by_path = {}
 
     def set_classifier(self, classifier) -> None:
         """
@@ -1569,7 +1574,23 @@ class TagJBExtractor:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
         
         pdf_type = getattr(self, '_current_pdf_type', 'diagrams')
- 
+        # Normalize to canonical values to avoid mismatches
+        _l = str(pdf_type or '').lower()
+        if 'table' in _l:
+            pdf_type = 'table'
+        elif 'diagram' in _l or 'drawing' in _l:
+            pdf_type = 'diagrams'
+        else:
+            pdf_type = 'diagrams'
+        # Normalize classifier/state label to canonical values
+        _l = str(pdf_type or '').lower()
+        if 'table' in _l:
+            pdf_type = 'table'
+        elif 'diagram' in _l or 'drawing' in _l:
+            pdf_type = 'diagrams'
+        else:
+            pdf_type = 'diagrams'
+
         if pdf_type == 'table':
             # Table-optimised OCR config:
             #   psm 6  → treat image as a single uniform block of text;
@@ -1585,6 +1606,18 @@ class TagJBExtractor:
 
         logger.info("Starting OCR extraction...")
         ocr_data = pytesseract.image_to_data(image, config=custom_config, output_type=pytesseract.Output.DICT)
+        return self._extract_from_ocr_data(ocr_data, pdf_type)
+
+    def _extract_from_ocr_data(self, ocr_data, pdf_type: str):
+        # Ensure pdf_type is canonical to keep thresholds/heuristics consistent
+        _l = str(pdf_type or '').lower()
+        if 'table' in _l:
+            pdf_type = 'table'
+        elif 'diagram' in _l or 'drawing' in _l:
+            pdf_type = 'diagrams'
+        else:
+            pdf_type = 'diagrams'
+
         dominant_prefix = self._detect_dominant_prefix_in_page(ocr_data, ['UZSO', 'UZSC'])
 
         if dominant_prefix:
@@ -1676,6 +1709,10 @@ class TagJBExtractor:
                 logger.debug(f"Found OCR tag: {word_clean}")
         
         logger.info(f"Phase 0 complete: {len(all_ocr_tags)} OCR tags")
+        if all_ocr_tags:
+            logger.info(f"Phase 0 sample tags before matching: {sorted(list(all_ocr_tags))[:20]}")
+        else:
+            logger.info("Phase 0 candidate tag list is empty")
         
         # ============================================================
         # Phase 1: EXACT matches
@@ -1696,8 +1733,15 @@ class TagJBExtractor:
                         tags.add(best_match)
                         
                         # 🆕 ذخیره موقعیت تگ
+                        bbox = None
                         for i, word in enumerate(ocr_data['text']):
                             if word.strip().upper() == ocr_tag:
+                                bbox = {
+                                    'x': int(ocr_data['left'][i]),
+                                    'y': int(ocr_data['top'][i]),
+                                    'width': int(ocr_data['width'][i]),
+                                    'height': int(ocr_data['height'][i])
+                                }
                                 tags_with_positions.append({
                                     'tag': best_match,
                                     'y': ocr_data['top'][i],
@@ -1711,7 +1755,8 @@ class TagJBExtractor:
                         tag_match_info[best_match] = {
                             'match_type': 'exact',
                             'score': best_score,
-                            'ocr_text': ocr_tag
+                            'ocr_text': ocr_tag,
+                            'bbox': bbox or {}
                         }
                         
                         processed_tag_texts.add(ocr_tag)
@@ -1796,8 +1841,15 @@ class TagJBExtractor:
                     tags.add(best_match)
                     
                     # 🆕 ذخیره موقعیت تگ
+                    bbox = None
                     for i, word in enumerate(ocr_data['text']):
                         if word.strip().upper() == ocr_tag:
+                            bbox = {
+                                'x': int(ocr_data['left'][i]),
+                                'y': int(ocr_data['top'][i]),
+                                'width': int(ocr_data['width'][i]),
+                                'height': int(ocr_data['height'][i])
+                            }
                             tags_with_positions.append({
                                 'tag': best_match,
                                 'y': ocr_data['top'][i],
@@ -1812,7 +1864,8 @@ class TagJBExtractor:
                         'match_type': 'similar',
                         'score': best_score,
                         'ocr_text': ocr_tag,
-                        'reason': self._get_similarity_reason(ocr_tag, best_match)
+                        'reason': self._get_similarity_reason(ocr_tag, best_match),
+                        'bbox': bbox or {}
                     }
                     
                     processed_tag_texts.add(ocr_tag)
@@ -2131,11 +2184,63 @@ class TagJBExtractor:
             self.all_mcs.update(mc_identifiers)
         if hasattr(self, 'all_spares'):
             self.all_spares = spare_identifiers
-        
-        return (tags, jb_identifiers, mc_identifiers, cable_descriptions, 
-                spare_identifiers, tag_to_number, raw_cable_descriptions, 
-                tag_match_info, all_ocr_tags)
 
+        return (
+            tags,
+            jb_identifiers,
+            mc_identifiers,
+            cable_descriptions,
+            spare_identifiers,
+            tag_to_number,
+            raw_cable_descriptions,
+            tag_match_info,
+            all_ocr_tags,
+        )
+
+    def extract_from_text_page(self, page) -> 'Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str], Dict[str, Dict], Set[str]]':
+        words = page.get_text("words")
+        page_dict = page.get_text("dict")
+        blocks = page_dict.get("blocks", []) if isinstance(page_dict, dict) else []
+        num_blocks = len(blocks)
+        num_lines = sum(len(block.get("lines", [])) for block in blocks if isinstance(block, dict))
+        num_words = len(words) if words else 0
+        tables_detected = sum(
+            1 for block in blocks
+            if isinstance(block, dict) and 'table' in str(block.get('text', '')).lower()
+        )
+        sample_texts = [str(w[4]).strip() for w in words if str(w[4]).strip()][:20] if words else []
+        logger.info(
+            "extract_from_text_page: digital stats blocks=%d, words=%d, lines=%d, tables=%d, sample_texts=%s",
+            num_blocks,
+            num_words,
+            num_lines,
+            tables_detected,
+            sample_texts
+        )
+        if not words:
+            logger.info("extract_from_text_page: no words extracted from digital PDF page")
+            return set(), set(), set(), [], [], {}, [], {}, set()
+        pdf_type = getattr(self, '_current_pdf_type', 'diagrams')
+        ocr_data = {
+            "text": [],
+            "left": [],
+            "top": [],
+            "width": [],
+            "height": [],
+            "conf": []
+        }
+        for w in words:
+            x0, y0, x1, y1, text, *_ = w
+            text = str(text).strip()
+            if not text:
+                continue
+            ocr_data["text"].append(text)
+            ocr_data["left"].append(int(x0))
+            ocr_data["top"].append(int(y0))
+            ocr_data["width"].append(int(x1 - x0))
+            ocr_data["height"].append(int(y1 - y0))
+            ocr_data["conf"].append(95)
+        return self._extract_from_ocr_data(ocr_data, pdf_type)
     def get_similarity_reports(self) -> 'List[Dict[str, Any]]':
         """
         دریافت گزارشات کامل شباهت بین تگ‌های شناسایی شده و تگ‌های مرجع
@@ -2571,56 +2676,142 @@ class TagJBExtractor:
         page, temp_dir, page_num = page_info
         
         try:
-            # Create image path
-            image_path = os.path.join(temp_dir, f"page_{page_num + 1}.png")
-            
             pdf_type = getattr(self, '_current_pdf_type', 'diagrams')
+            # Normalize pdf_type at this routing point to guarantee consistency
+            _l = str(pdf_type or '').lower()
+            if 'table' in _l:
+                pdf_type = 'table'
+            elif 'diagram' in _l or 'drawing' in _l:
+                pdf_type = 'diagrams'
+            else:
+                pdf_type = 'diagrams'
+
             if pdf_type == 'table':
                 dpi_factor = 150 / 72
                 logger.info(f"process_pdf_page {page_num + 1}: TABLE mode — dpi_factor={dpi_factor:.3f}")
             else:
                 dpi_factor = 300 / 72  # original diagram value, unchanged
-            
-            # Convert page to image
-            pix = page.get_pixmap(matrix=fitz.Matrix(300/72, 300/72))
-            pix.save(image_path)
-            
-            # Load and process image
-            image = cv2.imread(image_path)
-            if image is None:
-                logger.error(f"Failed to load image for page {page_num + 1}")
-                return page_num + 1, set(), set(), set(), [], [], {}, [], {}, set()
-            
-            result = self.extract_from_image(image)
-            
-            # ❌ اگر این خطوط هست:
+
+            # default extraction mode
+            extraction_mode = 'ocr'
+            pdf_nature = getattr(self, '_current_pdf_nature', 'scanned')
+            if pdf_nature == 'digital':
+                logger.info(f"process_pdf_page {page_num + 1}: DIGITAL page text extraction")
+                extraction_mode = 'digital'
+                result = self.extract_from_text_page(page)
+                if not result or not isinstance(result, tuple) or len(result) != 9:
+                    logger.warning(
+                        "extract_from_text_page returned unexpected result for page %s, falling back to OCR",
+                        page_num + 1
+                    )
+                    image_path = os.path.join(temp_dir, f"page_{page_num + 1}.png")
+                    pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor))
+                    pix.save(image_path)
+                    image = cv2.imread(image_path)
+                    if image is None:
+                        logger.error(f"Failed to load image for page {page_num + 1}")
+                        return page_num + 1, set(), set(), set(), [], [], {}, [], {}, set()
+                    result = self.extract_from_image(image)
+                    extraction_mode = 'ocr'
+            else:
+                image_path = os.path.join(temp_dir, f"page_{page_num + 1}.png")
+                pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor))
+                pix.save(image_path)
+                image = cv2.imread(image_path)
+                if image is None:
+                    logger.error(f"Failed to load image for page {page_num + 1}")
+                    return page_num + 1, set(), set(), set(), [], [], {}, [], {}, set()
+                result = self.extract_from_image(image)
+                extraction_mode = 'ocr'
+
             logger.debug(f"Page {page_num + 1} - raw result: {result} (len={len(result)})")
-            
-            # ❌ و بعد این:
-            if len(result) != 9:
-                logger.warning(f"Unexpected number of values returned: {len(result)}")  # ⚠️
-            
-            # ✅ FIX: باید اینطوری باشد:
             if len(result) != 9:
                 logger.error(f"❌ Expected 9 values, got {len(result)}")
                 return page_num + 1, set(), set(), set(), [], [], {}, [], {}, set()
             
+            logger.info(f"Page {page_num + 1} - pdf_type_used={pdf_type} extraction_mode={extraction_mode}")
+
             # ✅ Unpack
             (tags, jb_identifiers, mc_identifiers, cable_descriptions, 
             spare_identifiers, tag_to_number, raw_cable_descriptions, 
             tag_match_info, all_ocr_tags) = result
-                
+
+            # If digital extraction produced too little usable data, fall back to OCR
+            insufficient_content = (
+                (not tags or len(tags) < 3) and
+                (not jb_identifiers) and
+                (not mc_identifiers)
+            )
+            if insufficient_content:
+                logger.info(
+                    "Digital extraction produced insufficient tags (tags=%d, jbs=%d, mcs=%d). Falling back to OCR.",
+                    len(tags), len(jb_identifiers), len(mc_identifiers)
+                )
+
+                # Ensure we have a rasterized image to feed OCR
+                try:
+                    if 'image' not in locals():
+                        image_path = os.path.join(temp_dir, f"page_{page_num + 1}.png")
+                        pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor))
+                        pix.save(image_path)
+                        image = cv2.imread(image_path)
+                        if image is None:
+                            raise RuntimeError("Failed to load rasterized page image for OCR fallback")
+
+                    ocr_result = self.extract_from_image(image)
+                    if isinstance(ocr_result, tuple) and len(ocr_result) == 9:
+                        (tags, jb_identifiers, mc_identifiers, cable_descriptions, 
+                         spare_identifiers, tag_to_number, raw_cable_descriptions, 
+                         tag_match_info, all_ocr_tags) = ocr_result
+                        logger.info("OCR fallback succeeded: %d tags", len(tags))
+                    else:
+                        logger.warning("OCR fallback did not return expected structure; keeping digital result")
+                except Exception as fb_err:
+                    logger.warning(f"OCR fallback failed: {fb_err}; keeping digital result")
+
             logger.info(f"✅ Page {page_num + 1}: {len(tags)} tags numbered by position")
-            
+
         # ✅ Return 10 values
             return (page_num + 1, tags, jb_identifiers, mc_identifiers, 
                     cable_descriptions, spare_identifiers, tag_to_number, 
-                    raw_cable_descriptions, tag_match_info, all_ocr_tags)     
+                    raw_cable_descriptions, tag_match_info, all_ocr_tags)
                
         except Exception as e:
             logger.error(f"Error processing page {page_num + 1}: {e}")
             logger.error(traceback.format_exc())
             return page_num + 1, set(), set(), set(), [], [], {}, [], {}, set()
+
+
+    def detect_pdf_nature(self, pdf_path: str, sample_pages: int = 2) -> str:
+        """Detect whether a PDF contains extractable text (digital) or is image/scanned."""
+        try:
+            doc = fitz.open(pdf_path)
+            total_pages = len(doc)
+            if total_pages == 0:
+                doc.close()
+                return 'scanned'
+
+            pages_to_sample = min(sample_pages, total_pages)
+            extracted_text = []
+            for page_index in range(pages_to_sample):
+                page = doc[page_index]
+                page_text = page.get_text('text') or ''
+                if page_text.strip():
+                    extracted_text.append(page_text.strip())
+            doc.close()
+
+            combined_text = '\n'.join(extracted_text)
+            word_count = len(re.findall(r'\w+', combined_text))
+            if len(combined_text) >= 120 or word_count >= 20:
+                return 'digital'
+            return 'scanned'
+        except Exception as exc:
+            logger.warning(
+                "PDF nature detection failed for %s: %s — defaulting to 'scanned'",
+                os.path.basename(pdf_path),
+                exc
+            )
+            return 'scanned'
 
 
     def process_pdf(self, pdf_path: str) -> 'Dict[int, Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str], Dict[str, Dict] ,Set[str]]]':
@@ -2648,12 +2839,47 @@ class TagJBExtractor:
             logger.error(f"Error initializing Tesseract in process: {e}")
             return {}
 
+        pdf_nature = 'scanned'
+        try:
+            if pdf_path in getattr(self, 'document_nature_by_path', {}):
+                pdf_nature = self.document_nature_by_path[pdf_path]
+            else:
+                pdf_nature = self.detect_pdf_nature(pdf_path)
+                self.document_nature_by_path[pdf_path] = pdf_nature
+            self._current_pdf_nature = pdf_nature
+            logger.info(
+                "PDF nature detected as: '%s' for %s",
+                pdf_nature,
+                os.path.basename(pdf_path)
+            )
+        except Exception as nature_err:
+            logger.warning(
+                "PDF nature detection failed for '%s': %s — defaulting to 'scanned'",
+                os.path.basename(pdf_path),
+                nature_err
+            )
+            self._current_pdf_nature = 'scanned'
+
         if self._classifier is not None:
             try:
-                pdf_type = self._classifier.classify_pdf(pdf_path)
+                if pdf_path in getattr(self, 'document_type_by_path', {}):
+                    pdf_type = self.document_type_by_path[pdf_path]
+                else:
+                    raw_label = self._classifier.classify_pdf(pdf_path)
+                    label_l = (raw_label or '').strip().lower()
+                    if 'table' in label_l:
+                        pdf_type = 'table'
+                    elif 'diagram' in label_l or 'diagra' in label_l or 'drawing' in label_l:
+                        pdf_type = 'diagrams'
+                    else:
+                        pdf_type = 'diagrams'
+                    self.document_type_by_path[pdf_path] = pdf_type
+
                 self._current_pdf_type = pdf_type
                 logger.info(
-                    "PDF classified as: '%s' → routing to corresponding detection config  [%s]",
+                    "PDF classified as: '%s' (raw='%s') → routing to '%s'  [%s]",
+                    pdf_type,
+                    raw_label if 'raw_label' in locals() else '',
                     pdf_type,
                     os.path.basename(pdf_path)
                 )
@@ -2694,17 +2920,98 @@ class TagJBExtractor:
                     else:
                         dpi_factor = 300 / 72
  
-                    pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor))
-                    image_path = os.path.join(temp_dir, f"page_{page_num + 1}.png")
-                    pix.save(image_path)
-                    
-                    image = cv2.imread(image_path)
-                    if image is None:
-                        logger.error(f"Failed to load image for page {page_num + 1}")
-                        continue
-                    
-                    extract_result = self.extract_from_image(image)
-                    
+                    extract_result = None
+                    if getattr(self, '_current_pdf_nature', 'scanned') == 'digital':
+                        page_dict = page.get_text("dict")
+                        blocks = page_dict.get("blocks", []) if isinstance(page_dict, dict) else []
+                        num_blocks = len(blocks)
+                        num_lines = sum(len(block.get("lines", [])) for block in blocks if isinstance(block, dict))
+                        words = page.get_text("words")
+                        num_words = len(words) if words else 0
+                        tables_detected = sum(
+                            1 for block in blocks
+                            if isinstance(block, dict) and 'table' in str(block.get('text', '')).lower()
+                        )
+                        sample_texts = [str(w[4]).strip() for w in words if str(w[4]).strip()][:20] if words else []
+                        logger.info(
+                            "process_pdf page %d DIGITAL diagnostics: blocks=%d, words=%d, lines=%d, tables=%d, sample_texts=%s",
+                            page_num + 1,
+                            num_blocks,
+                            num_words,
+                            num_lines,
+                            tables_detected,
+                            sample_texts
+                        )
+                        logger.info(f"process_pdf page {page_num + 1}: DIGITAL mode — attempting text-based extraction first")
+                        try:
+                            extract_result = self.extract_from_text_page(page)
+                        except Exception as text_err:
+                            logger.warning(
+                                "Digital text extraction failed for page %s: %s — falling back to OCR",
+                                page_num + 1,
+                                text_err
+                            )
+                            extract_result = None
+ 
+                        if isinstance(extract_result, tuple) and len(extract_result) == 9:
+                            tags, jb_identifiers, mc_identifiers, cable_descriptions, spare_identifiers, tag_to_number, raw_cable_descriptions, tag_match_info, all_ocr_tags = extract_result
+                            if (not tags or len(tags) < 3) and (not jb_identifiers) and (not mc_identifiers):
+                                logger.info(
+                                    "Digital extraction produced insufficient content for page %s — falling back to OCR",
+                                    page_num + 1
+                                )
+                                logger.info(
+                                    "Digital extraction failure reason: tags=%d, jb_identifiers=%d, mc_identifiers=%d",
+                                    len(tags),
+                                    len(jb_identifiers),
+                                    len(mc_identifiers)
+                                )
+                                logger.info(
+                                    "Digital insufficient condition triggered: (not tags or len(tags) < 3) and not jb_identifiers and not mc_identifiers"
+                                )
+                                extract_result = None
+                            else:
+                                logger.info(
+                                    "✅ Digital extraction ACCEPTED for page %s: tags=%d, jb_identifiers=%d, mc_identifiers=%d, spare_identifiers=%d, all_ocr_tags=%d",
+                                    page_num + 1,
+                                    len(tags),
+                                    len(jb_identifiers),
+                                    len(mc_identifiers),
+                                    len(spare_identifiers),
+                                    len(all_ocr_tags)
+                                )
+                                logger.info(
+                                    "   Digital tags found: %s",
+                                    sorted(list(tags)) if tags else "[]"
+                                )
+                                logger.info(
+                                    "   Digital JB identifiers: %s",
+                                    list(jb_identifiers) if jb_identifiers else "[]"
+                                )
+                                logger.info(
+                                    "   Digital MC identifiers: %s",
+                                    list(mc_identifiers) if mc_identifiers else "[]"
+                                )
+                        else:
+                            logger.info(
+                                "Digital extraction returned invalid result structure for page %s: %s — falling back to OCR",
+                                page_num + 1,
+                                type(extract_result).__name__ if extract_result is not None else 'None'
+                            )
+                            extract_result = None
+ 
+                    if extract_result is None:
+                        pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor))
+                        image_path = os.path.join(temp_dir, f"page_{page_num + 1}.png")
+                        pix.save(image_path)
+                        
+                        image = cv2.imread(image_path)
+                        if image is None:
+                            logger.error(f"Failed to load image for page {page_num + 1}")
+                            continue
+                        
+                        extract_result = self.extract_from_image(image)
+ 
                     logger.info(f"   📊 extract_result length: {len(extract_result)}")
                     if len(extract_result) >= 9:
                         logger.info(f"   📊 all_ocr_tags at index 8: {extract_result[8]}")
@@ -2900,6 +3207,19 @@ class TagJBExtractor:
         # جمع‌آوری تمام موارد با موقعیت‌ها
         all_found_items = []
         processed_regions = set()
+
+        def bbox_to_region(bbox):
+            if not bbox:
+                return None
+            try:
+                return (
+                    int(bbox.get('x', 0)),
+                    int(bbox.get('y', 0)),
+                    int(bbox.get('width', 0)),
+                    int(bbox.get('height', 0)),
+                )
+            except Exception:
+                return None
         
         # ============================================================
         # Phase 1: جمع‌آوری Exact Matches
@@ -2920,6 +3240,20 @@ class TagJBExtractor:
             
             tag_upper = tag.upper()
             ocr_text_used = info.get('ocr_text', tag).upper()
+            bbox = bbox_to_region(info.get('bbox'))
+            if bbox is not None:
+                if bbox not in processed_regions:
+                    all_found_items.append({
+                        'type': 'tag',
+                        'text': tag,
+                        'position': bbox,
+                        'match_type': 'exact',
+                        'score': info.get('score', 1.0),
+                        'y_position': bbox[1]
+                    })
+                    processed_regions.add(bbox)
+                    exact_found_count += 1
+                continue
             
             for i, text in enumerate(ocr_data['text']):
                 text_clean = text.strip().upper()
@@ -2960,6 +3294,21 @@ class TagJBExtractor:
                 continue
             
             ocr_text_used = info.get('ocr_text', tag).upper()
+            bbox = bbox_to_region(info.get('bbox'))
+            if bbox is not None:
+                if bbox not in processed_regions:
+                    all_found_items.append({
+                        'type': 'tag',
+                        'text': tag,
+                        'position': bbox,
+                        'match_type': 'similar',
+                        'score': info.get('score', 0.0),
+                        'original_text': ocr_text_used,
+                        'y_position': bbox[1]
+                    })
+                    processed_regions.add(bbox)
+                    similar_found_count += 1
+                continue
             
             for i, text in enumerate(ocr_data['text']):
                 text_clean = text.strip().upper()
@@ -3001,6 +3350,20 @@ class TagJBExtractor:
                 info.get('ocr_text', info.get('display_text', ''))
             )
             if not candidate_text:
+                continue
+
+            bbox = bbox_to_region(info.get('bbox'))
+            if bbox is not None:
+                if bbox not in processed_regions:
+                    all_found_items.append({
+                        'type': 'unmatched_candidate',
+                        'text': info.get('display_text', candidate_text),
+                        'position': bbox,
+                        'score': info.get('score', 0.0),
+                        'y_position': bbox[1]
+                    })
+                    processed_regions.add(bbox)
+                    unmatched_candidate_found_count += 1
                 continue
 
             for i, text in enumerate(ocr_data['text']):
@@ -5875,3 +6238,92 @@ class TagJBExtractor:
         self.exact_matches = 0
         self.similar_matches = 0
         self.processing_time = 0
+
+
+class DataAnalysis:
+    """
+    Facade layer that centralizes initial PDF type detection and delegates the
+    actual tag extraction pipeline to the underlying TagJBExtractor instance.
+    """
+
+    DEFAULT_MODEL_PATH = os.path.join(current_dir, 'modules', 'keras_model.h5')
+    DEFAULT_LABELS_PATH = os.path.join(current_dir, 'modules', 'labels.txt')
+    DEFAULT_PDF_TYPE = 'diagrams'
+
+    def __init__(self, extractor, classifier_model_path: str = None, classifier_labels_path: str = None):
+        self.extractor = extractor
+        self.classifier = None
+        self.document_types = {}
+        self.classifier_model_path = classifier_model_path or self.DEFAULT_MODEL_PATH
+        self.classifier_labels_path = classifier_labels_path or self.DEFAULT_LABELS_PATH
+        self._load_classifier()
+
+    def _load_classifier(self):
+        if _PDFClassifierClass is None:
+            logger.warning('PDFClassifier backend unavailable; document type detection disabled.')
+            return
+
+        if not os.path.exists(self.classifier_model_path) or not os.path.exists(self.classifier_labels_path):
+            logger.warning(
+                'PDFClassifier assets missing; document type detection disabled: %s, %s',
+                self.classifier_model_path,
+                self.classifier_labels_path,
+            )
+            return
+
+        try:
+            self.classifier = _PDFClassifierClass(
+                model_path=self.classifier_model_path,
+                labels_path=self.classifier_labels_path,
+            )
+            if hasattr(self.extractor, 'set_classifier'):
+                self.extractor.set_classifier(self.classifier)
+            logger.info('DataAnalysis initialized with PDFClassifier: %s', self.classifier_model_path)
+        except Exception as exc:
+            logger.error('Failed to initialize PDFClassifier: %s', exc)
+            self.classifier = None
+
+    def detect_pdf_type(self, pdf_path: str) -> str:
+        if self.classifier is None:
+            return self.DEFAULT_PDF_TYPE
+
+        try:
+            raw_label = self.classifier.classify_pdf(pdf_path)
+            # Normalize classifier label to expected internal types
+            label_l = (raw_label or '').strip().lower()
+            if 'table' in label_l:
+                pdf_type = 'table'
+            elif 'diagram' in label_l or 'diagra' in label_l or 'drawing' in label_l:
+                pdf_type = 'diagrams'
+            else:
+                # fallback to default
+                pdf_type = self.DEFAULT_PDF_TYPE
+
+            logger.info("PDFClassifier returned label '%s' -> normalized to '%s'", raw_label, pdf_type)
+            self.document_types[pdf_path] = pdf_type
+            return pdf_type
+        except Exception as exc:
+            logger.warning(
+                'PDFClassifier failed for %s: %s — defaulting to %s',
+                os.path.basename(pdf_path),
+                exc,
+                self.DEFAULT_PDF_TYPE,
+            )
+            self.document_types[pdf_path] = self.DEFAULT_PDF_TYPE
+            return self.DEFAULT_PDF_TYPE
+
+    def run_with_annotated_pdf(self, pdf_paths, *args, **kwargs):
+        if self.classifier is not None and isinstance(pdf_paths, list):
+            for pdf_path in pdf_paths:
+                self.document_types[pdf_path] = self.detect_pdf_type(pdf_path)
+                if hasattr(self.extractor, 'document_type_by_path'):
+                    self.extractor.document_type_by_path[pdf_path] = self.document_types[pdf_path]
+
+        return self.extractor.run_with_annotated_pdf(pdf_paths, *args, **kwargs)
+
+    def run(self, *args, **kwargs):
+        return self.extractor.run(*args, **kwargs)
+
+    def __getattr__(self, attr):
+        return getattr(self.extractor, attr)
+

@@ -39,7 +39,7 @@ from tkinter import filedialog
 from logger_config import get_logger, LoggerMixin
 from TagJBExtractorLogger import LoggedTagJBExtractor
 from LinuxTagJBExtractorLogger import LoggedLinuxTagJBExtractor
-from DataAnalysisModule import TagJBExtractor
+from DataAnalysisModule import DataAnalysis, TagJBExtractor
 from werkzeug.utils import secure_filename
 from apps.backend.utils.file_naming import (
     BASE_OUTPUT_DIR,
@@ -93,6 +93,15 @@ DEFAULT_TESSERACT_PATH = os.environ.get("TESSERACT_PATH", "/usr/local/bin/tesser
 os.environ["TESSDATA_PREFIX"] = "/usr/local/share/tessdata"
 os.environ["PATH"] = os.environ["PATH"] + ":/usr/local/bin"
 pytesseract.pytesseract.tesseract_cmd = "/usr/local/bin/tesseract"
+
+PDF_CLASSIFIER_MODEL_PATH = os.environ.get(
+    'PDF_CLASSIFIER_MODEL_PATH',
+    os.path.join(BASE_DIR, 'modules', 'keras_model.h5')
+)
+PDF_CLASSIFIER_LABELS_PATH = os.environ.get(
+    'PDF_CLASSIFIER_LABELS_PATH',
+    os.path.join(BASE_DIR, 'modules', 'labels.txt')
+)
 
 # کاربران مجاز
 VALID_USERS = {
@@ -733,6 +742,15 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
             tesseract_path=DEFAULT_TESSERACT_PATH,
             excel_path=excel_path
         )
+
+        # Wrap the platform-specific extractor with DataAnalysis for
+        # document-type routing and classifier injection.
+        data_analysis = DataAnalysis(
+            extractor,
+            classifier_model_path=PDF_CLASSIFIER_MODEL_PATH,
+            classifier_labels_path=PDF_CLASSIFIER_LABELS_PATH,
+        )
+        extractor = data_analysis
         
         TaskManager.update_task(task_id, {'progress': 30})
         
@@ -800,7 +818,8 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
                     'pattern_unmatched_candidates': len(pattern_unmatched_candidates),
                     'pattern_unmatched_details': len(pattern_unmatched_details),
                     'pdf_count': len(pdf_paths),
-                    'pdf_names': [os.path.basename(p) for p in pdf_paths]
+                    'pdf_names': [os.path.basename(p) for p in pdf_paths],
+                    'pdf_types': getattr(extractor, 'document_types', {})
                 }
             }, f, indent=2, ensure_ascii=False)
         

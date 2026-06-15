@@ -388,6 +388,7 @@ DEFAULT_IO_COLUMNS = [
     "P&ID No",
     "Unit No",
     "JB No",
+    "JB_SPARE_COUNT",
     "JB Terminal",
     "Multi Cable",
     "Pair/Core",
