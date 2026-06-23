@@ -1608,7 +1608,9 @@ class TagJBExtractor:
         ocr_data = pytesseract.image_to_data(image, config=custom_config, output_type=pytesseract.Output.DICT)
         return self._extract_from_ocr_data(ocr_data, pdf_type)
 
-    def _extract_from_ocr_data(self, ocr_data, pdf_type: str):
+    def _extract_from_ocr_data(self, ocr_data, pdf_type: str,
+                                coord_source: str = 'ocr',
+                                dpi_factor: float = 300 / 72):
         # Ensure pdf_type is canonical to keep thresholds/heuristics consistent
         _l = str(pdf_type or '').lower()
         if 'table' in _l:
@@ -1619,6 +1621,16 @@ class TagJBExtractor:
             pdf_type = 'diagrams'
 
         dominant_prefix = self._detect_dominant_prefix_in_page(ocr_data, ['UZSO', 'UZSC'])
+        # ✅ [COORD FIX] هلپر داخلی برای ساخت bbox که منبع مختصات را هم ثبت می‌کند
+        def _bbox(i):
+            return {
+                'x': int(ocr_data['left'][i]),
+                'y': int(ocr_data['top'][i]),
+                'width': int(ocr_data['width'][i]),
+                'height': int(ocr_data['height'][i]),
+                'coord_source': coord_source,   # 'ocr' یا 'digital'
+                'dpi_factor': dpi_factor,       # ضریب تبدیل پوینت→پیکسل (فقط برای digital کاربرد دارد)
+            }
 
         if dominant_prefix:
             logger.info(f"🎯 Page context: This page primarily contains {dominant_prefix} tags")
@@ -1638,6 +1650,9 @@ class TagJBExtractor:
         all_ocr_tags = set()
         exact_matched_tags = set()
         similar_matched_tags = set()
+        jb_positions = []
+        mc_positions = []
+        cable_positions = []
         
         io_list_tags = set()
         if hasattr(self, 'io_list_tags'):
@@ -1700,12 +1715,7 @@ class TagJBExtractor:
                 all_ocr_tags.add(word_clean)
                 ocr_candidate_scores[word_clean] = max(ocr_candidate_scores.get(word_clean, 0.0), pattern_score)
                 if word_clean not in ocr_tag_positions:
-                    ocr_tag_positions[word_clean] = {
-                        'y': int(ocr_data['top'][i]),
-                        'x': int(ocr_data['left'][i]),
-                        'width': int(ocr_data['width'][i]),
-                        'height': int(ocr_data['height'][i]),
-                    }
+                    ocr_tag_positions[word_clean] = _bbox(i)
                 logger.debug(f"Found OCR tag: {word_clean}")
         
         logger.info(f"Phase 0 complete: {len(all_ocr_tags)} OCR tags")
@@ -1736,27 +1746,26 @@ class TagJBExtractor:
                         bbox = None
                         for i, word in enumerate(ocr_data['text']):
                             if word.strip().upper() == ocr_tag:
-                                bbox = {
-                                    'x': int(ocr_data['left'][i]),
-                                    'y': int(ocr_data['top'][i]),
-                                    'width': int(ocr_data['width'][i]),
-                                    'height': int(ocr_data['height'][i])
-                                }
+                                bbox = _bbox(i)
                                 tags_with_positions.append({
                                     'tag': best_match,
                                     'y': ocr_data['top'][i],
                                     'x': ocr_data['left'][i],
                                     'width': ocr_data['width'][i],
                                     'height': ocr_data['height'][i],
-                                    'ocr_text': ocr_tag
+                                    'ocr_text': ocr_tag,
+                                    'coord_source': coord_source,
+                                    'dpi_factor': dpi_factor
                                 })
-                                break
+                                break           
                         
                         tag_match_info[best_match] = {
                             'match_type': 'exact',
                             'score': best_score,
                             'ocr_text': ocr_tag,
-                            'bbox': bbox or {}
+                            'bbox': bbox or {},
+                            'coord_source': coord_source,
+                            'dpi_factor': dpi_factor
                         }
                         
                         processed_tag_texts.add(ocr_tag)
@@ -1844,28 +1853,27 @@ class TagJBExtractor:
                     bbox = None
                     for i, word in enumerate(ocr_data['text']):
                         if word.strip().upper() == ocr_tag:
-                            bbox = {
-                                'x': int(ocr_data['left'][i]),
-                                'y': int(ocr_data['top'][i]),
-                                'width': int(ocr_data['width'][i]),
-                                'height': int(ocr_data['height'][i])
-                            }
+                            bbox = _bbox(i)
                             tags_with_positions.append({
                                 'tag': best_match,
                                 'y': ocr_data['top'][i],
                                 'x': ocr_data['left'][i],
                                 'width': ocr_data['width'][i],
                                 'height': ocr_data['height'][i],
-                                'ocr_text': ocr_tag
+                                'ocr_text': ocr_tag,
+                                'coord_source': coord_source,
+                                'dpi_factor': dpi_factor
                             })
                             break
-                    
+                
                     tag_match_info[best_match] = {
                         'match_type': 'similar',
                         'score': best_score,
                         'ocr_text': ocr_tag,
                         'reason': self._get_similarity_reason(ocr_tag, best_match),
-                        'bbox': bbox or {}
+                        'bbox': bbox or {},
+                        'coord_source': coord_source,
+                        'dpi_factor': dpi_factor
                     }
                     
                     processed_tag_texts.add(ocr_tag)
@@ -1895,7 +1903,9 @@ class TagJBExtractor:
                     'x': candidate_pos.get('x', 0),
                     'width': candidate_pos.get('width', 0),
                     'height': candidate_pos.get('height', 0),
-                    'ocr_text': ocr_tag
+                    'ocr_text': ocr_tag,
+                    'coord_source': coord_source,
+                    'dpi_factor': dpi_factor
                 })
             tag_match_info[candidate_key] = {
                 'match_type': 'unmatched_candidate',
@@ -1903,7 +1913,9 @@ class TagJBExtractor:
                 'ocr_text': ocr_tag,
                 'display_text': ocr_tag,
                 'reason': 'IO-pattern-like tag not found in IO List',
-                'bbox': candidate_pos if candidate_pos else {}
+                'bbox': candidate_pos if candidate_pos else {},
+                'coord_source': coord_source,
+                'dpi_factor': dpi_factor
             }
             unmatched_pattern_count += 1
 
@@ -1944,7 +1956,9 @@ class TagJBExtractor:
                         'y': curr_y,
                         'x': curr_x,
                         'width': ocr_data['width'][i],
-                        'height': ocr_data['height'][i]
+                        'height': ocr_data['height'][i],
+                        'coord_source': coord_source,
+                        'dpi_factor': dpi_factor
                     })
                     
                     spare_id = f"{self.spare_examples}_{spare_found_count}"
@@ -1952,7 +1966,10 @@ class TagJBExtractor:
                     tag_match_info[spare_id] = {
                         'match_type': 'spare',
                         'score': 1.0,
-                        'ocr_text': word_clean
+                        'ocr_text': word_clean,
+                        'bbox': _bbox(i),
+                        'coord_source': coord_source,
+                        'dpi_factor': dpi_factor
                     }
                     
                     logger.info(f"✅ SPARE FOUND: {word_clean} → ID: {spare_id} x={curr_x} y={curr_y}")
@@ -1961,16 +1978,51 @@ class TagJBExtractor:
             # MC
             mc_token = self._normalize_code_token(word_clean)
             if self._is_prefixed_identifier(mc_token, self.mc_examples, require_digit=False):
-                x, y = ocr_data['left'][i], ocr_data['top'][i]
-                mc_positions.append((x, y))
+                x, y = int(ocr_data['left'][i]), int(ocr_data['top'][i])
+                mc_positions.append({
+                    'mc': mc_token,
+                    'x': x,
+                    'y': y,
+                    'width': int(ocr_data['width'][i]),
+                    'height': int(ocr_data['height'][i])
+                })
                 mc_indices.append(i)
                 mc_identifiers.add(mc_token)
+                tag_match_info[mc_token] = {
+                    'match_type': 'mc',
+                    'score': 1.0,
+                    'ocr_text': word_clean,
+                    'bbox': _bbox(i),
+                    'coord_source': coord_source,
+                    'dpi_factor': dpi_factor
+                }
                 logger.info(f"MC: {mc_token}")
                 continue
             
             # JB
             if word_clean.startswith(self.jb_examples):
+                x, y = int(ocr_data['left'][i]), int(ocr_data['top'][i])
+                jb_positions.append({
+                    'jb': word_clean,
+                    'x': x,
+                    'y': y,
+                    'width': int(ocr_data['width'][i]),
+                    'height': int(ocr_data['height'][i]),
+                    'coord_source': coord_source,
+                    'dpi_factor': dpi_factor
+                })
                 jb_identifiers.add(word_clean)
+                tag_match_info[word_clean] = {
+                    'match_type': 'jb',
+                    'score': 1.0,
+                    'ocr_text': word_clean,
+                    'bbox': {
+                        'x': x,
+                        'y': y,
+                        'width': int(ocr_data['width'][i]),
+                        'height': int(ocr_data['height'][i])
+                    }
+                }
                 logger.info(f"JB: {word_clean}")
                 continue
         
@@ -2097,6 +2149,8 @@ class TagJBExtractor:
 
             best_desc = best_hit['cable_desc']
             best_text = self.clean_cable_description(best_hit['source_text'], mc_identifiers)
+            x = int(best_hit.get('source_x', mc_x)) if isinstance(best_hit.get('source_x', None), int) else int(mc_x)
+            y = int(best_hit.get('source_y', mc_y)) if isinstance(best_hit.get('source_y', None), int) else int(mc_y)
             logger.info(f"Cable matched near MC '{mc_text}': code='{best_desc}', raw='{best_text}'")
 
             if best_desc not in cable_descriptions:
@@ -2104,6 +2158,39 @@ class TagJBExtractor:
 
             if best_text and best_text not in raw_cable_descriptions:
                 raw_cable_descriptions.append(best_text)
+
+            cable_positions.append({
+                'text': best_desc,
+                'display_text': best_desc,
+                'x': x,
+                'y': y,
+                'width': 120,
+                'height': 24,
+                'bbox': {
+                    'x': x,
+                    'y': y,
+                    'width': 120,
+                    'height': 24,
+                    'coord_source': coord_source,
+                    'dpi_factor': dpi_factor
+                }
+            })
+            tag_match_info[f"CABLE::{best_desc}::{len(cable_positions)}"] = {
+                'match_type': 'cable',
+                'score': 1.0,
+                'ocr_text': best_text,
+                'display_text': best_desc,
+                'bbox': {
+                    'x': x,
+                    'y': y,
+                    'width': 120,
+                    'height': 24,
+                    'coord_source': coord_source,
+                    'dpi_factor': dpi_factor
+                },
+                'coord_source': coord_source,
+                'dpi_factor': dpi_factor
+            }
         
         # ============================================================
         # 🆕 Phase 5: شماره‌گذاری بر اساس موقعیت عمودی
@@ -2197,7 +2284,7 @@ class TagJBExtractor:
             all_ocr_tags,
         )
 
-    def extract_from_text_page(self, page) -> 'Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str], Dict[str, Dict], Set[str]]':
+    def extract_from_text_page(self, page, dpi_factor: float = 300 / 72) -> 'Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str], Dict[str, Dict], Set[str]]':
         words = page.get_text("words")
         page_dict = page.get_text("dict")
         blocks = page_dict.get("blocks", []) if isinstance(page_dict, dict) else []
@@ -2210,12 +2297,8 @@ class TagJBExtractor:
         )
         sample_texts = [str(w[4]).strip() for w in words if str(w[4]).strip()][:20] if words else []
         logger.info(
-            "extract_from_text_page: digital stats blocks=%d, words=%d, lines=%d, tables=%d, sample_texts=%s",
-            num_blocks,
-            num_words,
-            num_lines,
-            tables_detected,
-            sample_texts
+            "extract_from_text_page: digital stats blocks=%d, words=%d, lines=%d, tables=%d, dpi_factor=%.4f, sample_texts=%s",
+            num_blocks, num_words, num_lines, tables_detected, dpi_factor, sample_texts
         )
         if not words:
             logger.info("extract_from_text_page: no words extracted from digital PDF page")
@@ -2240,7 +2323,16 @@ class TagJBExtractor:
             ocr_data["width"].append(int(x1 - x0))
             ocr_data["height"].append(int(y1 - y0))
             ocr_data["conf"].append(95)
-        return self._extract_from_ocr_data(ocr_data, pdf_type)
+
+        # ✅ ذخیره dpi_factor برای استفاده در draw_bounding_boxes
+        self._digital_dpi_factor = dpi_factor
+
+        return self._extract_from_ocr_data(
+            ocr_data,
+            pdf_type,
+            coord_source='digital',   # ✅ مهم: می‌گه این مختصات واحدشون "پوینت PDF" است نه پیکسل
+            dpi_factor=dpi_factor      # ✅ مهم: ضریب تبدیل پوینت به پیکسل
+    )
     def get_similarity_reports(self) -> 'List[Dict[str, Any]]':
         """
         دریافت گزارشات کامل شباهت بین تگ‌های شناسایی شده و تگ‌های مرجع
@@ -2696,9 +2788,12 @@ class TagJBExtractor:
             extraction_mode = 'ocr'
             pdf_nature = getattr(self, '_current_pdf_nature', 'scanned')
             if pdf_nature == 'digital':
-                logger.info(f"process_pdf_page {page_num + 1}: DIGITAL page text extraction")
+                logger.info(
+                    f"process_pdf_page {page_num + 1}: DIGITAL page text extraction "
+                    f"(dpi_factor={dpi_factor:.4f})"
+                )
                 extraction_mode = 'digital'
-                result = self.extract_from_text_page(page)
+                result = self.extract_from_text_page(page, dpi_factor=dpi_factor)
                 if not result or not isinstance(result, tuple) or len(result) != 9:
                     logger.warning(
                         "extract_from_text_page returned unexpected result for page %s, falling back to OCR",
@@ -2942,9 +3037,12 @@ class TagJBExtractor:
                             tables_detected,
                             sample_texts
                         )
-                        logger.info(f"process_pdf page {page_num + 1}: DIGITAL mode — attempting text-based extraction first")
+                        logger.info(
+                            f"process_pdf page {page_num + 1}: DIGITAL mode — attempting "
+                            f"text-based extraction first (dpi_factor={dpi_factor:.4f})"
+                        )
                         try:
-                            extract_result = self.extract_from_text_page(page)
+                            extract_result = self.extract_from_text_page(page, dpi_factor=dpi_factor)
                         except Exception as text_err:
                             logger.warning(
                                 "Digital text extraction failed for page %s: %s — falling back to OCR",
@@ -3209,16 +3307,42 @@ class TagJBExtractor:
         processed_regions = set()
 
         def bbox_to_region(bbox):
+            """
+            ✅ [COORD FIX] تبدیل bbox به مختصات پیکسلی روی تصویر رستر شده.
+            اگر bbox از استخراج دیجیتال (PDF point space) آمده باشد،
+            مختصات را با dpi_factor ضرب می‌کنیم تا به پیکسل تبدیل شوند.
+            اگر از OCR آمده باشد (که از قبل پیکسل است)، بدون تغییر برمی‌گردد.
+            """
             if not bbox:
                 return None
             try:
-                return (
-                    int(bbox.get('x', 0)),
-                    int(bbox.get('y', 0)),
-                    int(bbox.get('width', 0)),
-                    int(bbox.get('height', 0)),
-                )
-            except Exception:
+                source = bbox.get('coord_source', 'ocr')
+                factor = bbox.get('dpi_factor', 300 / 72)
+
+                x = int(bbox.get('x', 0))
+                y = int(bbox.get('y', 0))
+                w = int(bbox.get('width', 0))
+                h = int(bbox.get('height', 0))
+
+                if source == 'digital':
+                    raw = (x, y, w, h)
+                    x = int(x * factor)
+                    y = int(y * factor)
+                    w = max(1, int(w * factor))
+                    h = max(1, int(h * factor))
+                    logger.debug(
+                        "bbox_to_region: DIGITAL→PIXEL  factor=%.4f  raw=%s  pixel=(%d,%d,%d,%d)",
+                        factor, raw, x, y, w, h
+                    )
+                else:
+                    logger.debug(
+                        "bbox_to_region: OCR (already pixel)  pixel=(%d,%d,%d,%d)",
+                        x, y, w, h
+                    )
+
+                return (x, y, w, h)
+            except Exception as e:
+                logger.error(f"bbox_to_region: error resolving bbox {bbox}: {e}")
                 return None
         
         # ============================================================
@@ -3399,6 +3523,18 @@ class TagJBExtractor:
         jb_found_count = 0
         
         for jb in jb_identifiers:
+            jb_bbox = bbox_to_region(tag_match_info.get(jb, {}).get('bbox'))
+            if jb_bbox is not None and jb_bbox not in processed_regions:
+                all_found_items.append({
+                    'type': 'jb',
+                    'text': jb,
+                    'position': jb_bbox,
+                    'y_position': jb_bbox[1]
+                })
+                processed_regions.add(jb_bbox)
+                jb_found_count += 1
+                continue
+
             for i, text in enumerate(ocr_data['text']):
                 text_clean = text.strip().upper()
                 if text_clean == jb.upper():
@@ -3424,6 +3560,18 @@ class TagJBExtractor:
         mc_found_count = 0
         
         for mc in mc_identifiers:
+            mc_bbox = bbox_to_region(tag_match_info.get(mc, {}).get('bbox'))
+            if mc_bbox is not None and mc_bbox not in processed_regions:
+                all_found_items.append({
+                    'type': 'mc',
+                    'text': mc,
+                    'position': mc_bbox,
+                    'y_position': mc_bbox[1]
+                })
+                processed_regions.add(mc_bbox)
+                mc_found_count += 1
+                continue
+
             for i, text in enumerate(ocr_data['text']):
                 text_norm = self._normalize_code_token(text)
                 if text_norm and text_norm == self._normalize_code_token(mc):
@@ -3451,6 +3599,18 @@ class TagJBExtractor:
         
         for spare_idx, spare in enumerate(spare_identifiers):
             spare_id = f"{self.spare_examples}_{spare_idx + 1}"
+            spare_bbox = bbox_to_region(tag_match_info.get(spare_id, {}).get('bbox'))
+            if spare_bbox is not None and spare_bbox not in processed_regions:
+                all_found_items.append({
+                    'type': 'spare',
+                    'text': spare,
+                    'position': spare_bbox,
+                    'id': spare_id,
+                    'y_position': spare_bbox[1]
+                })
+                processed_regions.add(spare_bbox)
+                spare_found_count += 1
+                continue
             
             for i, text in enumerate(ocr_data['text']):
                 text_clean = text.strip().upper()
@@ -3480,6 +3640,22 @@ class TagJBExtractor:
         cable_found_count = 0
         
         for cable_desc in cable_descriptions:
+            cable_bbox = None
+            for info in tag_match_info.values():
+                if isinstance(info, dict) and info.get('match_type') == 'cable' and info.get('display_text') == cable_desc:
+                    cable_bbox = bbox_to_region(info.get('bbox'))
+                    break
+            if cable_bbox is not None and cable_bbox not in processed_regions:
+                all_found_items.append({
+                    'type': 'cable',
+                    'text': cable_desc,
+                    'position': cable_bbox,
+                    'y_position': cable_bbox[1]
+                })
+                processed_regions.add(cable_bbox)
+                cable_found_count += 1
+                continue
+
             cable_parts = cable_desc.split()
             if len(cable_parts) >= 1:
                 number_part = cable_parts[0]
@@ -3518,9 +3694,29 @@ class TagJBExtractor:
                 score = item.get('score', 0.0)
                 
                 tag_number = tag_to_number.get(text, 0)
-                
-                if tag_number == 0:
-                    logger.warning(f"⚠️ Tag '{text}' has no number in tag_to_number")
+
+                if not tag_number:
+                    logger.warning(f"⚠️ Tag '{text}' has no number in tag_to_number — drawing unnumbered tag")
+
+                    # Draw a distinct unnumbered tag box so the reviewer can see
+                    # what was detected in the digital path even if numbering wasn't assigned.
+                    color = (50, 50, 200)  # muted blue for unnumbered
+                    cv2.rectangle(image, (x, y), (x + w, y + h), color, 2)
+
+                    # Label includes match type and optional score to aid review
+                    if match_type == 'exact':
+                        label_prefix = '✓'
+                    elif match_type == 'similar':
+                        label_prefix = '≈'
+                    else:
+                        label_prefix = '?'
+
+                    if score and score > 0:
+                        label = f"{label_prefix} {cleaned_text} ({score:.2f})"
+                    else:
+                        label = f"{label_prefix} {cleaned_text}"
+
+                    cv2.putText(image, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
                     continue
                 
                 # رنگ‌بندی بر اساس match type
@@ -3555,8 +3751,11 @@ class TagJBExtractor:
                 spare_id = item['id']
                 spare_number = tag_to_number.get(spare_id, 0)
                 
-                if spare_number == 0:
-                    logger.warning(f"⚠️ SPARE '{spare_id}' has no number in tag_to_number")
+                if not spare_number:
+                    logger.warning(f"⚠️ SPARE '{spare_id}' has no number in tag_to_number — drawing unnumbered SPARE")
+                    cv2.rectangle(image, (x, y), (x + w, y + h), (128, 0, 128), 2)
+                    cv2.putText(image, f"SPARE", (x, y - 10), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (128, 0, 128), 2)
                     continue
                 
                 cv2.rectangle(image, (x, y), (x + w, y + h), (128, 0, 128), 2)  # بنفش
@@ -3661,6 +3860,7 @@ class TagJBExtractor:
         
         try:
             logger.info(f"Creating annotated PDF from: {pdf_path}")
+            page_results = self.process_pdf(pdf_path)
             pdf_document = fitz.open(pdf_path)
             new_pdf = fitz.open()
             total_pages = len(pdf_document)
@@ -3687,11 +3887,16 @@ class TagJBExtractor:
                             continue
                         
                         # استخراج با شماره‌گذاری بر اساس موقعیت
-                        result = self.extract_from_image(image)
+                        result = page_results.get(page_num + 1)
+                        if result is not None and len(result) == 9:
+                            logger.info(f"Using precomputed extraction result for page {page_num + 1}")
+                        else:
+                            logger.info(f"No valid precomputed result for page {page_num + 1}; falling back to image-based extraction")
+                            result = self.extract_from_image(image)
                         
                         # ✅ FIX: چک بدون warning
-                        if len(result) != 9:
-                            logger.error(f"❌ Expected 9 values, got {len(result)}")
+                        if not isinstance(result, tuple) or len(result) != 9:
+                            logger.error(f"❌ Expected 9 values, got {len(result) if result is not None else 'None'}")
                             # استفاده از مقادیر پیش‌فرض
                             tags, jb_identifiers, mc_identifiers = set(), set(), set()
                             cable_descriptions, spare_identifiers = [], []
