@@ -43,7 +43,7 @@ body {
 body.light {
     --bg-deep: #f6f7fb;
     --bg-soft: #ffffff;
-    --panel: rgba(255, 255, 255, 0.96);
+    --panel: rgba(219, 238, 255, 0.96);
     --panel-strong: rgba(248, 250, 255, 0.98);
     --panel-border: rgba(20, 34, 54, 0.08);
     --text-primary: #1c2533;
@@ -85,92 +85,51 @@ body.light .container {
 }
 
 .logo {
-    position: relative;
-    height: 120px;
     display: flex;
     align-items: center;
-    justify-content: center;
-    overflow: hidden; /* prevents logo art or shadows from bleeding outside */
+    gap: 18px;
+    padding: 8px 0 16px;
 }
 
 .logo-icon {
-    width: 76px;
-    height: 76px;
+    width: 150px;
+    height: 150px;
+    flex-shrink: 0;
     display: grid;
     place-items: center;
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 18px;
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
     transition: var(--transition);
-    z-index: 2;
-    box-shadow: 0 12px 26px rgba(6, 12, 22, 0.32);
-    backdrop-filter: blur(6px);
-}
-
-body.light .logo-icon {
-    background: #ffffff;
-    border-color: rgba(18, 30, 50, 0.14);
-    box-shadow: 0 12px 26px rgba(21, 35, 60, 0.16);
-}
-
-html[dir="rtl"] .logo-icon {
-    right: 0;
-}
-
-html[dir="ltr"] .logo-icon {
-    left: 0;
+    backdrop-filter: blur(8px);
+    overflow: hidden;
 }
 
 .logo-icon img {
-    width: 100%;
-    height: 100%;
+    width: 80%;
+    height: 80%;
     object-fit: contain;
     transition: transform 0.3s ease;
+    display: block;
 }
 
-.logo-icon:hover {
-    transform: translateY(-50%) scale(1.04);
-}
-
-.logo-icon:hover img {
-    transform: rotate(4deg);
-}
-
-.logo-icon.initial-load {
-    animation: logoSpin 1.5s ease-in-out;
-}
 
 .title-image-container {
-    position: relative;
-    width: 100%;
-    height: 100%;
+    flex: 1;
     display: flex;
     align-items: center;
-    justify-content: center;
+    min-width: 0;
 }
 
 .title-image {
-    max-height: 100%;
-    height: 100%;
+    max-height: 680px;
     width: auto;
+    max-width: 90%;
     object-fit: contain;
     display: block;
-    filter: drop-shadow(0 12px 25px rgba(8, 12, 22, 0.45));
+    filter: drop-shadow(0 2px 8px rgba(8, 12, 22, 0.30));
 }
 
 body.light .title-image {
-    filter: drop-shadow(0 8px 18px rgba(15, 23, 39, 0.18));
-}
-
-html[dir="rtl"] .title-image-container {
-    padding-right: 88px;
-}
-
-html[dir="ltr"] .title-image-container {
-    padding-left: 88px;
+    filter: drop-shadow(0 2px 6px rgba(15, 23, 39, 0.14));
 }
 
 .login-header p {

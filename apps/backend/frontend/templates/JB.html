@@ -18,10 +18,10 @@
         <aside class="side-panel" id="sidePanel">
             <div class="side-header">
                 <div class="brand">
-                    <img src="{{ url_for('static', filename='images/favicon.png') }}" alt="VAKAV IO Mapping" class="brand-logo">
+                    <img src="{{ url_for('static', filename='images/favicon.png') }}" alt="Control IntelliCraft" class="brand-logo">
                     <div>
-                        <span id="nav-kicker" class="brand-kicker">VAKAV IO Mapping</span>
-                        <h1 id="nav-brand" class="brand-title">VAKAV IO Mapping</h1>
+                        <span id="nav-kicker" class="brand-kicker">Control IntelliCraft</span>
+                        <h1 id="nav-brand" class="brand-title">Control IntelliCraft</h1>
                     </div>
                 </div>
                 <button class="icon-btn" id="collapseBtn" aria-label="Toggle menu">
@@ -599,8 +599,8 @@
             'fa': {
                 'title': 'ماژول JBDetection',
                 'brand-kicker': 'ماژول JBDetection',
-                'nav-kicker': 'VAKAV IO Mapping',
-                'nav-brand': 'VAKAV IO Mapping',
+                'nav-kicker': 'Control IntelliCraft',
+                'nav-brand': 'Control IntelliCraft',
                 'nav-home': 'خانه',
                 'nav-jb': 'ماژول JBDetection',
                 'nav-io': 'ماژول IO Assignment',
@@ -729,8 +729,8 @@
             'en': {
                 'title': 'JBDetection Module',
                 'brand-kicker': 'JBDetection Module',
-                'nav-kicker': 'VAKAV IO Mapping',
-                'nav-brand': 'VAKAV IO Mapping',
+                'nav-kicker': 'Control IntelliCraft',
+                'nav-brand': 'Control IntelliCraft',
                 'nav-home': 'Home',
                 'nav-jb': 'JBDetection Module',
                 'nav-io': 'IO Assignment Module',
@@ -1097,6 +1097,10 @@
             document.body.classList.remove('light', 'dark');
             document.body.classList.add(theme);
             themeBtn.innerHTML = theme === 'dark' ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
+            const logoImg = document.querySelector('.brand img');
+
+            if (logoImg) logoImg.src = theme === 'dark' ? '/static/images/favicon.png' : '/static/images/favicon2.png';
+
             currentTheme = theme;
             if (window.JBDUI) {
                 window.JBDUI.setTheme(theme);

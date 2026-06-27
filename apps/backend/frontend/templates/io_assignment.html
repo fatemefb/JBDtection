@@ -17,10 +17,10 @@
         <aside class="side-panel" id="sidePanel">
             <div class="side-header">
                 <div class="brand">
-                    <img src="{{ url_for('static', filename='images/favicon.png') }}" alt="VAKAV IO Mapping" class="brand-logo">
+                    <img src="{{ url_for('static', filename='images/favicon.png') }}" alt="Control IntelliCraft" class="brand-logo">
                     <div>
-                        <span id="nav-kicker" class="brand-kicker">VAKAV IO Mapping</span>
-                        <h1 id="nav-brand" class="brand-title">VAKAV IO Mapping</h1>
+                        <span id="nav-kicker" class="brand-kicker">Control IntelliCraft</span>
+                        <h1 id="nav-brand" class="brand-title">Control IntelliCraft</h1>
                     </div>
                 </div>
                 <button class="icon-btn" id="collapseBtn" aria-label="Toggle menu">
@@ -469,8 +469,8 @@
                 'io-kicker': 'ماژول IO Assignment',
                 'io-title': 'ماژول IO Assignment',
                 'io-subtitle': 'تنظیم ظرفیت‌ها، بارگذاری فایل ورودی و دریافت خروجی بهینه‌سازی.',
-                'nav-kicker': 'VAKAV IO Mapping',
-                'nav-brand': 'VAKAV IO Mapping',
+                'nav-kicker': 'Control IntelliCraft',
+                'nav-brand': 'Control IntelliCraft',
                 'config-title': 'ورودی تنظیمات کابینت',
                 'type-count-label': 'تعداد تیپ کابینت',
                 'confirmTypes': 'تایید',
@@ -517,8 +517,8 @@
                 'io-kicker': 'IO Assignment Module',
                 'io-title': 'IO Assignment Module',
                 'io-subtitle': 'Tune capacities, upload input, and export optimized outputs.',
-                'nav-kicker': 'VAKAV IO Mapping',
-                'nav-brand': 'VAKAV IO Mapping',
+                'nav-kicker': 'Control IntelliCraft',
+                'nav-brand': 'Control IntelliCraft',
                 'config-title': 'Cabinet configuration input',
                 'type-count-label': 'Select number of cabinet types',
                 'confirmTypes': 'Confirm',
@@ -756,6 +756,10 @@
             document.body.classList.remove('light', 'dark');
             document.body.classList.add(theme);
             themeBtn.innerHTML = theme === 'dark' ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
+            const logoImg = document.querySelector('.brand img');
+
+            if (logoImg) logoImg.src = theme === 'dark' ? '/static/images/favicon.png' : '/static/images/favicon2.png';
+
             currentTheme = theme;
             if (window.JBDUI) {
                 window.JBDUI.setTheme(theme);

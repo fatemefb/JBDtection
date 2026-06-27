@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VAKAV IO Mapping</title>
+    <title>Control IntelliCraft</title>
     <link rel="icon" href="{{ url_for('static', filename='images/favicon.png') }}" type="image/png">
     <link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.png') }}" type="image/png">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/favicon.png') }}">
@@ -18,10 +18,10 @@
         <aside class="side-panel" id="sidePanel">
             <div class="side-header">
                 <div class="brand">
-                    <img src="{{ url_for('static', filename='images/favicon.png') }}" alt="VAKAV IO Mapping" class="brand-logo">
+                    <img src="{{ url_for('static', filename='images/favicon.png') }}" alt="Control IntelliCraft" class="brand-logo">
                     <div>
-                        <span id="nav-kicker" class="brand-kicker">VAKAV IO Mapping</span>
-                        <h1 id="nav-brand" class="brand-title">VAKAV IO Mapping</h1>
+                        <span id="nav-kicker" class="brand-kicker">Control IntelliCraft</span>
+                        <h1 id="nav-brand" class="brand-title">Control IntelliCraft</h1>
                     </div>
                 </div>
                 <button class="icon-btn" id="collapseBtn" aria-label="Toggle menu">
@@ -66,8 +66,8 @@
             <header class="app-header home-app-header section-block full-screen-section" data-reveal>
                 <div class="intro-topbar">
                     <div class="intro-brand">
-                        <img src="{{ url_for('static', filename='images/favicon.png') }}" alt="VAKAV IO Mapping" class="intro-logo">
-                        <span id="home-kicker">VAKAV Command</span>
+                        <img src="{{ url_for('static', filename='images/favicon.png') }}" alt="Control IntelliCraft" class="intro-logo">
+                        <span id="home-kicker">Control IntelliCraft</span>
                     </div>
                     <nav class="intro-nav-links">
                         <a href="/home" id="intro-link-home">Home</a>
@@ -86,7 +86,7 @@
                     </div>
                 </div>
                 <div class="intro-hero">
-                    <h2 id="home-title">VAKAV IO Mapping</h2>
+                    <h2 id="home-title">Control IntelliCraft</h2>
                     <p id="home-subtitle">Integrated platform for JB detection and IO assignment workflows.</p>
                 </div>
             </header>
@@ -176,8 +176,8 @@
     <script>
         const translations = {
             fa: {
-                'home-kicker': 'فرماندهی VAKAV',
-                'home-title': 'VAKAV IO Mapping',
+                'home-kicker': 'Control IntelliCraft',
+                'home-title': 'Control IntelliCraft',
                 'home-subtitle': 'پلتفرم یکپارچه برای گردش کار JB Detection و IO Assignment.',
                 'intro-link-home': 'خانه',
                 'intro-link-jb': 'JBDetection',
@@ -201,8 +201,8 @@
                 'module-io-side1': 'سمت تخصیص کانال',
                 'module-io-side2': 'ریل ها، کارت ها، ظرفیت رزرو',
                 'module-io-action': 'ورود به ماژول IO Assignment',
-                'nav-kicker': 'VAKAV IO Mapping',
-                'nav-brand': 'VAKAV IO Mapping',
+                'nav-kicker': 'Control IntelliCraft',
+                'nav-brand': 'Control IntelliCraft',
                 'nav-home': 'خانه',
                 'nav-jb': 'ماژول JBDetection',
                 'nav-io': 'ماژول IO Assignment',
@@ -211,8 +211,8 @@
                 'nav-logout': 'خروج'
             },
             en: {
-                'home-kicker': 'VAKAV Command',
-                'home-title': 'VAKAV IO Mapping',
+                'home-kicker': 'Control IntelliCraft',
+                'home-title': 'Control IntelliCraft',
                 'home-subtitle': 'Integrated platform for JB detection and IO assignment workflows.',
                 'intro-link-home': 'Home',
                 'intro-link-jb': 'JBDetection',
@@ -236,8 +236,8 @@
                 'module-io-side1': 'Channel Assignment Side',
                 'module-io-side2': 'Rails, Cards, Reserved Capacity',
                 'module-io-action': 'Open IO Assignment Module',
-                'nav-kicker': 'VAKAV IO Mapping',
-                'nav-brand': 'VAKAV IO Mapping',
+                'nav-kicker': 'Control IntelliCraft',
+                'nav-brand': 'Control IntelliCraft',
                 'nav-home': 'Home',
                 'nav-jb': 'JBDetection Module',
                 'nav-io': 'IO Assignment Module',
@@ -286,6 +286,12 @@
             document.body.classList.remove('light', 'dark');
             document.body.classList.add(theme);
             themeBtn.innerHTML = theme === 'dark' ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
+            const logoImg = document.querySelector('.brand img');
+            const logoImg2 = document.querySelector('.intro-brand img');
+
+            if (logoImg) logoImg.src = theme === 'dark' ? '/static/images/favicon.png' : '/static/images/favicon2.png';
+            if (logoImg2) logoImg2.src = theme === 'dark' ? '/static/images/favicon.png' : '/static/images/favicon2.png';
+
             currentTheme = theme;
             if (window.JBDUI) {
                 window.JBDUI.setTheme(theme);

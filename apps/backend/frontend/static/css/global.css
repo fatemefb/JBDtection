@@ -175,9 +175,6 @@ html[dir="rtl"] .side-panel {
   width: 52px;
   height: 52px;
   border-radius: 16px;
-  background: linear-gradient(135deg, rgba(45, 224, 201, 0.18), rgba(77, 163, 255, 0.18));
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 12px 24px rgba(5, 15, 32, 0.18);
   object-fit: contain;
   transition: transform var(--dur) var(--ease);
 }
@@ -188,13 +185,9 @@ html[dir="rtl"] .side-panel {
   font-size: .72rem;
   letter-spacing: 1.8px;
   text-transform: uppercase;
-  color: var(--muted);
   white-space: normal;
   overflow: visible;
   text-overflow: unset;
-  max-width: 100%;
-  line-height: 1.2;
-  text-align: left;
 }
 
 .brand-title {
@@ -214,17 +207,12 @@ html[dir="rtl"] .side-panel {
   width: 42px;
   height: 42px;
   border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.10);
-  background: rgba(255, 255, 255, 0.08);
   color: var(--text);
   cursor: pointer;
   transition: all 0.25s ease;
   flex-shrink: 0;
 }
 
-.icon-btn:hover {
-  background: rgba(255, 255, 255, 0.14);
-}
 
 /* collapsed hides text */
 .side-panel.collapsed .brand-kicker,
@@ -243,18 +231,14 @@ html[dir="rtl"] .side-panel {
   align-items: center;
   gap: 11px;
   padding: 10px 12px;
-  border-radius: var(--r-md);
   text-decoration: none;
-  color: var(--muted);
   background: transparent;
   border: 1px solid transparent;
   cursor: pointer;
   font-size: .9rem;
   font-weight: 500;
-  font-family: var(--font);
   white-space: nowrap;
   overflow: hidden;
-  transition: all var(--dur) var(--ease);
 }
 
 /* icon size — compact + larger */
@@ -283,8 +267,6 @@ html[dir="rtl"] .side-panel {
 .nav-item:hover,
 .nav-item.active {
   color: var(--text);
-  border-color: rgba(44,224,207,.35);
-  background: rgba(44,224,207,.12);
 }
 .nav-item:hover i { transform: scale(1.12); }
 .nav-item.active i { color: var(--accent); }
@@ -2182,11 +2164,7 @@ body.home-body.light .side-panel {
 .brand-logo {
     width: 52px;
     height: 52px;
-    padding: 8px;
     border-radius: 16px;
-    background: linear-gradient(135deg, rgba(45, 224, 201, 0.22), rgba(77, 163, 255, 0.22));
-    border: 1px solid var(--border);
-    box-shadow: 0 12px 24px rgba(5, 15, 32, 0.35);
     object-fit: contain;
 }
 
@@ -2195,9 +2173,6 @@ body.home-body.light .side-panel {
     font-size: 0.75rem;
     letter-spacing: 2px;
     text-transform: uppercase;
-    color: var(--muted);
-    white-space: normal;
-    overflow: visible;
     text-overflow: unset;
     max-width: 100%;
     line-height: 1.2;
@@ -2207,8 +2182,6 @@ body.home-body.light .side-panel {
 .brand-title {
     margin: 4px 0 0;
     font-size: 1.2rem;
-    white-space: normal;
-    overflow: visible;
     text-overflow: unset;
     line-height: 1.2;
     text-align: left;
@@ -2218,22 +2191,10 @@ body.home-body.light .side-panel {
     width: 42px;
     height: 42px;
     border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(255, 255, 255, 0.06);
-    color: var(--text);
     cursor: pointer;
     transition: all 0.25s ease;
 }
 
-.icon-btn:hover {
-    background: rgba(45, 224, 201, 0.18);
-    transform: translateY(-2px);
-}
-
-body.home-body.light .icon-btn {
-    border-color: rgba(37, 99, 235, 0.18);
-    background: rgba(15, 23, 39, 0.03);
-}
 
 .side-nav {
     display: flex;
@@ -2411,12 +2372,9 @@ body.home-body.light .home-app-header {
 }
 
 .intro-logo {
-    width: 42px;
-    height: 42px;
+    width: 52px;
+    height: 52px;
     border-radius: 14px;
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(77, 163, 255, 0.35);
-    box-shadow: 0 10px 28px rgba(77, 163, 255, 0.22);
     object-fit: contain;
 }
 
