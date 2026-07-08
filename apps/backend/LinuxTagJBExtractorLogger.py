@@ -183,22 +183,23 @@ class LoggedLinuxTagJBExtractor(LoggerMixin, LinuxTagJBExtractor):
         except Exception as e:
             self.logger.error(f"Error Setting SCR number rule: {e}")
     
-    def preprocess_image(self, image):
+    def preprocess_image(self, image, pdf_type="diagrams"):
         """
         پیش‌پردازش تصویر با استفاده از GPU در صورت امکان
         
         Args:
             image: تصویر ورودی
+            pdf_type: 'diagrams' یا 'table' — به LinuxTagJBExtractor منتقل می‌شود
             
         Returns:
             تصویر پیش‌پردازش شده
         """
-        self.logger.info("Preprocessing image...")
+        self.logger.info(f"Preprocessing image (pdf_type={pdf_type})...")
         if self.use_gpu and self.gpu_available:
             self.logger.info(f"Using GPU ({self.gpu_type}) for preprocessing")
         else:
             self.logger.info("Using CPU for preprocessing")
         
-        result = super().preprocess_image(image)
+        result = super().preprocess_image(image, pdf_type=pdf_type)
         self.logger.info("Image preprocessing completed")
         return result
