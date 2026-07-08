@@ -3021,6 +3021,7 @@ class TagJBExtractor:
                         continue
 
                     word_x, word_y = ocr_data['left'][j], ocr_data['top'][j]
+                    word_w, word_h = ocr_data['width'][j], ocr_data['height'][j]
                     distance_y = abs(word_y - mc_y)
                     x_offset = int(word_x) - int(mc_x)
 
@@ -3030,7 +3031,9 @@ class TagJBExtractor:
                             'idx': j,
                             'text': token,
                             'x': int(word_x),
-                            'y': int(word_y)
+                            'y': int(word_y),
+                            'w': int(word_w),
+                            'h': int(word_h)
                         })
 
                 if not nearby_entries:
@@ -3039,7 +3042,7 @@ class TagJBExtractor:
                 candidate_hits = []
                 seen_hits = set()
 
-                def _collect_cable_matches(source_text, source_x, source_y):
+                def _collect_cable_matches(source_text, source_x, source_y, source_w=0, source_h=0):
                     normalized_text = re.sub(r'\s+', ' ', str(source_text).upper()).strip()
                     if not normalized_text:
                         return
@@ -3068,12 +3071,16 @@ class TagJBExtractor:
                             candidate_hits.append({
                                 'cable_desc': cable_desc,
                                 'source_text': normalized_text,
+                                'source_x': int(source_x),
+                                'source_y': int(source_y),
+                                'source_w': int(source_w),
+                                'source_h': int(source_h),
                                 'distance': distance_score
                             })
 
                 # کاندید مستقیم از خود توکن (مثل FRT-12PX0.75MM2)
                 for entry in nearby_entries:
-                    _collect_cable_matches(entry['text'], entry['x'], entry['y'])
+                    _collect_cable_matches(entry['text'], entry['x'], entry['y'], entry.get('w', 0), entry.get('h', 0))
 
                 # کاندید ترکیبی از دو توکن هم‌ردیف (مثل "12" + "PAIR")
                 row_tolerance = same_row_tolerance
@@ -3092,8 +3099,11 @@ class TagJBExtractor:
 
                         center_x = int((left['x'] + right['x']) / 2)
                         center_y = int((left['y'] + right['y']) / 2)
-                        _collect_cable_matches(f"{left['text']} {right['text']}", center_x, center_y)
-                        _collect_cable_matches(f"{left['text']}{right['text']}", center_x, center_y)
+                        # Merged width = from left edge of left token to right edge of right token
+                        merged_w = int(right['x'] + right.get('w', 0) - left['x'])
+                        merged_h = max(left.get('h', 0), right.get('h', 0))
+                        _collect_cable_matches(f"{left['text']} {right['text']}", center_x, center_y, merged_w, merged_h)
+                        _collect_cable_matches(f"{left['text']}{right['text']}", center_x, center_y, merged_w, merged_h)
 
                 if candidate_hits:
                     best_hit = min(candidate_hits, key=lambda item: (item['distance'], len(item['source_text'])))
@@ -3117,9 +3127,18 @@ class TagJBExtractor:
 
             best_desc = best_hit['cable_desc']
             best_text = self.clean_cable_description(best_hit['source_text'], mc_identifiers)
-            x = int(best_hit.get('source_x', mc_x)) if isinstance(best_hit.get('source_x', None), int) else int(mc_x)
-            y = int(best_hit.get('source_y', mc_y)) if isinstance(best_hit.get('source_y', None), int) else int(mc_y)
-            logger.info(f"Cable matched near MC '{mc_text}': code='{best_desc}', raw='{best_text}'")
+            # Use the ACTUAL source token position and size, not the MC position
+            x = int(best_hit.get('source_x', mc_x))
+            y = int(best_hit.get('source_y', mc_y))
+            # Use actual source width/height if available, otherwise estimate
+            src_w = int(best_hit.get('source_w', 0))
+            src_h = int(best_hit.get('source_h', 0))
+            # If source_w is 0 (not available), use a reasonable default based on text length
+            if src_w <= 0:
+                src_w = max(60, len(best_text) * 12)  # ~12px per char at 300 DPI
+            if src_h <= 0:
+                src_h = 24  # default text height
+            logger.info(f"Cable matched near MC '{mc_text}': code='{best_desc}', raw='{best_text}', bbox=({x},{y}) {src_w}x{src_h}")
 
             if best_desc not in cable_descriptions:
                 cable_descriptions.append(best_desc)
@@ -3132,13 +3151,13 @@ class TagJBExtractor:
                 'display_text': best_desc,
                 'x': x,
                 'y': y,
-                'width': 120,
-                'height': 24,
+                'width': src_w,
+                'height': src_h,
                 'bbox': {
                     'x': x,
                     'y': y,
-                    'width': 120,
-                    'height': 24,
+                    'width': src_w,
+                    'height': src_h,
                     'coord_source': coord_source,
                     'dpi_factor': dpi_factor
                 }
@@ -3151,8 +3170,8 @@ class TagJBExtractor:
                 'bbox': {
                     'x': x,
                     'y': y,
-                    'width': 120,
-                    'height': 24,
+                    'width': src_w,
+                    'height': src_h,
                     'coord_source': coord_source,
                     'dpi_factor': dpi_factor
                 },
@@ -3246,22 +3265,58 @@ class TagJBExtractor:
         # by the main OCR pass (they're recovered later by the header
         # enhancer). This fallback scans ALL OCR tokens for cable patterns
         # directly, ensuring cables like "NC-0-1-2-C-3-BL" are captured.
+        # IMPORTANT: We also store the bbox in tag_match_info so that
+        # draw_bounding_boxes can draw a tight box around the actual text.
         if pdf_type == 'table':
-            cable_re = re.compile(
-                r'\bNC-\d{1,2}-\d{1,2}-\d{1,2}-[A-Z]-\d{1,2}-[A-Z]{1,3}\b',
+            _mc_prefix_fb = self._get_mc_prefix()
+            cable_re_fb = re.compile(
+                r'\b' + re.escape(_mc_prefix_fb) + r'-\d{1,2}-\d{1,2}-\d{1,2}-[A-Z]-\d{1,2}-[A-Z]{1,3}\b',
                 re.IGNORECASE
             )
-            for word in ocr_data['text']:
+            for idx, word in enumerate(ocr_data['text']):
                 text = str(word).strip()
                 if not text:
                     continue
-                m = cable_re.search(text)
+                m = cable_re_fb.search(text)
                 if m:
                     cable_match = m.group(0).upper()
                     if cable_match not in cable_descriptions:
                         cable_descriptions.append(cable_match)
                         raw_cable_descriptions.append(cable_match)
                         logger.info(f"TABLE cable fallback: found cable '{cable_match}'")
+                    
+                    # Store bbox in tag_match_info (even if already in cable_descriptions,
+                    # so draw_bounding_boxes has the exact position)
+                    # Use the OCR token's bounding box — this is the EXACT pixel
+                    # position of the text, so the box will be tight around it.
+                    cable_x = int(ocr_data['left'][idx]) if idx < len(ocr_data['left']) else 0
+                    cable_y = int(ocr_data['top'][idx]) if idx < len(ocr_data['top']) else 0
+                    cable_w = int(ocr_data['width'][idx]) if idx < len(ocr_data['width']) else 0
+                    cable_h = int(ocr_data['height'][idx]) if idx < len(ocr_data['height']) else 0
+                    
+                    # Only store if we have valid coordinates
+                    if cable_w > 0 and cable_h > 0:
+                        cable_key = f"CABLE::{cable_match}::{idx}"
+                        if cable_key not in tag_match_info:
+                            tag_match_info[cable_key] = {
+                                'match_type': 'cable',
+                                'score': 1.0,
+                                'ocr_text': text,
+                                'display_text': cable_match,
+                                'bbox': {
+                                    'x': cable_x,
+                                    'y': cable_y,
+                                    'width': cable_w,
+                                    'height': cable_h,
+                                    'coord_source': coord_source,
+                                    'dpi_factor': dpi_factor
+                                },
+                                'coord_source': coord_source,
+                                'dpi_factor': dpi_factor
+                            }
+                            logger.debug(
+                                f"TABLE cable fallback: stored bbox for '{cable_match}' at ({cable_x},{cable_y}) {cable_w}x{cable_h}"
+                            )
         # ────────────────────────────────────────────────────────────────────
 
         return (
@@ -5570,8 +5625,10 @@ class TagJBExtractor:
         if len(image.shape) == 2:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
 
-        # OCR config
-        custom_config = r'--oem 3 --psm 11 -c tessedit_char_whiteList=ABCDEFGHIJKLMNOPQRSTUVWXYZsparetcoilpr0123456789-.'
+        # OCR config — NO whitelist (same fix as table mode)
+        # The old whitelist was causing tags to be missed because Tesseract
+        # couldn't recognize certain characters.
+        custom_config = r'--oem 3 --psm 11'
         ocr_data = pytesseract.image_to_data(image, config=custom_config, output_type=pytesseract.Output.DICT)
 
         # جمع‌آوری تمام موارد با موقعیت‌ها
@@ -5598,13 +5655,17 @@ class TagJBExtractor:
 
                 if source == 'digital':
                     raw = (x, y, w, h)
-                    x = int(x * factor)
-                    y = int(y * factor)
-                    w = max(1, int(w * factor))
-                    h = max(1, int(h * factor))
+                    # Scale from PDF points to pixels using the ACTUAL rendering DPI
+                    # (not the extraction DPI, which may differ for large PDFs)
+                    render_dpi = getattr(self, '_current_render_dpi', 300)
+                    scale = render_dpi / 72.0  # PDF points → render pixels
+                    x = int(x * scale)
+                    y = int(y * scale)
+                    w = max(1, int(w * scale))
+                    h = max(1, int(h * scale))
                     logger.debug(
-                        "bbox_to_region: DIGITAL→PIXEL  factor=%.4f  raw=%s  pixel=(%d,%d,%d,%d)",
-                        factor, raw, x, y, w, h
+                        "bbox_to_region: DIGITAL→PIXEL  render_dpi=%d  scale=%.4f  raw=%s  pixel=(%d,%d,%d,%d)",
+                        render_dpi, scale, raw, x, y, w, h
                     )
                 else:
                     logger.debug(
@@ -5624,8 +5685,34 @@ class TagJBExtractor:
         exact_found_count = 0
         
         for tag in tags:
+            # ── FALLBACK: If tag is not in tag_match_info but IS in all_ocr_tags,
+            # try to find it via OCR data directly. This happens when tags were
+            # matched via fuzzy matching in the post-processor (which doesn't
+            # populate tag_match_info with bbox for every tag).
             if tag not in tag_match_info:
-                logger.warning(f"Tag '{tag}' not in tag_match_info")
+                tag_upper = tag.upper()
+                found_via_ocr = False
+                for i, text in enumerate(ocr_data['text']):
+                    text_clean = text.strip().upper()
+                    if text_clean == tag_upper:
+                        region_key = (ocr_data['left'][i], ocr_data['top'][i],
+                                    ocr_data['width'][i], ocr_data['height'][i])
+                        if region_key not in processed_regions:
+                            all_found_items.append({
+                                'type': 'tag',
+                                'text': tag,
+                                'position': region_key,
+                                'match_type': 'exact',
+                                'score': 1.0,
+                                'y_position': ocr_data['top'][i]
+                            })
+                            processed_regions.add(region_key)
+                            exact_found_count += 1
+                            found_via_ocr = True
+                            break
+                if found_via_ocr:
+                    continue
+                logger.warning(f"Tag '{tag}' not in tag_match_info and not found in OCR data")
                 continue
             
             info = tag_match_info[tag]
@@ -5910,6 +5997,7 @@ class TagJBExtractor:
         # ============================================================
         logger.info("Phase 6: Collecting cable descriptions...")
         cable_found_count = 0
+        _mc_prefix = self._get_mc_prefix()
         
         for cable_desc in cable_descriptions:
             cable_bbox = None
@@ -5928,13 +6016,136 @@ class TagJBExtractor:
                 cable_found_count += 1
                 continue
 
-            cable_parts = cable_desc.split()
-            if len(cable_parts) >= 1:
-                number_part = cable_parts[0]
-                
+            # ── UNIVERSAL FIX: Search for the cable code in OCR tokens ──
+            # This works for BOTH diagram and table mode. The cable code
+            # (e.g. NC-0-1-2-C-3-BL) may be stored as a single OCR token
+            # or split across multiple tokens. We try:
+            #   1. Exact match (full cable code = single token)
+            #   2. Substring match (cable code is part of a token)
+            #   3. Multi-token match (cable code spans multiple adjacent tokens)
+            # The bounding box is drawn using the EXACT OCR token coordinates,
+            # so it's tight around the text — not on the MC row.
+            cable_desc_upper = cable_desc.upper().strip()
+            found = False
+            
+            # 1. Exact match of the full cable code
+            for i, text in enumerate(ocr_data['text']):
+                text_clean = text.strip().upper()
+                if text_clean == cable_desc_upper:
+                    region_key = (ocr_data['left'][i], ocr_data['top'][i],
+                                ocr_data['width'][i], ocr_data['height'][i])
+                    if region_key not in processed_regions:
+                        all_found_items.append({
+                            'type': 'cable',
+                            'text': cable_desc,
+                            'position': region_key,
+                            'y_position': ocr_data['top'][i]
+                        })
+                        processed_regions.add(region_key)
+                        cable_found_count += 1
+                        found = True
+                        break
+            
+            if found:
+                continue
+            
+            # 2. Substring match (cable code is part of a larger token)
+            for i, text in enumerate(ocr_data['text']):
+                text_clean = text.strip().upper()
+                if cable_desc_upper in text_clean and len(text_clean) < len(cable_desc_upper) + 10:
+                    region_key = (ocr_data['left'][i], ocr_data['top'][i],
+                                ocr_data['width'][i], ocr_data['height'][i])
+                    if region_key not in processed_regions:
+                        all_found_items.append({
+                            'type': 'cable',
+                            'text': cable_desc,
+                            'position': region_key,
+                            'y_position': ocr_data['top'][i]
+                        })
+                        processed_regions.add(region_key)
+                        cable_found_count += 1
+                        found = True
+                        break
+            
+            if found:
+                continue
+            
+            # 3. Multi-token match: cable code is split across adjacent tokens
+            # e.g. "NC-0-1-2" + "-" + "C-3-BL" → combine and check
+            # We look for consecutive tokens on the same line that together
+            # form the cable code.
+            cable_parts = cable_desc_upper.split('-')
+            if len(cable_parts) >= 4:
+                # Try to find the first part and then check if subsequent
+                # tokens on the same line complete the cable code
                 for i, text in enumerate(ocr_data['text']):
                     text_clean = text.strip().upper()
-                    if number_part in text_clean:
+                    # Skip MC tokens
+                    if text_clean.startswith(_mc_prefix + '-'):
+                        continue
+                    
+                    # Check if this token starts the cable code
+                    if not cable_desc_upper.startswith(text_clean):
+                        # Maybe this token contains the start of the cable code
+                        if cable_desc_upper.split('-')[0] in text_clean:
+                            pass  # potential start
+                        else:
+                            continue
+                    
+                    # Look at the next few tokens on the same line
+                    combined = text_clean
+                    min_x = int(ocr_data['left'][i])
+                    min_y = int(ocr_data['top'][i])
+                    max_x = int(ocr_data['left'][i]) + int(ocr_data['width'][i])
+                    max_y = int(ocr_data['top'][i]) + int(ocr_data['height'][i])
+                    y_ref = int(ocr_data['top'][i])
+                    
+                    for j in range(i + 1, min(i + 8, len(ocr_data['text']))):
+                        next_text = str(ocr_data['text'][j]).strip().upper()
+                        if not next_text:
+                            continue
+                        next_y = int(ocr_data['top'][j])
+                        # Must be on same line (within 10px)
+                        if abs(next_y - y_ref) > 10:
+                            break
+                        
+                        combined += next_text
+                        nx = int(ocr_data['left'][j])
+                        nw = int(ocr_data['width'][j])
+                        max_x = max(max_x, nx + nw)
+                        max_y = max(max_y, int(ocr_data['top'][j]) + int(ocr_data['height'][j]))
+                        
+                        # Check if combined text now contains the cable code
+                        if cable_desc_upper in combined:
+                            # Found it! Create a merged bounding box
+                            region_key = (min_x, min_y, max_x - min_x, max_y - min_y)
+                            if region_key not in processed_regions:
+                                all_found_items.append({
+                                    'type': 'cable',
+                                    'text': cable_desc,
+                                    'position': region_key,
+                                    'y_position': min_y
+                                })
+                                processed_regions.add(region_key)
+                                cable_found_count += 1
+                                found = True
+                            break
+                    
+                    if found:
+                        break
+            
+            if found:
+                continue
+            
+            # 4. Last resort: search for distinctive middle part
+            # (skip MC tokens to avoid drawing on MC row)
+            if len(cable_parts) >= 5:
+                search_pattern = '-'.join(cable_parts[2:5])
+                for i, text in enumerate(ocr_data['text']):
+                    text_clean = text.strip().upper()
+                    if text_clean.startswith(_mc_prefix + '-'):
+                        continue
+                    if search_pattern in text_clean:
                         region_key = (ocr_data['left'][i], ocr_data['top'][i],
                                     ocr_data['width'][i], ocr_data['height'][i])
                         if region_key not in processed_regions:
@@ -5946,6 +6157,7 @@ class TagJBExtractor:
                             })
                             processed_regions.add(region_key)
                             cable_found_count += 1
+                            found = True
                             break
         
         logger.info(f"Phase 6: Found {cable_found_count} cables")
@@ -6139,6 +6351,8 @@ class TagJBExtractor:
             
             # استفاده از DPI پایین‌تر برای حافظه بهتر در PDF های چند صفحه‌ای
             dpi_factor = 200/72 if total_pages > 10 else 300/72
+            # Store the rendering DPI for coordinate scaling in draw_bounding_boxes
+            render_dpi = 200 if total_pages > 10 else 300
             
             with tempfile.TemporaryDirectory() as temp_dir:
                 for page_num in range(total_pages):
@@ -6181,6 +6395,9 @@ class TagJBExtractor:
                             tag_match_info, all_ocr_tags) = result
 
                         selected_mc = self._select_best_mc_identifier(mc_identifiers, jb_identifiers)
+                        
+                        # Set the rendering DPI for coordinate scaling in draw_bounding_boxes
+                        self._current_render_dpi = render_dpi
                         
                         # رسم bounding boxes
                         try:
