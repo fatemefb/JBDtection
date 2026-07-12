@@ -67,6 +67,7 @@ from apps.backend.db.models import (
     IssueStatus,
     UploadedFileType,
 )
+from apps.backend.modules.io_assignment.dimension_api import dimension_bp
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -76,6 +77,7 @@ app = Flask(
     static_folder=os.path.join(BASE_DIR, 'frontend', 'static')
 )
 app.register_blueprint(api_bp)
+app.register_blueprint(dimension_bp)
 
 # تنظیم کلید محرمانه برای session
 app.secret_key = 'jb_detection_system_secret_key'
@@ -368,6 +370,130 @@ class TaskStatus:
     PROCESSING = 'processing'
     COMPLETED = 'completed'
     FAILED = 'failed'
+    STALE = 'stale'  # task whose worker died (timeout/OOM)
+
+# ─────────────────────────────────────────────────────────────────
+# HEARTBEAT MECHANISM — protects against worker TIMEOUT / OOM / SIGKILL
+# ─────────────────────────────────────────────────────────────────
+# When a gunicorn worker is killed (timeout/OOM), the processing thread
+# dies but the task JSON stays in 'processing' status forever. The
+# heartbeat mechanism solves this:
+#   1. Worker thread updates `last_heartbeat` every N seconds
+#   2. /task-status endpoint checks if heartbeat is stale (> 2 min)
+#   3. Stale tasks are automatically marked as FAILED
+#   4. Client receives proper error instead of hanging forever
+
+HEARTBEAT_INTERVAL_SECONDS = 15          # update heartbeat every 15s
+HEARTBEAT_STALE_THRESHOLD_SECONDS = 120  # if no heartbeat for 2min → stale
+HEARTBEAT_CHECK_INTERVAL_SECONDS = 60    # scheduler checks every 60s
+
+# Track active heartbeat threads so we can stop them on completion
+_active_heartbeats: Dict[str, threading.Event] = {}
+_heartbeats_lock = threading.Lock()
+
+def start_heartbeat(task_id: str) -> threading.Event:
+    """Start a background thread that updates task heartbeat every N seconds.
+    Returns an Event that can be set to stop the heartbeat."""
+    stop_event = threading.Event()
+    with _heartbeats_lock:
+        _active_heartbeats[task_id] = stop_event
+
+    def _heartbeat_loop():
+        while not stop_event.is_set():
+            try:
+                TaskManager.update_task(task_id, {
+                    'last_heartbeat': datetime.now().isoformat()
+                })
+                logger.debug(f"Heartbeat tick for task {task_id}")
+            except Exception as e:
+                logger.warning(f"Heartbeat update failed for {task_id}: {e}")
+            stop_event.wait(HEARTBEAT_INTERVAL_SECONDS)
+
+    hb_thread = threading.Thread(target=_heartbeat_loop, daemon=True, name=f"hb-{task_id[:8]}")
+    hb_thread.start()
+    logger.info(f"Heartbeat started for task {task_id}")
+    return stop_event
+
+
+def stop_heartbeat(task_id: str):
+    """Stop the heartbeat thread for a task."""
+    with _heartbeats_lock:
+        stop_event = _active_heartbeats.pop(task_id, None)
+    if stop_event:
+        stop_event.set()
+        logger.info(f"Heartbeat stopped for task {task_id}")
+
+
+def is_task_stale(task_data: dict) -> bool:
+    """Check if a task is stale (worker died, no heartbeat for a while)."""
+    if not task_data:
+        return False
+    status = task_data.get('status')
+    if status not in (TaskStatus.PROCESSING, TaskStatus.PENDING):
+        return False
+    last_hb = task_data.get('last_heartbeat')
+    if not last_hb:
+        started = task_data.get('started_at')
+        if not started:
+            return False
+        try:
+            started_dt = datetime.fromisoformat(started)
+            age = (datetime.now() - started_dt).total_seconds()
+            return age > 600
+        except Exception:
+            return False
+    try:
+        last_hb_dt = datetime.fromisoformat(last_hb)
+        age = (datetime.now() - last_hb_dt).total_seconds()
+        return age > HEARTBEAT_STALE_THRESHOLD_SECONDS
+    except Exception:
+        return False
+
+
+def mark_stale_tasks_as_failed() -> int:
+    """Scan all tasks and mark stale ones as failed.
+    Returns count of tasks marked as stale."""
+    marked = 0
+    try:
+        for filename in os.listdir(TASKS_DIR):
+            if not filename.endswith('.json') or filename.startswith('.'):
+                continue
+            task_id = filename[:-5]
+            task_data = FileTaskManager.get_task(task_id)
+            if not task_data:
+                continue
+            if is_task_stale(task_data):
+                logger.warning(f"Task {task_id} is stale — marking as failed")
+                FileTaskManager.update_task(task_id, {
+                    'status': TaskStatus.FAILED,
+                    'error': f'Worker died (timeout/OOM/SIGKILL). No heartbeat for >{HEARTBEAT_STALE_THRESHOLD_SECONDS} seconds.',
+                    'error_details': 'Task marked as stale by heartbeat monitor. The gunicorn worker was likely killed due to timeout or out-of-memory.',
+                    'progress': 100,
+                    'failed_at': datetime.now().isoformat(),
+                    'failure_reason': 'worker_died'
+                })
+                stop_heartbeat(task_id)
+                run_id = task_data.get('run_id')
+                if run_id:
+                    try:
+                        with session_scope() as db:
+                            run = db.get(Run, run_id)
+                            if run and run.status not in (RunStatus.FAILED, RunStatus.FINALIZED):
+                                run_svc.set_status(db, run, RunStatus.FAILED, stage="jbdetection",
+                                                    notes="Worker died (timeout/OOM)")
+                                run_svc.add_log_line(db, run,
+                                    "Worker process killed (timeout/OOM). Task marked as stale.",
+                                    level="error")
+                                db.commit()
+                    except Exception as db_err:
+                        logger.error(f"Failed to update DB run {run_id} for stale task: {db_err}")
+                marked += 1
+    except Exception as e:
+        logger.error(f"Error in mark_stale_tasks_as_failed: {e}")
+    if marked > 0:
+        logger.info(f"Marked {marked} stale task(s) as failed")
+    return marked
+
 
 def append_task_log(task_id, message):
     task = TaskManager.get_task(task_id) or {}
@@ -704,7 +830,10 @@ def _persist_run_outputs(run_id, project_id, output_excel_path, unmatched_excel_
 
 
 def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_config, username, run_id, project_id):
-    """پردازش task به صورت asynchronous با مدیریت بهتر وضعیت"""
+    """پردازش task به صورت asynchronous با مدیریت بهتر وضعیت و heartbeat"""
+    
+    # Start heartbeat to protect against worker timeout/OOM/SIGKILL
+    hb_stop = start_heartbeat(task_id)
     
     try:
         # به‌روزرسانی وضعیت اولیه
@@ -712,8 +841,10 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
             'status': TaskStatus.PROCESSING,
             'progress': 10,
             'started_at': datetime.now().isoformat(),
+            'last_heartbeat': datetime.now().isoformat(),
             'run_id': run_id,
-            'project_id': project_id
+            'project_id': project_id,
+            'worker_pid': os.getpid()  # track which worker is processing
         })
 
         with session_scope() as db:
@@ -723,7 +854,7 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
                 run_svc.add_log_line(db, run, "JBDetection processing started", level="info")
                 db.commit()
         
-        logger.info(f"Task {task_id}: شروع پردازش برای پروژه {project_name}")
+        logger.info(f"Task {task_id}: شروع پردازش برای پروژه {project_name} (worker PID={os.getpid()})")
         
         # ایجاد دایرکتوری‌ها
         project_output_dir = get_project_output_dir(project_name)
@@ -753,6 +884,7 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
         extractor = data_analysis
         
         TaskManager.update_task(task_id, {'progress': 30})
+        gc.collect()  # free memory before heavy OCR
         
         # تنظیم الگوها
         if hasattr(extractor, 'set_patterns'):
@@ -779,7 +911,7 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
         
         TaskManager.update_task(task_id, {'progress': 40})
         
-        # پردازش فایل‌ها
+        # پردازش فایل‌ها — این بخش طولانی‌ترین قسمت است
         logger.info(f"Task {task_id}: شروع پردازش {len(pdf_paths)} فایل PDF")
         unmatched_excel_tags, unmatched_pdf_tags = extractor.run_with_annotated_pdf(
             pdf_paths=pdf_paths,
@@ -793,6 +925,9 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
         TaskManager.update_task(task_id, {'progress': 80})
         logger.info(f"Task {task_id}: پردازش PDF ها کامل شد")
         
+        # آزادسازی حافظه بعد از پردازش سنگین OCR
+        gc.collect()
+
         # ایجاد فایل تگ‌های تطبیق نیافته
         unmatched_excel_filename = generate_document_filename(project_name, "UnmatchedTags", "xlsx")
         unmatched_excel_path = os.path.join(project_output_dir, unmatched_excel_filename)
@@ -905,15 +1040,24 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
             'progress': 100,
             'failed_at': datetime.now().isoformat()
         })
+    finally:
+        # Always stop heartbeat when task ends (success or failure)
+        stop_heartbeat(task_id)
+        # Final memory cleanup
+        gc.collect()
 
 
 def process_io_assignment_task(task_id, excel_path, project_name, config_overrides, username):
+    # Start heartbeat to protect against worker timeout/OOM
+    hb_stop = start_heartbeat(task_id)
     try:
         io_logger = get_io_assignment_logger(project_name, username)
         TaskManager.update_task(task_id, {
             'status': TaskStatus.PROCESSING,
             'progress': 10,
-            'started_at': datetime.now().isoformat()
+            'started_at': datetime.now().isoformat(),
+            'last_heartbeat': datetime.now().isoformat(),
+            'worker_pid': os.getpid()
         })
         append_task_log(task_id, "Task started")
         io_logger.info("Task %s started", task_id)
@@ -1108,6 +1252,10 @@ def process_io_assignment_task(task_id, excel_path, project_name, config_overrid
             'progress': 100,
             'failed_at': datetime.now().isoformat()
         })
+    finally:
+        # Always stop heartbeat when task ends (success or failure)
+        stop_heartbeat(task_id)
+        gc.collect()
 
 @app.route('/')
 def home():
@@ -1205,7 +1353,7 @@ def system_info():
 
 @app.route('/task-status/<task_id>', methods=['GET'])
 def get_task_status(task_id):
-    """دریافت وضعیت task"""
+    """دریافت وضعیت task — با stale detection خودکار"""
     try:
         if 'username' not in session:
             return jsonify({
@@ -1228,6 +1376,39 @@ def get_task_status(task_id):
                 'message': 'شما مجاز به مشاهده این task نیستید'
             }), 403
         
+        # ── STALE TASK DETECTION ──
+        # Check if task is stale (worker died from timeout/OOM/SIGKILL)
+        # If stale, mark as failed immediately so client gets proper error
+        if is_task_stale(task):
+            logger.warning(f"Task {task_id} detected as stale during status check — marking as failed")
+            stale_error = f'Worker died (timeout/OOM/SIGKILL). No heartbeat for >{HEARTBEAT_STALE_THRESHOLD_SECONDS} seconds.'
+            TaskManager.update_task(task_id, {
+                'status': TaskStatus.FAILED,
+                'error': stale_error,
+                'error_details': 'Task marked as stale by heartbeat monitor during /task-status check.',
+                'progress': 100,
+                'failed_at': datetime.now().isoformat(),
+                'failure_reason': 'worker_died'
+            })
+            stop_heartbeat(task_id)
+            # Update DB run status
+            run_id = task.get('run_id')
+            if run_id:
+                try:
+                    with session_scope() as db:
+                        run = db.get(Run, run_id)
+                        if run and run.status not in (RunStatus.FAILED, RunStatus.FINALIZED):
+                            run_svc.set_status(db, run, RunStatus.FAILED, stage="jbdetection",
+                                                notes="Worker died (timeout/OOM)")
+                            run_svc.add_log_line(db, run,
+                                "Worker process killed (timeout/OOM). Task marked as stale.",
+                                level="error")
+                            db.commit()
+                except Exception as db_err:
+                    logger.error(f"Failed to update DB run {run_id} for stale task: {db_err}")
+            # Refresh task data after update
+            task = TaskManager.get_task(task_id) or task
+        
         return jsonify({
             'status': task.get('status', 'pending'),
             'progress': task.get('progress', 0),
@@ -1239,12 +1420,77 @@ def get_task_status(task_id):
             'pdf_count': task.get('pdf_count', 0),
             'log': task.get('log', []),
             'started_at': task.get('started_at'),
-            'completed_at': task.get('completed_at')
+            'completed_at': task.get('completed_at'),
+            'last_heartbeat': task.get('last_heartbeat'),
+            'worker_pid': task.get('worker_pid'),
+            'failure_reason': task.get('failure_reason')
         })
         
     except Exception as e:
         logger.error(f"Error getting task status: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/admin/stale-tasks', methods=['POST'])
+def cleanup_stale_tasks():
+    """Admin endpoint to manually trigger stale task cleanup."""
+    if 'username' not in session:
+        return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
+    username = session.get('username')
+    if not _is_admin_username(username):
+        return jsonify({'status': 'error', 'message': 'Admin access required'}), 403
+    marked = mark_stale_tasks_as_failed()
+    return jsonify({
+        'status': 'success',
+        'stale_tasks_marked': marked,
+        'message': f'{marked} stale task(s) marked as failed'
+    })
+
+@app.route('/admin/task-health', methods=['GET'])
+def task_health():
+    """Health check endpoint showing active vs stale tasks."""
+    if 'username' not in session:
+        return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
+    username = session.get('username')
+    if not _is_admin_username(username):
+        return jsonify({'status': 'error', 'message': 'Admin access required'}), 403
+    
+    active = 0
+    stale = 0
+    completed = 0
+    failed = 0
+    pending = 0
+    try:
+        for filename in os.listdir(TASKS_DIR):
+            if not filename.endswith('.json') or filename.startswith('.'):
+                continue
+            task_id = filename[:-5]
+            task_data = FileTaskManager.get_task(task_id)
+            if not task_data:
+                continue
+            status = task_data.get('status')
+            if status == TaskStatus.COMPLETED:
+                completed += 1
+            elif status == TaskStatus.FAILED:
+                failed += 1
+            elif status == TaskStatus.PENDING:
+                pending += 1
+            elif status == TaskStatus.PROCESSING:
+                if is_task_stale(task_data):
+                    stale += 1
+                else:
+                    active += 1
+    except Exception as e:
+        logger.error(f"Error in task_health: {e}")
+    
+    return jsonify({
+        'status': 'success',
+        'active_processing': active,
+        'stale_processing': stale,
+        'pending': pending,
+        'completed': completed,
+        'failed': failed,
+        'total': active + stale + pending + completed + failed
+    })
 
 @app.route('/process', methods=['POST'])
 def process_files():
@@ -1807,15 +2053,29 @@ def delete_task(task_id):
 
 # cleanup function
 def cleanup_old_tasks():
-    """حذف task‌های قدیمی"""
+    """حذف task‌های قدیمی + تشخیص task‌های stale."""
     TaskManager.cleanup_old_tasks()
+    # Also detect and mark stale tasks (worker died from timeout/OOM)
+    try:
+        mark_stale_tasks_as_failed()
+    except Exception as e:
+        logger.error(f"Error in stale task cleanup: {e}")
 
 # اجرای cleanup هر ساعت
 import atexit
 from apscheduler.schedulers.background import BackgroundScheduler
 
 scheduler = BackgroundScheduler()
+# Old cleanup: every 2 hours
 scheduler.add_job(func=cleanup_old_tasks, trigger="interval", hours=2)
+# Stale task detection: every 60 seconds (catches worker deaths quickly)
+scheduler.add_job(
+    func=mark_stale_tasks_as_failed,
+    trigger="interval",
+    seconds=HEARTBEAT_CHECK_INTERVAL_SECONDS,
+    id='stale_task_detector',
+    name='Detect stale tasks (worker timeout/OOM)'
+)
 scheduler.start()
 
 # خاموش کردن scheduler هنگام خروج

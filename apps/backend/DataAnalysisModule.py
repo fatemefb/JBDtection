@@ -55,7 +55,7 @@ class VectorMatcher:
         self.match_scores = []
         self.required_columns = {
             'generated_excel': ['JB', 'MC', 'Tag/SPARE'],
-            'io_list': ['Tag No', 'Tag']
+            'io_list': ['Tag No', 'Tag', 'Tag No.','Tag no','tag','tag no', 'tag no.','TAG NO','TAG NO.','TAG','TAG.']
         }
 
     def add_reference_tag(self, tag: str) -> None:

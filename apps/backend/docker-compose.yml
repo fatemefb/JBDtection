@@ -40,10 +40,16 @@ services:
       - DATABASE_URL=postgresql+psycopg2://vakav:vakav_strong_password_change_me@postgres:5432/vakav
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-
-      # gunicorn timeouts
       - GUNICORN_TIMEOUT=3600
       - GUNICORN_GRACEFUL_TIMEOUT=3600
+      # TensorFlow memory management
+      - TF_FORCE_GPU_ALLOW_GROWTH=true
+      - TF_GPU_ALLOCATOR=cuda_malloc_async
+      - TF_CPP_MIN_LOG_LEVEL=2
+      # Python memory optimization
+      - MALLOC_TRIM_THRESHOLD_=65536
+      - MALLOC_ARENA_MAX=2
+      - OMP_NUM_THREADS=2
     gpus: all
     runtime: nvidia
     user: "1000:1000"
@@ -56,6 +62,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/system-info"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     networks:
       - vakav_net
     command: >
@@ -66,9 +78,10 @@ services:
         --timeout=3600
         --graceful-timeout=3600
         --keep-alive=5
-        --max-requests=500
-        --max-requests-jitter=50
-        --worker-class=sync
+        --max-requests=100
+        --max-requests-jitter=20
+        --worker-class=gthread
+        --preload
         --log-level=info
         --access-logfile=-
         --error-logfile=-
@@ -76,7 +89,9 @@ services:
       resources:
         limits:
           cpus: '2'
-          memory: 8G
+          memory: 12G
+        reservations:
+          memory: 4G
 
   jbdetection_test:
     container_name: jbdetection_test
@@ -91,14 +106,19 @@ services:
       - ./logs_test:/home/devio/JB-logs
     environment:
       - PYTHONPATH=/app
-      - FLASK_ENV=development
+      - FLASK_ENV=production
       - TZ=Asia/Tehran
       - DATABASE_URL=postgresql+psycopg2://vakav:vakav_strong_password_change_me@postgres:5432/vakav
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-
       - GUNICORN_TIMEOUT=3600
       - GUNICORN_GRACEFUL_TIMEOUT=3600
+      - TF_FORCE_GPU_ALLOW_GROWTH=true
+      - TF_GPU_ALLOCATOR=cuda_malloc_async
+      - TF_CPP_MIN_LOG_LEVEL=2
+      - MALLOC_TRIM_THRESHOLD_=65536
+      - MALLOC_ARENA_MAX=2
+      - OMP_NUM_THREADS=1
     gpus: all
     runtime: nvidia
     user: "1000:1000"
@@ -111,6 +131,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/system-info"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     networks:
       - vakav_net
     command: >
@@ -121,12 +147,20 @@ services:
         --timeout=3600
         --graceful-timeout=3600
         --keep-alive=5
-        --max-requests=200
-        --max-requests-jitter=20
-        --worker-class=sync
-        --log-level=debug
+        --max-requests=50
+        --max-requests-jitter=10
+        --worker-class=gthread
+        --preload
+        --log-level=info
         --access-logfile=-
         --error-logfile=-
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 6G
+        reservations:
+          memory: 2G
 
 volumes:
   postgres_data:

@@ -184,6 +184,29 @@
                             </div>
                         </div>
                     </div>
+                    <div class="dimension-mode-toggle">
+                        <span style="font-weight: 600; font-size: 0.9rem; margin-right: 8px;">INPUT MODE:</span>
+                        <label>
+                            <input type="radio" name="inputMode" value="percentage" checked>
+                            <span>Percentage (Direct)</span>
+                        </label>
+                        <label>
+                            <input type="radio" name="inputMode" value="dimension">
+                            <span>Dimension (Physical mm)</span>
+                        </label>
+                    </div>
+
+                    <!-- ── Dimension Input Panel (hidden by default, shown when dimension mode is selected) ── -->
+                    <div class="dimension-panel" id="dimensionPanel">
+                        <!-- Content is dynamically generated per cabinet type × direction -->
+                        <div id="dimensionContent">
+                            <p style="color: #999; font-size: 0.85rem; padding: 20px; text-align: center;">
+                                Select "Dimension" mode to enter physical cabinet dimensions.
+                                Percentages will be calculated automatically.
+                            </p>
+                        </div>
+                    </div>
+
 
                     <div class="limits-grid">
                         <div class="limits-panel active" data-type="1">
@@ -432,6 +455,10 @@
                             <div class="detail-body">
                                 <p id="detail-empty">Select a cabinet to view details.</p>
                             </div>
+                            <div id="physicalCabinetViewWrapper" style="display:none;">
+                                <h4 id="physicalViewTitle"><i class="fas fa-cube"></i> Physical Layout</h4>
+                                <div id="physicalCabinetView"></div>
+                            </div>
                             <a class="ghost-btn small" id="exportReport" href="#" target="_blank">
                                 <i class="fas fa-file-export"></i>
                                 <span id="export-text">Export configuration report</span>
@@ -462,6 +489,7 @@
             </div>
         </main>
     </div>
+    
 
     <script>
         const translations = {
@@ -1441,6 +1469,7 @@
                     <ul>${units || '<li>-</li>'}</ul>
                 </div>
             `;
+            CabinetViz.renderPhysicalCabinet(cab);
         }
 
         // ===== JB review panel logic =====
@@ -1594,6 +1623,1191 @@
                 }
             }
         });
+        const DimensionMode = {
+            // State
+            active: false,
+            cabinetDimensions: {},
+            cardCatalog: {
+                "Barrier Board (AI)": 75,
+                "Barrier Board (AO)": 75,
+                "Barrier Board (DI)": 45,
+                "Barrier Board (DO)": 45,
+                "Terminal Board (AI)": 60,
+                "Terminal Board (AO)": 60,
+                "Terminal Board (DI)": 45,
+                "Terminal Board (DO)": 45,
+                "Relay Board AI capacity": 90,
+                "Relay Board AO capacity": 90,
+                "Relay Board DI capacity": 90,
+                "Relay Board DO capacity": 90
+            },
+
+            // Board type keys matching engine.py
+            boardKeys: [
+                "Barrier Board (AI)", "Barrier Board (AO)", "Barrier Board (DI)", "Barrier Board (DO)",
+                "Terminal Board (AI)", "Terminal Board (AO)", "Terminal Board (DI)", "Terminal Board (DO)",
+                "Relay Board AI capacity", "Relay Board AO capacity",
+                "Relay Board DI capacity", "Relay Board DO capacity"
+            ],
+
+            // Initialize — called on page load
+            init() {
+                // Listen for mode toggle
+                document.querySelectorAll('input[name="inputMode"]').forEach(radio => {
+                    radio.addEventListener('change', (e) => {
+                        DimensionMode.active = (e.target.value === 'dimension');
+                        DimensionMode.toggleUI();
+                    });
+                });
+
+                // Listen for type tab changes to rebuild dimension UI
+                document.querySelectorAll('.tab-btn').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        if (DimensionMode.active) {
+                            setTimeout(() => DimensionMode.renderDimensionUI(), 50);
+                        }
+                    });
+                });
+
+                // Listen for hasDirections toggle
+                const hasDirs = document.getElementById('hasDirections');
+                if (hasDirs) {
+                    hasDirs.addEventListener('change', () => {
+                        if (DimensionMode.active) {
+                            setTimeout(() => DimensionMode.renderDimensionUI(), 50);
+                        }
+                    });
+                }
+            },
+
+            // Toggle between dimension and percentage UI
+            toggleUI() {
+                const dimPanel = document.getElementById('dimensionPanel');
+                const limitsGrid = document.querySelector('.limits-grid');
+
+                if (DimensionMode.active) {
+                    dimPanel.classList.add('active');
+                    // Make existing percentage inputs read-only
+                    if (limitsGrid) {
+                        limitsGrid.querySelectorAll('input[data-key]').forEach(inp => {
+                            inp.readOnly = true;
+                            inp.style.opacity = '0.6';
+                        });
+                    }
+                    this.renderDimensionUI();
+                } else {
+                    dimPanel.classList.remove('active');
+                    // Restore percentage inputs to editable
+                    if (limitsGrid) {
+                        limitsGrid.querySelectorAll('input[data-key]').forEach(inp => {
+                            inp.readOnly = false;
+                            inp.style.opacity = '1';
+                        });
+                    }
+                }
+            },
+
+            // Render dimension input UI for the active cabinet type
+            renderDimensionUI() {
+                const container = document.getElementById('dimensionContent');
+                if (!container) return;
+                const activeTab = document.querySelector('.tab-btn.active');
+                if (!activeTab) return;
+                const typeNum = activeTab.dataset.type;
+                const hasDirs = document.getElementById('hasDirections').checked;
+                const directions = hasDirs ? ['FRONT', 'REAR'] : ['SINGLE'];
+
+                let html = '';
+
+                // Card catalog — COMPACT
+                html += '<div class="dim-section"><div class="dim-section-title"><i class="fas fa-microchip"></i> Card Heights (mm)</div>';
+                html += '<div class="card-dim-compact">';
+                for (const key of this.boardKeys) {
+                    const sn = key.replace('Barrier Board ', 'B-').replace('Terminal Board ', 'T-').replace('Relay Board ', 'R-').replace(' capacity', '');
+                    html += `<label>${sn}<input type="number" class="card-height-input" data-board="${key}" value="${this.cardCatalog[key]}" step="0.1" min="1"></label>`;
+                }
+                html += '</div></div>';
+
+                for (const dir of directions) {
+                    html += `<div class="dim-section">`;
+                    html += `<div class="dim-section-title"><i class="fas fa-server"></i> Type ${typeNum} — ${dir}</div>`;
+
+                    html += '<div class="dim-sub-title" style="color:var(--accent);">Terminal Rail</div>';
+                    html += '<div class="dim-compact-grid">';
+                    html += `<label>Rail Count<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="rail_count" value="4" min="1"></label>`;
+                    html += `<label>Rail Length<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="rail_length_mm" value="1711" step="0.1"></label>`;
+                    html += `<label>Top Gap<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="top_gap_mm" value="52" step="0.1"></label>`;
+                    html += `<label>Bot Gap<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="bottom_gap_mm" value="20" step="0.1"></label>`;
+                    html += `<label>Term Height<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="terminal_height_mm" value="5" step="0.1"></label>`;
+                    html += `<label>JB Gap<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="jb_gap_mm" value="10" step="0.1"></label>`;
+                    html += '</div>';
+
+                    html += '<div class="dim-sub-title" style="color:var(--accent-2);">Card Column</div>';
+                    html += '<div class="dim-compact-grid">';
+                    html += `<label>Col Count<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="column_count" value="1" min="1"></label>`;
+                    html += `<label>Col Length<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="column_length_mm" value="1711" step="0.1"></label>`;
+                    html += `<label>Top Gap<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="col_top_gap_mm" value="52" step="0.1"></label>`;
+                    html += `<label>Bot Gap<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="col_bottom_gap_mm" value="20" step="0.1"></label>`;
+                    html += `<label>Reserved<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="reserved_space_mm" value="0" step="0.1"></label>`;
+                    html += `<label>Card Gap<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="card_gap_mm" value="2" step="0.1"></label>`;
+                    html += '</div>';
+
+                    if (hasDirs) {
+                        html += '<div class="dim-sub-title" style="color:var(--muted);">Side (Optional)</div>';
+                        html += '<div class="dim-compact-grid">';
+                        html += `<label class="checkbox-label">Has Side<input type="checkbox" class="dim-side-toggle" data-type="${typeNum}" data-dir="${dir}"></label>`;
+                        html += `<label>Side Count<input type="number" class="dim-input dim-side" data-type="${typeNum}" data-dir="${dir}" data-field="side_count" value="2" min="1" disabled></label>`;
+                        html += `<label>Side Length<input type="number" class="dim-input dim-side" data-type="${typeNum}" data-dir="${dir}" data-field="side_length_mm" value="600" step="0.1" disabled></label>`;
+                        html += '</div>';
+                    }
+
+                    // Fill preview
+                    html += `<div class="fill-preview" id="fillPreview-${typeNum}-${dir}">`;
+                    html += '<div class="fill-preview-title">Calculated (Auto)</div>';
+                    html += '<div class="fill-stats">';
+                    html += `<div class="fill-stat-card"><div class="stat-label">Max Rail Terminals</div><div class="stat-value" id="maxTerminals-${typeNum}-${dir}">—</div></div>`;
+                    html += `<div class="fill-stat-card"><div class="stat-label">Usable Rail (mm)</div><div class="stat-value" id="usableRail-${typeNum}-${dir}">—</div></div>`;
+                    html += `<div class="fill-stat-card"><div class="stat-label">Usable Card (mm)</div><div class="stat-value" id="usableCard-${typeNum}-${dir}">—</div></div>`;
+                    html += '</div>';
+                    html += '<div id="boardFillBars-' + typeNum + '-' + dir + '" style="margin-top:8px;"></div>';
+                    html += '</div>';
+
+                    html += `<div class="dim-overflow-warning" id="overflowWarning-${typeNum}-${dir}"></div>`;
+                    html += `<div id="emptyCabinetPreview-${typeNum}-${dir}" style="margin-top:8px;"></div>`;
+                    html += '</div>';
+                }
+
+                html += '<button class="primary-btn" id="applyDimensions" style="margin-top:10px;">APPLY TO PERCENTAGES</button>';
+
+                container.innerHTML = html;
+
+                // Attach event listeners
+                this.attachListeners();
+            },
+
+            // Attach input listeners for live calculation
+            attachListeners() {
+                // Card height inputs
+                document.querySelectorAll('.card-height-input').forEach(inp => {
+                    inp.addEventListener('input', () => {
+                        const board = inp.dataset.board;
+                        this.cardCatalog[board] = parseFloat(inp.value) || 0;
+                        this.calculateAll();
+                    });
+                });
+
+                // Dimension inputs
+                document.querySelectorAll('.dim-input').forEach(inp => {
+                    inp.addEventListener('input', () => this.calculateAll());
+                });
+
+                // Side toggle
+                document.querySelectorAll('.dim-side-toggle').forEach(cb => {
+                    cb.addEventListener('change', (e) => {
+                        const typeNum = e.target.dataset.type;
+                        const dir = e.target.dataset.dir;
+                        document.querySelectorAll(`.dim-side[data-type="${typeNum}"][data-dir="${dir}"]`).forEach(inp => {
+                            inp.disabled = !e.target.checked;
+                        });
+                        this.calculateAll();
+                    });
+                });
+
+                // Apply button
+                const applyBtn = document.getElementById('applyDimensions');
+                if (applyBtn) {
+                    applyBtn.addEventListener('click', () => this.applyToPercentages());
+                }
+
+                // Initial calculation
+                this.calculateAll();
+            },
+
+            // Calculate all derived values
+            calculateAll() {
+                const activeTab = document.querySelector('.tab-btn.active');
+                if (!activeTab) return;
+                const typeNum = activeTab.dataset.type;
+                const hasDirs = document.getElementById('hasDirections').checked;
+                const directions = hasDirs ? ['FRONT', 'REAR'] : ['SINGLE'];
+
+                this.cabinetDimensions = {};
+
+                for (const dir of directions) {
+                    const dimData = this.collectDimensionData(typeNum, dir);
+                    this.cabinetDimensions[`Type ${typeNum}`] = this.cabinetDimensions[`Type ${typeNum}`] || {};
+                    this.cabinetDimensions[`Type ${typeNum}`][dir] = dimData;
+
+                    this.updateFillPreview(typeNum, dir, dimData);
+                }
+            },
+
+            // Collect dimension data from inputs
+            collectDimensionData(typeNum, dir) {
+                const getInput = (field) => {
+                    const el = document.querySelector(`.dim-input[data-type="${typeNum}"][data-dir="${dir}"][data-field="${field}"]`);
+                    return el ? parseFloat(el.value) || 0 : 0;
+                };
+
+                const data = {
+                    terminal_rail: {
+                        rail_count: getInput('rail_count'),
+                        rail_length_mm: getInput('rail_length_mm'),
+                        top_gap_mm: getInput('top_gap_mm'),
+                        bottom_gap_mm: getInput('bottom_gap_mm'),
+                        terminal_height_mm: getInput('terminal_height_mm'),
+                        jb_gap_mm: getInput('jb_gap_mm')
+                    },
+                    card_column: {
+                        column_count: getInput('column_count'),
+                        column_length_mm: getInput('column_length_mm'),
+                        top_gap_mm: getInput('col_top_gap_mm'),
+                        bottom_gap_mm: getInput('col_bottom_gap_mm'),
+                        reserved_space_mm: getInput('reserved_space_mm'),
+                        card_gap_mm: getInput('card_gap_mm')
+                    }
+                };
+
+                // Side
+                const sideToggle = document.querySelector(`.dim-side-toggle[data-type="${typeNum}"][data-dir="${dir}"]`);
+                if (sideToggle && sideToggle.checked) {
+                    data.side_count = getInput('side_count');
+                    data.side_length_mm = getInput('side_length_mm');
+                }
+
+                return data;
+            },
+
+            // Update fill preview for one type × direction
+            updateFillPreview(typeNum, dir, dimData) {
+                const tr = dimData.terminal_rail;
+                const cc = dimData.card_column;
+
+                // Terminal rail calculation
+                const usableRail = tr.rail_length_mm - tr.top_gap_mm - tr.bottom_gap_mm;
+                const terminalsPerRail = Math.floor(usableRail / tr.terminal_height_mm);
+                const maxTerminals = terminalsPerRail * tr.rail_count;
+
+                const maxTermEl = document.getElementById(`maxTerminals-${typeNum}-${dir}`);
+                const usableRailEl = document.getElementById(`usableRail-${typeNum}-${dir}`);
+                const usableCardEl = document.getElementById(`usableCard-${typeNum}-${dir}`);
+
+                if (maxTermEl) maxTermEl.textContent = maxTerminals;
+                if (usableRailEl) usableRailEl.textContent = `${usableRail.toFixed(0)} mm`;
+                if (usableCardEl) {
+                    const usableCard = cc.column_length_mm - cc.top_gap_mm - cc.bottom_gap_mm - cc.reserved_space_mm;
+                    usableCardEl.textContent = `${usableCard.toFixed(0)} mm`;
+                }
+
+                // Board fill bars
+                const barsContainer = document.getElementById(`boardFillBars-${typeNum}-${dir}`);
+                if (!barsContainer) return;
+
+                const usableCard = cc.column_length_mm - cc.top_gap_mm - cc.bottom_gap_mm - cc.reserved_space_mm;
+                let html = '';
+
+                for (const boardKey of this.boardKeys) {
+                    const cardHeight = this.cardCatalog[boardKey] || 0;
+                    if (cardHeight <= 0) continue;
+
+                    const effectivePitch = cardHeight + cc.card_gap_mm;
+                    const cardsFit = Math.floor(usableCard / effectivePitch);
+                    const totalCards = cardsFit * cc.column_count;
+                    const pct = totalCards > 0 ? (100 / totalCards) : 100;
+                    const fillPct = Math.min(pct * totalCards, 100); // Show as single card fill
+
+                    const shortName = boardKey.replace('Barrier Board ', 'B-').replace('Terminal Board ', 'T-').replace('Relay Board ', 'R-').replace(' capacity', '');
+
+                    const fillClass = pct > 50 ? 'danger' : (pct > 25 ? 'warning' : '');
+
+                    html += `<div class="fill-rail-bar">`;
+                    html += `<span class="fill-rail-label">${shortName} (${cardHeight}mm)</span>`;
+                    html += `<div class="fill-rail-track">`;
+                    html += `<div class="fill-rail-fill ${fillClass}" style="width: ${Math.min(pct, 100)}%;">${pct.toFixed(1)}%</div>`;
+                    html += `</div>`;
+                    html += `<span style="font-size: 0.75rem; color: #666; min-width: 80px;">${cardsFit} fit × ${cc.column_count} = ${totalCards}</span>`;
+                    html += `</div>`;
+                }
+
+                barsContainer.innerHTML = html;
+                CabinetViz.renderEmptyCabinet(typeNum, dir, dimData);
+            },
+
+            // Apply calculated percentages to the existing percentage input fields
+            applyToPercentages() {
+                const activeTab = document.querySelector('.tab-btn.active');
+                if (!activeTab) return;
+                const typeNum = activeTab.dataset.type;
+                const hasDirs = document.getElementById('hasDirections').checked;
+                const directions = hasDirs ? ['front', 'rear'] : ['front'];
+
+                for (const dir of directions) {
+                    const dirUpper = dir.toUpperCase();
+                    const dimData = this.cabinetDimensions[`Type ${typeNum}`]?.[dirUpper];
+                    if (!dimData) continue;
+
+                    const tr = dimData.terminal_rail;
+                    const cc = dimData.card_column;
+
+                    // Calculate max terminals
+                    const usableRail = tr.rail_length_mm - tr.top_gap_mm - tr.bottom_gap_mm;
+                    const maxTerminals = Math.floor(usableRail / tr.terminal_height_mm) * tr.rail_count;
+
+                    // Calculate percentages
+                    const usableCard = cc.column_length_mm - cc.top_gap_mm - cc.bottom_gap_mm - cc.reserved_space_mm;
+
+                    // Find the limit block
+                    const limitBlock = document.getElementById(`limits-type${typeNum}-${dir}`);
+                    if (!limitBlock) continue;
+
+                    // Set Max rail terminals
+                    const railInput = limitBlock.querySelector('input[data-key="Max rail terminals"]');
+                    if (railInput) railInput.value = maxTerminals;
+
+                    // Set each board percentage
+                    for (const boardKey of this.boardKeys) {
+                        const cardHeight = this.cardCatalog[boardKey] || 0;
+                        if (cardHeight <= 0) continue;
+
+                        const effectivePitch = cardHeight + cc.card_gap_mm;
+                        const cardsFit = Math.floor(usableCard / effectivePitch);
+                        const totalCards = cardsFit * cc.column_count;
+                        const pct = Math.floor((100 / totalCards) * 10) / 10;
+
+                        const boardInput = limitBlock.querySelector(`input[data-key="${boardKey}"]`);
+                        if (boardInput) boardInput.value = pct;
+                    }
+                }
+
+                // Flash the limits grid to show it's been updated
+                const limitsGrid = document.querySelector('.limits-grid');
+                if (limitsGrid) {
+                    limitsGrid.style.transition = 'background 0.3s';
+                    limitsGrid.style.background = 'rgba(39, 174, 96, 0.1)';
+                    setTimeout(() => { limitsGrid.style.background = ''; }, 1000);
+                }
+            },
+
+            // Get cabinet_limits for buildConfig() — called by the extended buildConfig
+            getCabinetLimits() {
+                if (!DimensionMode.active) return null;
+
+                // If dimension mode is active, collect all dimensions from all types
+                // and call the backend to derive limits, OR calculate client-side.
+                // For now, we calculate client-side (no API call needed).
+
+                const typeCount = parseInt(document.getElementById('typeCount').value, 10);
+                const hasDirs = document.getElementById('hasDirections').checked;
+                const cabinetLimits = {};
+
+                for (let t = 1; t <= typeCount; t++) {
+                    const directions = hasDirs ? ['FRONT', 'REAR'] : ['SINGLE'];
+
+                    for (const dir of directions) {
+                        const dirLower = dir.toLowerCase();
+                        const dimData = DimensionMode.collectDimensionData(t, dir);
+
+                        if (!dimData.terminal_rail || !dimData.card_column) continue;
+
+                        const tr = dimData.terminal_rail;
+                        const cc = dimData.card_column;
+
+                        // Calculate
+                        const usableRail = tr.rail_length_mm - tr.top_gap_mm - tr.bottom_gap_mm;
+                        const maxTerminals = Math.floor(usableRail / tr.terminal_height_mm) * tr.rail_count;
+
+                        const usableCard = cc.column_length_mm - cc.top_gap_mm - cc.bottom_gap_mm - cc.reserved_space_mm;
+
+                        const limits = {
+                            "Max_Total_Boards": 100,
+                            "Max rail terminals": maxTerminals
+                        };
+
+                        for (const boardKey of DimensionMode.boardKeys) {
+                            const cardHeight = DimensionMode.cardCatalog[boardKey] || 0;
+                            if (cardHeight <= 0) {
+                                limits[boardKey] = 14.3;
+                                continue;
+                            }
+                            const effectivePitch = cardHeight + cc.card_gap_mm;
+                            const cardsFit = Math.floor(usableCard / effectivePitch);
+                            const totalCards = cardsFit * cc.column_count;
+                            limits[boardKey] = totalCards > 0 ? Math.floor((100 / totalCards) * 10) / 10 : 100;
+                        }
+
+                        cabinetLimits[`Type ${t}|${dir}`] = limits;
+                    }
+                }
+
+                return cabinetLimits;
+            }
+        };
+
+        // ═══════════════════════════════════════════════════════════════
+        // PHASE B v4 — CabinetViz (Engineer-Accurate, BIG 2D + 3D)
+        // Improvements:
+        //   • 2D layout is BIGGER (700x520 canvas) — details clearly visible
+        //   • When col_count >= 2, card columns split LEFT + RIGHT of rails
+        //   • All dimension text positioned ABOVE/LEFT of lines (never on)
+        //   • Compact settings box (inputs side-by-side, no overflow)
+        // ═══════════════════════════════════════════════════════════════
+
+        const CabinetViz = {
+            defaultCardCatalog: {
+                "Barrier Board (AI)": 75, "Barrier Board (AO)": 75,
+                "Barrier Board (DI)": 45, "Barrier Board (DO)": 45,
+                "Terminal Board (AI)": 60, "Terminal Board (AO)": 60,
+                "Terminal Board (DI)": 45, "Terminal Board (DO)": 45,
+                "Relay Board AI capacity": 90, "Relay Board AO capacity": 90,
+                "Relay Board DI capacity": 90, "Relay Board DO capacity": 90
+            },
+            cardColors: {
+                "Barrier Board (AI)": "#f59e0b", "Barrier Board (AO)": "#f59e0b",
+                "Barrier Board (DI)": "#1f2937", "Barrier Board (DO)": "#1f2937",
+                "Terminal Board (AI)": "#f59e0b", "Terminal Board (AO)": "#f59e0b",
+                "Terminal Board (DI)": "#1f2937", "Terminal Board (DO)": "#1f2937",
+                "Relay Board AI capacity": "#e5e7eb", "Relay Board AO capacity": "#e5e7eb",
+                "Relay Board DI capacity": "#e5e7eb", "Relay Board DO capacity": "#e5e7eb"
+            },
+            getCardCatalog() {
+                return (typeof DimensionMode !== 'undefined' && DimensionMode.cardCatalog)
+                    ? DimensionMode.cardCatalog : this.defaultCardCatalog;
+            },
+            getBoardKeys() {
+                return (typeof DimensionMode !== 'undefined' && DimensionMode.boardKeys)
+                    ? DimensionMode.boardKeys : Object.keys(this.defaultCardCatalog);
+            },
+
+            // ─────────────────────────────────────────────────────
+            // B2 — EMPTY CABINET PREVIEW (BIG 2D + 3D side-by-side)
+            // ─────────────────────────────────────────────────────
+            renderEmptyCabinet(typeNum, dir, dimData) {
+                const container = document.getElementById(`emptyCabinetPreview-${typeNum}-${dir}`);
+                if (!container) return;
+                const tr = dimData.terminal_rail;
+                const cc = dimData.card_column;
+                if (!tr || !cc) return;
+
+                const railUsable = tr.rail_length_mm - tr.top_gap_mm - tr.bottom_gap_mm;
+                const cardUsable = cc.column_length_mm - cc.top_gap_mm - cc.bottom_gap_mm - cc.reserved_space_mm;
+                if (railUsable <= 0 || cardUsable <= 0) {
+                    container.innerHTML = `<div style="padding:10px;border-radius:6px;background:rgba(246,84,106,0.1);border:1px solid var(--danger);color:var(--danger);font-size:0.78rem;"><i class="fas fa-triangle-exclamation"></i> Invalid dimensions.</div>`;
+                    return;
+                }
+
+                const isFa = currentLang === 'fa';
+                container.innerHTML = `
+                    <div class="cviz-empty-grid">
+                        <div class="cviz-pane">
+                            <div class="cviz-pane-title"><i class="fas fa-vector-square"></i><span>${isFa ? 'نمای روبرو (مهندسی)' : 'Front View (Engineering)'}</span></div>
+                            ${this._renderEmptyFront2D(typeNum, dir, dimData, railUsable, cardUsable)}
+                        </div>
+                        <div class="cviz-pane">
+                            <div class="cviz-pane-title"><i class="fas fa-cube"></i><span>${isFa ? 'نمای سه‌بعدی' : '3D View'}</span></div>
+                            ${this._renderEmptyIso3D(typeNum, dir, dimData)}
+                            <div class="cviz-iso-info" id="cvizIsoInfo-${typeNum}-${dir}">
+                                <span class="cviz-iso-info-icon"><i class="fas fa-info-circle"></i></span>
+                                <span>${isFa ? 'روی هر بخش بروید' : 'Hover any section'}</span>
+                            </div>
+                        </div>
+                    </div>`;
+                this._attachIsoHover(typeNum, dir, dimData, railUsable, cardUsable);
+            },
+
+            // ── BIG 2D Front View — Engineer-accurate, readable ──
+            _renderEmptyFront2D(typeNum, dir, dimData, railUsable, cardUsable) {
+                const tr = dimData.terminal_rail;
+                const cc = dimData.card_column;
+                const hasSide = dimData.side_count && dimData.side_length_mm;
+
+                // BIG canvas: 700 × 520
+                const W = 700, H = 520;
+                const cabH_mm = tr.rail_length_mm;
+                const leftSide_mm = hasSide ? 60 : 0;
+                const rightSide_mm = hasSide ? 60 : 0;
+                const mainW_mm = 400;
+                const totalW_mm = leftSide_mm + mainW_mm + rightSide_mm;
+
+                // Scale — make it BIG
+                const scaleW = (W - 100) / totalW_mm;
+                const scaleH = (H - 80) / cabH_mm;
+                const scale = Math.min(scaleW, scaleH, 0.26);
+
+                const cabW = totalW_mm * scale;
+                const cabH = cabH_mm * scale;
+                const leftW = leftSide_mm * scale;
+                const rightW = rightSide_mm * scale;
+                const mainW = mainW_mm * scale;
+
+                // Centered with room for dimension lines
+                const ox = (W - cabW) / 2;
+                const oy = 40;
+
+                let svg = `<svg viewBox="0 0 ${W} ${H}" class="cviz-svg cviz-svg-2d" preserveAspectRatio="xMidYMid meet">`;
+
+                // Title
+                svg += `<text x="${W / 2}" y="20" text-anchor="middle" font-size="13" fill="var(--text)" font-weight="700">CABINET TYPE ${typeNum} — ${dir} (${tr.rail_length_mm}mm)</text>`;
+
+                // ── Cabinet outer frame ──
+                svg += `<rect x="${ox}" y="${oy}" width="${cabW}" height="${cabH}" fill="var(--bg-card)" stroke="var(--text)" stroke-width="1.5"/>`;
+
+                // ── Section dividers ──
+                if (hasSide) {
+                    svg += `<line x1="${ox + leftW}" y1="${oy}" x2="${ox + leftW}" y2="${oy + cabH}" stroke="var(--text)" stroke-width="0.8" stroke-dasharray="4,3"/>`;
+                    svg += `<line x1="${ox + leftW + mainW}" y1="${oy}" x2="${ox + leftW + mainW}" y2="${oy + cabH}" stroke="var(--text)" stroke-width="0.8" stroke-dasharray="4,3"/>`;
+                    svg += `<text x="${ox + leftW / 2}" y="${oy + cabH + 16}" text-anchor="middle" font-size="9" fill="var(--muted)" font-weight="600">LEFT SIDE</text>`;
+                    svg += `<text x="${ox + leftW + mainW + rightW / 2}" y="${oy + cabH + 16}" text-anchor="middle" font-size="9" fill="var(--muted)" font-weight="600">RIGHT SIDE</text>`;
+                }
+                svg += `<text x="${ox + leftW + mainW / 2}" y="${oy + cabH + 16}" text-anchor="middle" font-size="10" fill="var(--accent)" font-weight="700">FRONT — TYPE ${typeNum}</text>`;
+
+                // ── Power band at top (230 VAC + 24 VDC) ──
+                const powerBandH = 40;
+                const vacH = 20;
+                const vdcH = 20;
+                svg += `<rect x="${ox + leftW + 3}" y="${oy + 3}" width="${mainW - 6}" height="${vacH}" fill="#dc2626" fill-opacity="0.22" stroke="var(--danger)" stroke-width="0.5" rx="2"/>`;
+                svg += `<text x="${ox + leftW + mainW / 2}" y="${oy + 3 + vacH / 2 + 4}" text-anchor="middle" font-size="10" fill="var(--danger)" font-weight="700">230 VAC</text>`;
+                svg += `<rect x="${ox + leftW + 3}" y="${oy + 3 + vacH}" width="${mainW - 6}" height="${vdcH}" fill="#2563eb" fill-opacity="0.22" stroke="var(--accent-2)" stroke-width="0.5" rx="2"/>`;
+                svg += `<text x="${ox + leftW + mainW / 2}" y="${oy + 3 + vacH + vdcH / 2 + 4}" text-anchor="middle" font-size="10" fill="var(--accent-2)" font-weight="700">24 VDC</text>`;
+
+                // ── Calculate rail area ──
+                const topGapStart = oy + powerBandH;
+                const topGapH = tr.top_gap_mm * scale;
+                const botGapH = tr.bottom_gap_mm * scale;
+                const railTop = topGapStart + topGapH;
+                const railBot = oy + cabH - botGapH;
+                const railH = railBot - railTop;
+
+                // ── CARD COLUMNS — split LEFT + RIGHT when col_count >= 2 ──
+                const colCount = cc.column_count || 1;
+                let leftColW = 0, rightColW = 0;
+                let railAreaStartX, railAreaW;
+
+                if (colCount >= 2) {
+                    // Split: left col + rails + right col
+                    const colTotalW = mainW * 0.45;  // 45% for cards (split in 2)
+                    leftColW = colTotalW / 2;
+                    rightColW = colTotalW / 2;
+                    railAreaW = mainW - colTotalW - 16;  // 55% for rails, with gaps
+                    railAreaStartX = ox + leftW + 8 + leftColW + 8;
+                } else {
+                    // Single column: rails left (60%), card column right (40%)
+                    railAreaW = mainW * 0.6;
+                    railAreaStartX = ox + leftW + 4;
+                    rightColW = mainW * 0.35;
+                }
+
+                // ── Left Card Column (when col_count >= 2) ──
+                if (colCount >= 2) {
+                    const lcx = ox + leftW + 8;
+                    svg += `<rect x="${lcx}" y="${railTop}" width="${leftColW}" height="${railH}" fill="var(--bg-soft)" stroke="var(--accent-2)" stroke-width="0.8" stroke-dasharray="4,3" rx="2"/>`;
+                    svg += `<text x="${lcx + leftColW / 2}" y="${railTop - 5}" text-anchor="middle" font-size="8" fill="var(--accent-2)" font-weight="700">CARD COL L</text>`;
+                    // Card fit summary
+                    const cardCatalog = this.getCardCatalog();
+                    const boardKeys = this.getBoardKeys();
+                    let yC = railTop + 12;
+                    for (const bk of boardKeys) {
+                        const ch = cardCatalog[bk] || 0;
+                        if (ch <= 0) continue;
+                        const eff = ch + cc.card_gap_mm;
+                        const fit = Math.floor(cardUsable / eff);
+                        const total = fit * Math.ceil(colCount / 2);
+                        const sn = bk.replace('Barrier Board ', 'B-').replace('Terminal Board ', 'T-').replace('Relay Board ', 'R-').replace(' capacity', '');
+                        if (yC < railBot - 8) {
+                            svg += `<text x="${lcx + 4}" y="${yC}" text-anchor="start" font-size="8" fill="var(--text)">${sn}: ${total}</text>`;
+                            yC += 11;
+                        }
+                    }
+                    // Reserved space
+                    if (cc.reserved_space_mm > 0) {
+                        const resH = cc.reserved_space_mm * scale;
+                        const resY = railBot - resH;
+                        svg += `<rect x="${lcx}" y="${resY}" width="${leftColW}" height="${resH}" fill="var(--danger)" fill-opacity="0.2" stroke="var(--danger)" stroke-width="0.5" stroke-dasharray="2,2"/>`;
+                        svg += `<text x="${lcx + leftColW / 2}" y="${resY + resH / 2 + 3}" text-anchor="middle" font-size="7" fill="var(--danger)" font-weight="600">RES</text>`;
+                    }
+                    svg += `<text x="${lcx + leftColW / 2}" y="${railBot + 14}" text-anchor="middle" font-size="8" fill="var(--muted)" font-weight="600">LEFT (${cardUsable.toFixed(0)}mm)</text>`;
+                }
+
+                // ── DIN Rails (vertical thin lines) ──
+                const railStripW = railAreaW / tr.rail_count;
+                for (let i = 0; i < tr.rail_count; i++) {
+                    const rx = railAreaStartX + i * railStripW;
+                    const rw = railStripW - 3;
+
+                    // Rail body
+                    svg += `<rect x="${rx}" y="${railTop}" width="${rw}" height="${railH}" fill="var(--bg-strong)" stroke="var(--muted)" stroke-width="0.6" rx="1"/>`;
+
+                    // Rail label
+                    svg += `<text x="${rx + rw / 2}" y="${railTop - 4}" text-anchor="middle" font-size="8" fill="var(--muted)" font-weight="700">R${i + 1}</text>`;
+
+                    // Terminal block markers
+                    const termPitch = tr.terminal_height_mm * scale;
+                    if (termPitch >= 1.5) {
+                        const termCount = Math.floor(railH / termPitch);
+                        for (let j = 0; j < termCount; j++) {
+                            const ty = railTop + j * termPitch;
+                            // Terminal block — small rectangle
+                            svg += `<rect x="${rx + 1}" y="${ty}" width="${rw - 2}" height="${Math.min(termPitch - 0.4, 3)}" fill="var(--muted)" fill-opacity="0.7"/>`;
+                        }
+                        // Every 10th — accent line
+                        for (let j = 0; j < termCount; j += 10) {
+                            const ty = railTop + j * termPitch;
+                            svg += `<line x1="${rx - 1}" y1="${ty}" x2="${rx + rw + 1}" y2="${ty}" stroke="var(--accent)" stroke-width="0.6"/>`;
+                        }
+                    } else {
+                        svg += `<rect x="${rx}" y="${railTop}" width="${rw}" height="${railH}" fill="var(--muted)" fill-opacity="0.35"/>`;
+                        const termCount = Math.floor(railUsable / tr.terminal_height_mm);
+                        svg += `<text x="${rx + rw / 2}" y="${railTop + railH / 2}" text-anchor="middle" font-size="7" fill="var(--muted)" transform="rotate(-90 ${rx + rw / 2} ${railTop + railH / 2})">${termCount}</text>`;
+                    }
+                }
+
+                // Rails section label
+                svg += `<text x="${railAreaStartX + railAreaW / 2}" y="${railBot + 14}" text-anchor="middle" font-size="9" fill="var(--accent)" font-weight="700">DIN RAILS (${tr.rail_count})</text>`;
+
+                // ── Right Card Column ──
+                let rcx, rcw;
+                if (colCount >= 2) {
+                    rcx = railAreaStartX + railAreaW + 8;
+                    rcw = rightColW;
+                } else {
+                    rcx = railAreaStartX + railAreaW + 5;
+                    rcw = rightColW;
+                }
+                svg += `<rect x="${rcx}" y="${railTop}" width="${rcw}" height="${railH}" fill="var(--bg-soft)" stroke="var(--accent-2)" stroke-width="0.8" stroke-dasharray="4,3" rx="2"/>`;
+                svg += `<text x="${rcx + rcw / 2}" y="${railTop - 5}" text-anchor="middle" font-size="8" fill="var(--accent-2)" font-weight="700">${colCount >= 2 ? 'CARD COL R' : 'CARD COL'}</text>`;
+
+                // Card fit summary in right column
+                const cardCatalog = this.getCardCatalog();
+                const boardKeys = this.getBoardKeys();
+                let yC2 = railTop + 12;
+                for (const bk of boardKeys) {
+                    const ch = cardCatalog[bk] || 0;
+                    if (ch <= 0) continue;
+                    const eff = ch + cc.card_gap_mm;
+                    const fit = Math.floor(cardUsable / eff);
+                    const halfCol = colCount >= 2 ? Math.ceil(colCount / 2) : colCount;
+                    const total = fit * halfCol;
+                    const sn = bk.replace('Barrier Board ', 'B-').replace('Terminal Board ', 'T-').replace('Relay Board ', 'R-').replace(' capacity', '');
+                    if (yC2 < railBot - 8) {
+                        svg += `<text x="${rcx + 4}" y="${yC2}" text-anchor="start" font-size="8" fill="var(--text)">${sn}: ${total}</text>`;
+                        yC2 += 11;
+                    }
+                }
+                // Reserved space in right column
+                if (cc.reserved_space_mm > 0) {
+                    const resH = cc.reserved_space_mm * scale;
+                    const resY = railBot - resH;
+                    svg += `<rect x="${rcx}" y="${resY}" width="${rcw}" height="${resH}" fill="var(--danger)" fill-opacity="0.2" stroke="var(--danger)" stroke-width="0.5" stroke-dasharray="2,2"/>`;
+                    svg += `<text x="${rcx + rcw / 2}" y="${resY + resH / 2 + 3}" text-anchor="middle" font-size="7" fill="var(--danger)" font-weight="600">RES</text>`;
+                }
+                svg += `<text x="${rcx + rcw / 2}" y="${railBot + 14}" text-anchor="middle" font-size="8" fill="var(--muted)" font-weight="600">${colCount >= 2 ? 'RIGHT' : 'CARDS'} (${cardUsable.toFixed(0)}mm)</text>`;
+
+                // ── Side panels (hatched) ──
+                if (hasSide) {
+                    svg += `<rect x="${ox + 3}" y="${oy + 3}" width="${leftW - 6}" height="${cabH - 6}" fill="var(--bg-strong)" fill-opacity="0.5" stroke="var(--muted)" stroke-width="0.4" stroke-dasharray="3,2"/>`;
+                    svg += `<text x="${ox + leftW / 2}" y="${oy + cabH / 2}" text-anchor="middle" font-size="8" fill="var(--muted)" transform="rotate(-90 ${ox + leftW / 2} ${oy + cabH / 2})">SIDE × ${dimData.side_count}</text>`;
+                    svg += `<rect x="${ox + leftW + mainW + 3}" y="${oy + 3}" width="${rightW - 6}" height="${cabH - 6}" fill="var(--bg-strong)" fill-opacity="0.5" stroke="var(--muted)" stroke-width="0.4" stroke-dasharray="3,2"/>`;
+                    svg += `<text x="${ox + leftW + mainW + rightW / 2}" y="${oy + cabH / 2}" text-anchor="middle" font-size="8" fill="var(--muted)" transform="rotate(-90 ${ox + leftW + mainW + rightW / 2} ${oy + cabH / 2})">SIDE × ${dimData.side_count}</text>`;
+                }
+
+                // ── DIMENSION LINES (text NEVER on lines) ──
+                // Left: total height
+                const dimLx = ox - 25;
+                svg += `<line x1="${dimLx}" y1="${oy}" x2="${dimLx}" y2="${oy + cabH}" stroke="var(--muted)" stroke-width="0.7"/>`;
+                svg += `<path d="M${dimLx-3},${oy+4} L${dimLx},${oy} L${dimLx+3},${oy+4}" fill="none" stroke="var(--muted)" stroke-width="0.7"/>`;
+                svg += `<path d="M${dimLx-3},${oy+cabH-4} L${dimLx},${oy+cabH} L${dimLx+3},${oy+cabH-4}" fill="none" stroke="var(--muted)" stroke-width="0.7"/>`;
+                svg += `<text x="${dimLx - 8}" y="${oy + cabH / 2}" text-anchor="middle" font-size="11" fill="var(--text)" font-weight="700" transform="rotate(-90 ${dimLx - 8} ${oy + cabH / 2})">${tr.rail_length_mm}mm</text>`;
+
+                // Top gap dimension
+                const dimLx2 = ox - 12;
+                svg += `<line x1="${dimLx2}" y1="${oy}" x2="${dimLx2}" y2="${railTop}" stroke="var(--muted)" stroke-width="0.4"/>`;
+                svg += `<text x="${dimLx2 - 4}" y="${(oy + railTop) / 2 + 3}" text-anchor="end" font-size="8" fill="var(--muted)">${tr.top_gap_mm}</text>`;
+
+                // Bottom gap dimension
+                svg += `<line x1="${dimLx2}" y1="${railBot}" x2="${dimLx2}" y2="${oy + cabH}" stroke="var(--muted)" stroke-width="0.4"/>`;
+                svg += `<text x="${dimLx2 - 4}" y="${(railBot + oy + cabH) / 2 + 3}" text-anchor="end" font-size="8" fill="var(--muted)">${tr.bottom_gap_mm}</text>`;
+
+                // Top: total width
+                const dimTy = oy - 15;
+                svg += `<line x1="${ox}" y1="${dimTy}" x2="${ox + cabW}" y2="${dimTy}" stroke="var(--muted)" stroke-width="0.7"/>`;
+                svg += `<path d="M${ox+4},${dimTy-3} L${ox},${dimTy} L${ox+4},${dimTy+3}" fill="none" stroke="var(--muted)" stroke-width="0.7"/>`;
+                svg += `<path d="M${ox+cabW-4},${dimTy-3} L${ox+cabW},${dimTy} L${ox+cabW-4},${dimTy+3}" fill="none" stroke="var(--muted)" stroke-width="0.7"/>`;
+                svg += `<text x="${ox + cabW / 2}" y="${dimTy - 5}" text-anchor="middle" font-size="11" fill="var(--text)" font-weight="700">${totalW_mm}mm</text>`;
+
+                // Section widths
+                if (hasSide) {
+                    const dimTy2 = oy - 5;
+                    svg += `<line x1="${ox}" y1="${dimTy2}" x2="${ox + leftW}" y2="${dimTy2}" stroke="var(--muted)" stroke-width="0.4"/>`;
+                    svg += `<text x="${ox + leftW / 2}" y="${dimTy2 - 3}" text-anchor="middle" font-size="8" fill="var(--muted)">${leftSide_mm}</text>`;
+                    svg += `<line x1="${ox + leftW + mainW}" y1="${dimTy2}" x2="${ox + cabW}" y2="${dimTy2}" stroke="var(--muted)" stroke-width="0.4"/>`;
+                    svg += `<text x="${ox + leftW + mainW + rightW / 2}" y="${dimTy2 - 3}" text-anchor="middle" font-size="8" fill="var(--muted)">${rightSide_mm}</text>`;
+                }
+
+                // Card column count badge (top right of cabinet)
+                svg += `<rect x="${ox + cabW - 70}" y="${oy + 5}" width="65" height="20" fill="var(--accent)" fill-opacity="0.18" stroke="var(--accent)" stroke-width="0.6" rx="3"/>`;
+                svg += `<text x="${ox + cabW - 37.5}" y="${oy + 19}" text-anchor="middle" font-size="9" fill="var(--accent)" font-weight="700">COL × ${colCount}</text>`;
+
+                svg += `</svg>`;
+                return svg;
+            },
+
+            // ── 3D Isometric (compact, all faces) ──
+            _renderEmptyIso3D(typeNum, dir, dimData) {
+                const W = 280, H = 220;
+                const cabW = 150, cabH = 130, cabD = 60;
+                const iso = (x, y, z) => ({
+                    x: (x - z) * 0.866,
+                    y: y * 0.95 - (x + z) * 0.5 * 0.5
+                });
+                const ox = 80, oy = 30;
+                const A = (p) => ({ x: ox + p.x, y: oy + p.y });
+
+                const c000 = A(iso(0, 0, 0)), c100 = A(iso(cabW, 0, 0));
+                const c110 = A(iso(cabW, cabH, 0)), c010 = A(iso(0, cabH, 0));
+                const c001 = A(iso(0, 0, cabD)), c101 = A(iso(cabW, 0, cabD));
+                const c111 = A(iso(cabW, cabH, cabD)), c011 = A(iso(0, cabH, cabD));
+
+                let svg = `<svg viewBox="0 0 ${W} ${H}" class="cviz-svg cviz-svg-3d" preserveAspectRatio="xMidYMid meet">`;
+
+                // Shadow
+                svg += `<ellipse cx="${(c010.x + c111.x) / 2}" cy="${c010.y + 4}" rx="${(c111.x - c010.x) / 2 + 8}" ry="5" fill="var(--text)" opacity="0.18"/>`;
+
+                // Faces
+                svg += `<polygon class="cviz-iso-face cviz-iso-top" data-zone="top" points="${c000.x},${c000.y} ${c100.x},${c100.y} ${c101.x},${c101.y} ${c001.x},${c001.y}"/>`;
+                svg += `<polygon class="cviz-iso-face cviz-iso-left" data-zone="leftside" points="${c000.x},${c000.y} ${c010.x},${c010.y} ${c011.x},${c011.y} ${c001.x},${c001.y}"/>`;
+                svg += `<polygon class="cviz-iso-face cviz-iso-right" data-zone="rightside" points="${c100.x},${c100.y} ${c110.x},${c110.y} ${c111.x},${c111.y} ${c101.x},${c101.y}"/>`;
+                svg += `<polygon class="cviz-iso-face cviz-iso-front" data-zone="front" points="${c010.x},${c010.y} ${c110.x},${c110.y} ${c111.x},${c111.y} ${c011.x},${c011.y}"/>`;
+
+                // Power band on front face
+                const fbTop = 0.08, fbBot = 0.22;
+                const p1 = A(iso(0.05 * cabW, fbTop * cabH, 0));
+                const p2 = A(iso(0.95 * cabW, fbTop * cabH, 0));
+                const p3 = A(iso(0.95 * cabW, fbBot * cabH, 0));
+                const p4 = A(iso(0.05 * cabW, fbBot * cabH, 0));
+                svg += `<polygon class="cviz-iso-zone" data-zone="power" fill="var(--danger)" fill-opacity="0.4" stroke="var(--danger)" stroke-width="0.5" points="${p1.x},${p1.y} ${p2.x},${p2.y} ${p3.x},${p3.y} ${p4.x},${p4.y}"/>`;
+
+                // Card columns — show split when col_count >= 2
+                const cc = dimData.card_column;
+                const colCount = cc.column_count || 1;
+                if (colCount >= 2) {
+                    // Left card column
+                    const l1 = A(iso(0.06 * cabW, 0.28 * cabH, 0));
+                    const l2 = A(iso(0.28 * cabW, 0.28 * cabH, 0));
+                    const l3 = A(iso(0.28 * cabW, 0.92 * cabH, 0));
+                    const l4 = A(iso(0.06 * cabW, 0.92 * cabH, 0));
+                    svg += `<polygon class="cviz-iso-zone" data-zone="cardcol-left" fill="var(--accent-2)" fill-opacity="0.22" stroke="var(--accent-2)" stroke-width="0.5" stroke-dasharray="2,1.5" points="${l1.x},${l1.y} ${l2.x},${l2.y} ${l3.x},${l3.y} ${l4.x},${l4.y}"/>`;
+
+                    // Right card column
+                    const r1 = A(iso(0.72 * cabW, 0.28 * cabH, 0));
+                    const r2 = A(iso(0.94 * cabW, 0.28 * cabH, 0));
+                    const r3 = A(iso(0.94 * cabW, 0.92 * cabH, 0));
+                    const r4 = A(iso(0.72 * cabW, 0.92 * cabH, 0));
+                    svg += `<polygon class="cviz-iso-zone" data-zone="cardcol-right" fill="var(--accent-2)" fill-opacity="0.22" stroke="var(--accent-2)" stroke-width="0.5" stroke-dasharray="2,1.5" points="${r1.x},${r1.y} ${r2.x},${r2.y} ${r3.x},${r3.y} ${r4.x},${r4.y}"/>`;
+                } else {
+                    // Single card column
+                    const cc1 = A(iso(0.6 * cabW, 0.28 * cabH, 0));
+                    const cc2 = A(iso(0.94 * cabW, 0.28 * cabH, 0));
+                    const cc3 = A(iso(0.94 * cabW, 0.92 * cabH, 0));
+                    const cc4 = A(iso(0.6 * cabW, 0.92 * cabH, 0));
+                    svg += `<polygon class="cviz-iso-zone" data-zone="cardcol" fill="var(--accent-2)" fill-opacity="0.22" stroke="var(--accent-2)" stroke-width="0.5" stroke-dasharray="2,1.5" points="${cc1.x},${cc1.y} ${cc2.x},${cc2.y} ${cc3.x},${cc3.y} ${cc4.x},${cc4.y}"/>`;
+                }
+
+                // Rails zone
+                const r1 = A(iso(0.32 * cabW, 0.28 * cabH, 0));
+                const r2 = A(iso(0.68 * cabW, 0.28 * cabH, 0));
+                const r3 = A(iso(0.68 * cabW, 0.92 * cabH, 0));
+                const r4 = A(iso(0.32 * cabW, 0.92 * cabH, 0));
+                svg += `<polygon class="cviz-iso-zone" data-zone="rails" fill="var(--accent)" fill-opacity="0.25" stroke="var(--accent)" stroke-width="0.5" points="${r1.x},${r1.y} ${r2.x},${r2.y} ${r3.x},${r3.y} ${r4.x},${r4.y}"/>`;
+
+                // Labels
+                svg += `<text x="${(c000.x + c101.x) / 2}" y="${(c000.y + c001.y) / 2 + 2}" text-anchor="middle" font-size="8" fill="var(--muted)" font-weight="600">TOP/FAN</text>`;
+                svg += `<text x="${(c010.x + c011.x) / 2 - 8}" y="${(c010.y + c011.y) / 2 + 2}" text-anchor="middle" font-size="7" fill="var(--muted)" font-weight="600" transform="rotate(-90 ${(c010.x + c011.x) / 2 - 8} ${(c010.y + c011.y) / 2 + 2})">L SIDE</text>`;
+                svg += `<text x="${(c100.x + c101.x) / 2 + 8}" y="${(c100.y + c101.y) / 2 + 2}" text-anchor="middle" font-size="7" fill="var(--muted)" font-weight="600" transform="rotate(90 ${(c100.x + c101.x) / 2 + 8} ${(c100.y + c101.y) / 2 + 2})">R SIDE</text>`;
+                svg += `<text x="${(c010.x + c111.x) / 2}" y="${c110.y + 14}" text-anchor="middle" font-size="9" fill="var(--accent)" font-weight="700">${dir}</text>`;
+                svg += `<text x="${(c010.x + c111.x) / 2}" y="${c110.y + 24}" text-anchor="middle" font-size="7" fill="var(--muted)">TYPE ${typeNum} · COL × ${colCount}</text>`;
+
+                svg += `</svg>`;
+                return svg;
+            },
+
+            // ── Attach hover to 3D zones ──
+            _attachIsoHover(typeNum, dir, dimData, railUsable, cardUsable) {
+                const container = document.getElementById(`emptyCabinetPreview-${typeNum}-${dir}`);
+                if (!container) return;
+                const infoText = container.querySelector('.cviz-iso-info span:last-child');
+                if (!infoText) return;
+
+                const tr = dimData.terminal_rail;
+                const cc = dimData.card_column;
+                const isFa = currentLang === 'fa';
+                const colCount = cc.column_count || 1;
+
+                const zones = {
+                    'top': { icon: 'fa-fan', t: isFa ? 'سقف کابینت' : 'Cabinet Top', d: isFa ? `فن و تهویه. ارتفاع: ${tr.rail_length_mm}mm` : `Fan & ventilation. Height: ${tr.rail_length_mm}mm` },
+                    'leftside': { icon: 'fa-square', t: isFa ? 'پنل چپ' : 'Left Side Panel', d: isFa ? 'دسترسی جانبی چپ' : 'Left side access panel' },
+                    'rightside': { icon: 'fa-square', t: isFa ? 'پنل راست' : 'Right Side Panel', d: isFa ? 'دسترسی جانبی راست' : 'Right side access panel' },
+                    'front': { icon: 'fa-square', t: isFa ? 'پنل جلو' : 'Front Panel', d: isFa ? `دسترسی ${dir}. شامل ریل و کارت` : `${dir} access. Rails + cards` },
+                    'power': { icon: 'fa-bolt', t: isFa ? 'باند توان' : 'Power Band', d: isFa ? '۲۳۰ VAC و ۲۴ VDC' : '230 VAC + 24 VDC' },
+                    'rails': { icon: 'fa-grip-vertical', t: isFa ? `ریل‌های DIN (${tr.rail_count})` : `DIN Rails (${tr.rail_count})`, d: isFa ? `${Math.floor(railUsable / tr.terminal_height_mm) * tr.rail_count} ترمینال` : `${Math.floor(railUsable / tr.terminal_height_mm) * tr.rail_count} terminals` },
+                    'cardcol': { icon: 'fa-microchip', t: isFa ? 'ستون کارت I/O' : 'I/O Card Column', d: isFa ? `قابل استفاده: ${cardUsable.toFixed(0)}mm × ${colCount}` : `Usable: ${cardUsable.toFixed(0)}mm × ${colCount}` },
+                    'cardcol-left': { icon: 'fa-microchip', t: isFa ? 'ستون کارت چپ' : 'Left Card Column', d: isFa ? `قابل استفاده: ${cardUsable.toFixed(0)}mm × ${Math.ceil(colCount/2)}` : `Usable: ${cardUsable.toFixed(0)}mm × ${Math.ceil(colCount/2)}` },
+                    'cardcol-right': { icon: 'fa-microchip', t: isFa ? 'ستون کارت راست' : 'Right Card Column', d: isFa ? `قابل استفاده: ${cardUsable.toFixed(0)}mm × ${Math.floor(colCount/2)}` : `Usable: ${cardUsable.toFixed(0)}mm × ${Math.floor(colCount/2)}` }
+                };
+
+                container.querySelectorAll('[data-zone]').forEach(zone => {
+                    zone.addEventListener('mouseenter', () => {
+                        const z = zone.dataset.zone;
+                        const info = zones[z];
+                        if (!info) return;
+                        infoText.innerHTML = `<strong><i class="fas ${info.icon}"></i> ${info.t}</strong> — ${info.d}`;
+                    });
+                    zone.addEventListener('mouseleave', () => {
+                        infoText.innerHTML = isFa ? 'روی هر بخش بروید' : 'Hover any section';
+                    });
+                });
+            },
+
+            // ─────────────────────────────────────────────────────
+            // B3 — FILLED CABINET PHYSICAL VIEW (BIG 2D + 3D)
+            // ─────────────────────────────────────────────────────
+            renderPhysicalCabinet(cab) {
+                const wrapper = document.getElementById('physicalCabinetViewWrapper');
+                const container = document.getElementById('physicalCabinetView');
+                const titleEl = document.getElementById('physicalViewTitle');
+                if (!wrapper || !container) return;
+
+                const boards = cab.boards || [];
+                if (!boards.length) {
+                    wrapper.style.display = 'none';
+                    container.innerHTML = '';
+                    return;
+                }
+
+                const isFa = currentLang === 'fa';
+                if (titleEl) {
+                    titleEl.innerHTML = `<i class="fas fa-cube"></i> ${isFa ? 'چیدمان فیزیکی کابینت' : 'Physical Layout'}`;
+                }
+
+                const cardCatalog = this.getCardCatalog();
+                const cardGap = 2;
+                let totalCardHeight = 0;
+                const placed = boards.map(b => {
+                    const h = cardCatalog[b.board_type] || 60;
+                    const p = { ...b, _h: h, _y: totalCardHeight };
+                    totalCardHeight += h + cardGap;
+                    return p;
+                });
+
+                container.innerHTML = `
+                    <div class="cviz-filled-grid">
+                        <div class="cviz-pane">
+                            <div class="cviz-pane-title"><i class="fas fa-vector-square"></i><span>${isFa ? 'نمای روبرو' : 'Front View'}</span></div>
+                            ${this._renderFilledFront2D(cab, placed, totalCardHeight, cardGap)}
+                        </div>
+                        <div class="cviz-pane">
+                            <div class="cviz-pane-title"><i class="fas fa-cube"></i><span>${isFa ? 'نمای سه‌بعدی' : '3D View'}</span></div>
+                            ${this._renderFilledIso3D(cab, placed, totalCardHeight, cardGap)}
+                            <div class="cviz-iso-info" id="cvizFilledIsoInfo">
+                                <span class="cviz-iso-info-icon"><i class="fas fa-info-circle"></i></span>
+                                <span>${isFa ? 'روی کارت بروید' : 'Hover any card'}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="cviz-stats-row">${this._renderStats(cab, placed, isFa)}</div>`;
+
+                wrapper.style.display = 'block';
+                this._attachFilledHover(placed, cab);
+                this._attachFilledIsoHover(placed, cab, isFa);
+            },
+
+            // ── Filled 2D Front View (BIG, readable) ──
+            _renderFilledFront2D(cab, placed, totalH, cardGap) {
+                const W = 700, H = 520;
+                const scale = Math.min((H - 80) / totalH, 0.4, (W - 100) / 250);
+                const cabW = 250;
+                const cabH = totalH * scale;
+                const ox = (W - cabW) / 2;
+                const oy = 40;
+
+                let svg = `<svg viewBox="0 0 ${W} ${H}" class="cviz-svg cviz-svg-2d" preserveAspectRatio="xMidYMid meet">`;
+
+                // Title
+                svg += `<text x="${W / 2}" y="20" text-anchor="middle" font-size="13" fill="var(--text)" font-weight="700">${cab.cabinet_id} — ${cab.cabinet_type} ${cab.direction}</text>`;
+
+                // Cabinet frame
+                svg += `<rect x="${ox}" y="${oy}" width="${cabW}" height="${cabH}" fill="var(--bg-card)" stroke="var(--text)" stroke-width="1.2"/>`;
+
+                // Cards as vertical strips (matching PDF style)
+                const cardStripW = (cabW - 10) / placed.length;
+                placed.forEach((board, idx) => {
+                    const x = ox + 5 + idx * cardStripW;
+                    const y = oy + 4;
+                    const h = cabH - 8;
+                    const fillPct = board.fill_pct || 0;
+                    const color = this.cardColors[board.board_type] || '#6b7280';
+                    const intensity = Math.min(0.92, Math.max(0.6, fillPct / 100));
+
+                    // Card body
+                    svg += `<rect class="phys-card" data-board-idx="${idx}" x="${x}" y="${y}" width="${cardStripW - 2}" height="${h}" fill="${color}" fill-opacity="${intensity}" stroke="var(--text)" stroke-width="0.6" rx="1"/>`;
+
+                    // Top edge highlight
+                    svg += `<rect x="${x}" y="${y}" width="${cardStripW - 2}" height="3" fill="rgba(255,255,255,0.3)"/>`;
+
+                    // Card label (rotated)
+                    if (cardStripW > 12) {
+                        const labelText = board.base_io || 'IO';
+                        svg += `<text x="${x + cardStripW / 2}" y="${y + h / 2}" text-anchor="middle" font-size="11" fill="#fff" font-weight="700" transform="rotate(-90 ${x + cardStripW / 2} ${y + h / 2})" pointer-events="none">${labelText}</text>`;
+                    }
+                    // Index at top
+                    svg += `<text x="${x + cardStripW / 2}" y="${y + 11}" text-anchor="middle" font-size="8" fill="rgba(255,255,255,0.85)" pointer-events="none">#${idx + 1}</text>`;
+                    // Capacity at bottom
+                    if (h > 40) {
+                        svg += `<text x="${x + cardStripW / 2}" y="${y + h - 6}" text-anchor="middle" font-size="7" fill="rgba(255,255,255,0.9)" pointer-events="none">${formatNumber(board.active_signals || 0, 0)}/${formatNumber(board.capacity || 0, 0)}</text>`;
+                    }
+                });
+
+                // ── Rail usage indicator (right side) ──
+                const railX = ox + cabW + 10;
+                const railBarW = 18;
+                const railPct = cab.rail_pct || 0;
+                const railFillH = cabH * Math.min(railPct / 100, 1);
+
+                svg += `<rect x="${railX}" y="${oy}" width="${railBarW}" height="${cabH}" fill="var(--bg-strong)" stroke="var(--border)" stroke-width="0.6" rx="2"/>`;
+                let railColor = railPct >= 90 ? 'var(--danger)' : (railPct >= 70 ? 'var(--warning)' : 'var(--success)');
+                svg += `<rect x="${railX}" y="${oy + cabH - railFillH}" width="${railBarW}" height="${railFillH}" fill="${railColor}" fill-opacity="0.8" rx="2"/>`;
+                for (let p = 25; p < 100; p += 25) {
+                    const py = oy + cabH * (1 - p / 100);
+                    svg += `<line x1="${railX}" y1="${py}" x2="${railX + railBarW}" y2="${py}" stroke="var(--text)" stroke-width="0.4" stroke-opacity="0.4"/>`;
+                    svg += `<text x="${railX + railBarW + 4}" y="${py + 3}" text-anchor="start" font-size="8" fill="var(--muted)">${p}%</text>`;
+                }
+                svg += `<text x="${railX + railBarW / 2}" y="${oy - 5}" text-anchor="middle" font-size="9" fill="var(--muted)" font-weight="700">RAIL</text>`;
+                svg += `<text x="${railX + railBarW / 2}" y="${oy + cabH + 12}" text-anchor="middle" font-size="11" fill="var(--text)" font-weight="700">${formatPercent(railPct)}</text>`;
+                svg += `<text x="${railX + railBarW / 2}" y="${oy + cabH + 24}" text-anchor="middle" font-size="8" fill="var(--muted)">${formatNumber(cab.rail_used || 0, 0)}/${toEnglishDigits(cab.rail_limit || '-')}</text>`;
+
+                // ── Slot indicator ──
+                const slotX = railX + railBarW + 8;
+                const slotW = 12;
+                const slotPct = cab.board_slot_pct || 0;
+                const slotFillH = cabH * Math.min(slotPct / 100, 1);
+                svg += `<rect x="${slotX}" y="${oy}" width="${slotW}" height="${cabH}" fill="var(--bg-strong)" stroke="var(--border)" stroke-width="0.6" rx="2"/>`;
+                svg += `<rect x="${slotX}" y="${oy + cabH - slotFillH}" width="${slotW}" height="${slotFillH}" fill="var(--accent-2)" fill-opacity="0.75" rx="2"/>`;
+                svg += `<text x="${slotX + slotW / 2}" y="${oy - 5}" text-anchor="middle" font-size="7" fill="var(--muted)" font-weight="700">SLOT</text>`;
+                svg += `<text x="${slotX + slotW / 2}" y="${oy + cabH + 12}" text-anchor="middle" font-size="9" fill="var(--text)" font-weight="700">${formatPercent(slotPct)}</text>`;
+
+                // ── Dimension line (left, total height) ──
+                const dimLx = ox - 22;
+                svg += `<line x1="${dimLx}" y1="${oy}" x2="${dimLx}" y2="${oy + cabH}" stroke="var(--muted)" stroke-width="0.7"/>`;
+                svg += `<path d="M${dimLx-3},${oy+4} L${dimLx},${oy} L${dimLx+3},${oy+4}" fill="none" stroke="var(--muted)" stroke-width="0.7"/>`;
+                svg += `<path d="M${dimLx-3},${oy+cabH-4} L${dimLx},${oy+cabH} L${dimLx+3},${oy+cabH-4}" fill="none" stroke="var(--muted)" stroke-width="0.7"/>`;
+                svg += `<text x="${dimLx - 6}" y="${oy + cabH / 2}" text-anchor="middle" font-size="10" fill="var(--text)" font-weight="700" transform="rotate(-90 ${dimLx - 6} ${oy + cabH / 2})">${totalH.toFixed(0)}mm</text>`;
+
+                // Bottom info
+                svg += `<text x="${W / 2}" y="${oy + cabH + 32}" text-anchor="middle" font-size="9" fill="var(--muted)">${placed.length} ${currentLang === 'fa' ? 'کارت نصب شده' : 'cards installed'} · ${totalH.toFixed(0)}mm total</text>`;
+
+                svg += `</svg>`;
+                return svg;
+            },
+
+            // ── Filled 3D Isometric (compact) ──
+            _renderFilledIso3D(cab, placed, totalH, cardGap) {
+                const W = 280, H = 220;
+                const cabW = 150, cabH = 130, cabD = 60;
+                const iso = (x, y, z) => ({
+                    x: (x - z) * 0.866,
+                    y: y * 0.95 - (x + z) * 0.5 * 0.5
+                });
+                const ox = 80, oy = 30;
+                const A = (p) => ({ x: ox + p.x, y: oy + p.y });
+
+                const c000 = A(iso(0, 0, 0)), c100 = A(iso(cabW, 0, 0));
+                const c110 = A(iso(cabW, cabH, 0)), c010 = A(iso(0, cabH, 0));
+                const c001 = A(iso(0, 0, cabD)), c101 = A(iso(cabW, 0, cabD));
+                const c111 = A(iso(cabW, cabH, cabD)), c011 = A(iso(0, cabH, cabD));
+
+                let svg = `<svg viewBox="0 0 ${W} ${H}" class="cviz-svg cviz-svg-3d" preserveAspectRatio="xMidYMid meet">`;
+
+                svg += `<ellipse cx="${(c010.x + c111.x) / 2}" cy="${c010.y + 4}" rx="${(c111.x - c010.x) / 2 + 8}" ry="5" fill="var(--text)" opacity="0.18"/>`;
+                svg += `<polygon class="cviz-iso-face cviz-iso-top" points="${c000.x},${c000.y} ${c100.x},${c100.y} ${c101.x},${c101.y} ${c001.x},${c001.y}"/>`;
+                svg += `<polygon class="cviz-iso-face cviz-iso-left" points="${c000.x},${c000.y} ${c010.x},${c010.y} ${c011.x},${c011.y} ${c001.x},${c001.y}"/>`;
+                svg += `<polygon class="cviz-iso-face cviz-iso-right" points="${c100.x},${c100.y} ${c110.x},${c110.y} ${c111.x},${c111.y} ${c101.x},${c101.y}"/>`;
+                svg += `<polygon class="cviz-iso-face cviz-iso-front" points="${c010.x},${c010.y} ${c110.x},${c110.y} ${c111.x},${c111.y} ${c011.x},${c011.y}"/>`;
+
+                // Cards on front face (vertical strips)
+                const cardAreaX = 0.06 * cabW, cardAreaW = 0.88 * cabW;
+                const cardAreaTop = 0.1 * cabH, cardAreaBot = 0.92 * cabH;
+                const cardAreaH = cardAreaBot - cardAreaTop;
+                const stripW = cardAreaW / placed.length;
+
+                placed.forEach((board, idx) => {
+                    const x = cardAreaX + idx * stripW;
+                    const color = this.cardColors[board.board_type] || '#6b7280';
+                    const fillPct = board.fill_pct || 0;
+                    const opacity = Math.min(0.92, Math.max(0.6, fillPct / 100));
+
+                    const p1 = A(iso(x, cardAreaTop, 0));
+                    const p2 = A(iso(x + stripW - 0.5, cardAreaTop, 0));
+                    const p3 = A(iso(x + stripW - 0.5, cardAreaBot, 0));
+                    const p4 = A(iso(x, cardAreaBot, 0));
+                    svg += `<polygon class="phys-card-iso" data-board-idx="${idx}" fill="${color}" fill-opacity="${opacity}" stroke="var(--text)" stroke-width="0.5" points="${p1.x},${p1.y} ${p2.x},${p2.y} ${p3.x},${p3.y} ${p4.x},${p4.y}"/>`;
+
+                    if (stripW > 8) {
+                        const lp = A(iso(x + stripW / 2, cardAreaTop + cardAreaH / 2, 0));
+                        svg += `<text x="${lp.x}" y="${lp.y + 2}" text-anchor="middle" font-size="8" fill="#fff" font-weight="700" pointer-events="none" transform="rotate(-90 ${lp.x} ${lp.y + 2})">${board.base_io || 'IO'}</text>`;
+                    }
+                });
+
+                svg += `<text x="${(c000.x + c101.x) / 2}" y="${(c000.y + c001.y) / 2 + 2}" text-anchor="middle" font-size="7" fill="var(--muted)" font-weight="600">TOP</text>`;
+                svg += `<text x="${(c010.x + c011.x) / 2 - 8}" y="${(c010.y + c011.y) / 2 + 2}" text-anchor="middle" font-size="7" fill="var(--muted)" font-weight="600" transform="rotate(-90 ${(c010.x + c011.x) / 2 - 8} ${(c010.y + c011.y) / 2 + 2})">L</text>`;
+                svg += `<text x="${(c100.x + c101.x) / 2 + 8}" y="${(c100.y + c101.y) / 2 + 2}" text-anchor="middle" font-size="7" fill="var(--muted)" font-weight="600" transform="rotate(90 ${(c100.x + c101.x) / 2 + 8} ${(c100.y + c101.y) / 2 + 2})">R</text>`;
+                svg += `<text x="${(c010.x + c111.x) / 2}" y="${c110.y + 12}" text-anchor="middle" font-size="9" fill="var(--accent)" font-weight="700">${cab.cabinet_id}</text>`;
+                svg += `<text x="${(c010.x + c111.x) / 2}" y="${c110.y + 22}" text-anchor="middle" font-size="7" fill="var(--muted)">${placed.length} ${currentLang === 'fa' ? 'کارت' : 'cards'}</text>`;
+
+                svg += `</svg>`;
+                return svg;
+            },
+
+            // ── Stats row ──
+            _renderStats(cab, placed, isFa) {
+                const tA = placed.reduce((s, b) => s + (b.active_signals || 0), 0);
+                const tH = placed.reduce((s, b) => s + (b.hot_spares || 0), 0);
+                const tS = placed.reduce((s, b) => s + (b.spare_signals || 0), 0);
+                const tC = placed.reduce((s, b) => s + (b.capacity || 0), 0);
+                const avg = tC > 0 ? (tA / tC * 100) : 0;
+                const cards = [
+                    { l: isFa ? 'کارت' : 'Cards', v: placed.length, i: 'fa-microchip', c: 'var(--accent)' },
+                    { l: isFa ? 'فعال' : 'Active', v: tA, i: 'fa-circle-check', c: 'var(--success)' },
+                    { l: isFa ? 'Hot' : 'Hot', v: tH, i: 'fa-fire', c: 'var(--accent-2)' },
+                    { l: isFa ? 'Spare' : 'Spare', v: tS, i: 'fa-box-archive', c: 'var(--muted)' },
+                    { l: isFa ? 'پرشدگی' : 'Fill', v: formatPercent(avg), i: 'fa-chart-bar', c: 'var(--warning)' },
+                    { l: isFa ? 'محدود' : 'Limit', v: (cab.limiting_factor || '-').substring(0, 8), i: 'fa-triangle-exclamation', c: 'var(--danger)' }
+                ];
+                return cards.map(c => `
+                    <div class="cviz-stat-card">
+                        <div class="cviz-stat-icon" style="color:${c.c}"><i class="fas ${c.i}"></i></div>
+                        <div class="cviz-stat-body"><div class="cviz-stat-label">${c.l}</div><div class="cviz-stat-value">${c.v}</div></div>
+                    </div>`).join('');
+            },
+
+            // ─────────────────────────────────────────────────────
+            // B4 — HOVER HANDLERS
+            // ─────────────────────────────────────────────────────
+            _attachFilledHover(boards, cab) {
+                const tooltip = document.getElementById('boardTooltip');
+                if (!tooltip) return;
+                const isFa = currentLang === 'fa';
+                const L = isFa ? {
+                    cap: 'ظرفیت', sig: 'سیگنال', act: 'فعال', hot: 'Hot', sp: 'Spare',
+                    fill: 'پرشدگی', bid: 'برد', bt: 'نوع', ph: 'ارتفاع',
+                    tags: 'تگ‌ها', jb: 'JB کابینت', noTags: 'بدون داده تگ (B1)'
+                } : {
+                    cap: 'Cap', sig: 'Sig', act: 'Active', hot: 'Hot', sp: 'Spare',
+                    fill: 'Fill', bid: 'Board', bt: 'Type', ph: 'Height',
+                    tags: 'Tags', jb: 'Cabinet JB', noTags: 'No tag data (B1)'
+                };
+
+                const attach = (sel) => {
+                    document.querySelectorAll(sel).forEach(card => {
+                        card.addEventListener('mouseenter', () => {
+                            card.style.opacity = '1';
+                            card.style.filter = 'brightness(1.2)';
+                            const idx = parseInt(card.dataset.boardIdx, 10);
+                            const b = boards[idx];
+                            if (!b) return;
+                            const tagList = (b.assigned_tags || b.tags || []);
+                            const jbList = (cab.jb_list || []);
+                            let tagsHtml;
+                            if (tagList.length > 0) {
+                                const vt = tagList.slice(0, 10);
+                                const ov = tagList.length - vt.length;
+                                tagsHtml = vt.map(t => `<span class="cviz-tag-chip">${t}</span>`).join('');
+                                if (ov > 0) tagsHtml += `<span class="cviz-tag-overflow">+${ov}</span>`;
+                            } else if (jbList.length > 0) {
+                                const jt = jbList.slice(0, 6);
+                                tagsHtml = `<div style="font-size:0.65rem;color:var(--muted);margin-bottom:2px;">${L.jb} (${jbList.length}):</div>${jt.map(t => `<span class="cviz-tag-chip">${t}</span>`).join('')}${jbList.length > 6 ? `<span class="cviz-tag-overflow">+${jbList.length - 6}</span>` : ''}`;
+                            } else {
+                                tagsHtml = `<span style="color:var(--muted);font-size:0.68rem;">${L.noTags}</span>`;
+                            }
+
+                            tooltip.innerHTML = `
+                                <div class="cviz-tooltip-header"><strong>${b.board_id}</strong><span class="cviz-tooltip-badge">#${idx + 1}</span></div>
+                                <div class="cviz-tooltip-meta">
+                                    <span><i class="fas fa-tag"></i> ${b.board_type} ${b.base_io}</span>
+                                    <span><i class="fas fa-ruler"></i> ${L.ph}: ${b._h || (b._physicalHeight||0)}mm</span>
+                                    <span><i class="fas fa-database"></i> ${L.cap}: ${formatNumber(b.capacity||0,0)}</span>
+                                    <span><i class="fas fa-signal"></i> ${L.sig}: ${formatNumber(b.total_signals||0,0)}</span>
+                                    <span><i class="fas fa-check"></i> ${L.act}: ${formatNumber(b.active_signals||0,0)}</span>
+                                    <span><i class="fas fa-fire"></i> ${L.hot}: ${formatNumber(b.hot_spares||0,0)}</span>
+                                    <span><i class="fas fa-box"></i> ${L.sp}: ${formatNumber(b.spare_signals||0,0)}</span>
+                                    <span><i class="fas fa-chart"></i> ${L.fill}: ${formatPercent(b.fill_pct||0)}</span>
+                                </div>
+                                <div class="cviz-tooltip-tags"><strong>${L.tags}:</strong><div class="cviz-tag-list">${tagsHtml}</div></div>`;
+                            tooltip.style.display = 'flex';
+                        });
+                        card.addEventListener('mousemove', (e) => {
+                            tooltip.style.left = `${e.clientX + 14}px`;
+                            tooltip.style.top = `${e.clientY + 14}px`;
+                        });
+                        card.addEventListener('mouseleave', () => {
+                            card.style.opacity = '';
+                            card.style.filter = '';
+                            tooltip.style.display = 'none';
+                        });
+                    });
+                };
+                attach('.phys-card');
+            },
+
+            _attachFilledIsoHover(boards, cab, isFa) {
+                const infoText = document.querySelector('#cvizFilledIsoInfo span:last-child');
+                if (!infoText) return;
+                document.querySelectorAll('.phys-card-iso').forEach(zone => {
+                    zone.addEventListener('mouseenter', () => {
+                        const idx = parseInt(zone.dataset.boardIdx, 10);
+                        const b = boards[idx];
+                        if (!b) return;
+                        zone.style.filter = 'brightness(1.3)';
+                        zone.style.stroke = 'var(--accent)';
+                        zone.style.strokeWidth = '1';
+                        const tagCount = (b.assigned_tags || b.tags || []).length || (cab.jb_list || []).length;
+                        infoText.innerHTML = `<strong><i class="fas fa-microchip"></i> ${b.board_id}</strong> — ${b.board_type} ${b.base_io} · ${formatNumber(b.active_signals||0,0)}/${formatNumber(b.capacity||0,0)} · ${formatPercent(b.fill_pct||0)} · ${tagCount} ${isFa ? 'تگ' : 'tags'}`;
+                    });
+                    zone.addEventListener('mouseleave', () => {
+                        zone.style.filter = '';
+                        zone.style.stroke = '';
+                        zone.style.strokeWidth = '';
+                        infoText.innerHTML = isFa ? 'روی کارت بروید' : 'Hover any card';
+                    });
+                });
+            },
+
+            hasRailFillData(cab) {
+                return !!(cab.rail_fill_data || (cab.boards && cab.boards[0] && cab.boards[0].assigned_tags));
+            }
+        };
+        // Initialize on page load
+        DimensionMode.init();
+
+        // ═══════════════════════════════════════════════════════════════
+        // EXTEND buildConfig() — NOT replace it
+        // This wrapper calls the original buildConfig(), then if dimension
+        // mode is active, overrides cabinet_limits with dimension-derived values.
+        // ═══════════════════════════════════════════════════════════════
+
+        const _originalBuildConfig = buildConfig;
+
+        buildConfig = function() {
+            // Call original buildConfig
+            const config = _originalBuildConfig();
+
+            // If dimension mode is active, override cabinet_limits
+            if (DimensionMode.active) {
+                const dimLimits = DimensionMode.getCabinetLimits();
+                if (dimLimits && Object.keys(dimLimits).length > 0) {
+                    config.cabinet_limits = dimLimits;
+                }
+            }
+
+            return config;
+        };
     </script>
 </body>
 </html>
