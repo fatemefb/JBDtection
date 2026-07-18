@@ -383,9 +383,9 @@ class TaskStatus:
 #   3. Stale tasks are automatically marked as FAILED
 #   4. Client receives proper error instead of hanging forever
 
-HEARTBEAT_INTERVAL_SECONDS = 15          # update heartbeat every 15s
-HEARTBEAT_STALE_THRESHOLD_SECONDS = 120  # if no heartbeat for 2min → stale
-HEARTBEAT_CHECK_INTERVAL_SECONDS = 60    # scheduler checks every 60s
+HEARTBEAT_INTERVAL_SECONDS = 30          # update heartbeat every 30s (was 15 — less file lock contention)
+HEARTBEAT_STALE_THRESHOLD_SECONDS = 1800  # 30 MINUTES — was 120s (too aggressive, caused false alarms during long OCR)
+HEARTBEAT_CHECK_INTERVAL_SECONDS = 300   # scheduler checks every 5 min (was 60s — less overhead)
 
 # Track active heartbeat threads so we can stop them on completion
 _active_heartbeats: Dict[str, threading.Event] = {}
@@ -1376,38 +1376,15 @@ def get_task_status(task_id):
                 'message': 'شما مجاز به مشاهده این task نیستید'
             }), 403
         
-        # ── STALE TASK DETECTION ──
-        # Check if task is stale (worker died from timeout/OOM/SIGKILL)
-        # If stale, mark as failed immediately so client gets proper error
-        if is_task_stale(task):
-            logger.warning(f"Task {task_id} detected as stale during status check — marking as failed")
-            stale_error = f'Worker died (timeout/OOM/SIGKILL). No heartbeat for >{HEARTBEAT_STALE_THRESHOLD_SECONDS} seconds.'
-            TaskManager.update_task(task_id, {
-                'status': TaskStatus.FAILED,
-                'error': stale_error,
-                'error_details': 'Task marked as stale by heartbeat monitor during /task-status check.',
-                'progress': 100,
-                'failed_at': datetime.now().isoformat(),
-                'failure_reason': 'worker_died'
-            })
-            stop_heartbeat(task_id)
-            # Update DB run status
-            run_id = task.get('run_id')
-            if run_id:
-                try:
-                    with session_scope() as db:
-                        run = db.get(Run, run_id)
-                        if run and run.status not in (RunStatus.FAILED, RunStatus.FINALIZED):
-                            run_svc.set_status(db, run, RunStatus.FAILED, stage="jbdetection",
-                                                notes="Worker died (timeout/OOM)")
-                            run_svc.add_log_line(db, run,
-                                "Worker process killed (timeout/OOM). Task marked as stale.",
-                                level="error")
-                            db.commit()
-                except Exception as db_err:
-                    logger.error(f"Failed to update DB run {run_id} for stale task: {db_err}")
-            # Refresh task data after update
-            task = TaskManager.get_task(task_id) or task
+        # ── STALE TASK DETECTION — DISABLED IN /task-status ──
+        # This was causing FALSE ALARMS: when client polls /task-status during
+        # heavy OCR processing, the heartbeat might be slightly delayed (GIL contention),
+        # and the task would be incorrectly marked as FAILED.
+        #
+        # Stale detection now ONLY runs in the background scheduler (every 5 min)
+        # with a 30-MINUTE threshold — only truly dead tasks (worker SIGKILL'd) get marked.
+        # The /task-status endpoint is now READ-ONLY (does not modify task state).
+        # ← stale detection removed — safe read-only status
         
         return jsonify({
             'status': task.get('status', 'pending'),
@@ -1418,7 +1395,7 @@ def get_task_status(task_id):
             'project_id': task.get('project_id'),
             'project_name': task.get('project_name', ''),
             'pdf_count': task.get('pdf_count', 0),
-            'log': task.get('log', []),
+            'log': (task.get('log', []) or [])[-20:],  # FIX: Only return last 20 log entries (was returning ALL → 487KB response → socket timeout)
             'started_at': task.get('started_at'),
             'completed_at': task.get('completed_at'),
             'last_heartbeat': task.get('last_heartbeat'),

@@ -7,6 +7,19 @@ import os
 import gc
 import fitz 
 import tempfile
+
+# ─────────────────────────────────────────────────────────────────
+# COMPATIBILITY: Resolve gray colorspace across PyMuPDF versions
+# fitz.cs_GRAY (new) | fitz.csGRAY (old) | fitz.COLORSPACE_GRAY (very old)
+# ─────────────────────────────────────────────────────────────────
+def _get_gray_colorspace():
+    """Return gray colorspace constant, compatible across PyMuPDF versions."""
+    for attr in ('cs_GRAY', 'csGRAY', 'COLORSPACE_GRAY'):
+        if hasattr(fitz, attr):
+            return getattr(fitz, attr)
+    return None  # None = default (RGB)
+
+_CS_GRAY = _get_gray_colorspace()
 import logging
 from multiprocessing import Pool, cpu_count
 import Levenshtein
@@ -301,6 +314,10 @@ class TagJBExtractor:
         self.jb_examples = None
         self.mc_examples = None
         self.spare_examples = None
+        # Multi-pattern support (lists of prefixes)
+        self.jb_examples_list = []
+        self.mc_examples_list = []
+        self.spare_examples_list = []
         self.cable_examples = None
         self.wire_color_rule = None
         self.scr_number_rule = None
@@ -1124,41 +1141,70 @@ class TagJBExtractor:
             logger.error(f"Error comparing numeric parts {num1} and {num2}: {e}")
             return False
 
+    def _parse_multi_patterns(self, value):
+        """Parse a comma/space/newline separated list of patterns into a list of uppercased strings.
+        
+        Accepts:
+          - "JSF"                    → ["JSF"]
+          - "JSF,JSX,JSY"            → ["JSF", "JSX", "JSY"]
+          - "JSF, JSX, JSY"          → ["JSF", "JSX", "JSY"]
+          - "JSF JSX JSY"            → ["JSF", "JSX", "JSY"]
+          - ["JSF", "JSX"]           → ["JSF", "JSX"]
+          - ["JSF,JSX"]              → ["JSF", "JSX"]
+        Returns: list of uppercased non-empty strings (may be empty list)
+        """
+        if value is None:
+            return []
+        if isinstance(value, list):
+            # flatten list items that may themselves contain commas
+            items = []
+            for v in value:
+                items.extend(str(v).replace('\n', ',').replace(' ', ',').split(','))
+        else:
+            items = str(value).replace('\n', ',').replace(' ', ',').split(',')
+        return [i.strip().upper() for i in items if i.strip()]
+
     def set_patterns(self, jb_examples=None, mc_examples=None, spare_examples=None, 
                     cable_examples=None, wire_color_rule=None, scr_number_rule=None):
         """
-        تنظیم الگوهای سفارشی برای بهبود تشخیص
+        تنظیم الگوهای سفارشی برای بهبود تشخیص — پشتیبانی از چند الگو
         
         Args:
-            jb_examples: مثال JB (رشته یا لیست)
-            mc_examples: مثال MC (رشته یا لیست)
-            spare_examples: مثال SPARE (رشته یا لیست)
+            jb_examples: مثال JB (رشته با کاما، یا لیست). مثال: "JSF,JSX,JSY"
+            mc_examples: مثال MC (رشته با کاما، یا لیست). مثال: "NC,IC"
+            spare_examples: مثال SPARE (رشته با کاما، یا لیست)
             cable_examples: مثال توصیف کابل (رشته یا لیست)
             wire_color_rule: قاعده تولید رنگ سیم
             scr_number_rule: قاعده تولید شماره SCR
+        
+        Note:
+            - jb_examples می‌تونه چند الگو با کاما داشته باشه: "JSF,JSX,JSY"
+            - همه الگوها برای تشخیص استفاده می‌شن
+            - self.jb_examples به‌صورت رشته با کاما ذخیره می‌شه (backward compatible)
+            - self.jb_examples_list لیست واقعی الگوهاست
         """
         
-        # تبدیل لیست‌ها به رشته (اولین عنصر) اگر لازم باشد
+        # JB examples — support multiple patterns
         if jb_examples is not None:
-            if isinstance(jb_examples, list) and jb_examples:
-                self.jb_examples = jb_examples[0].upper()  # اولین عنصر را انتخاب کن
-            elif isinstance(jb_examples, str) and jb_examples.strip():
-                self.jb_examples = jb_examples.strip().upper()
-            logger.info(f"JB examples Set: {self.jb_examples}")
+            jb_list = self._parse_multi_patterns(jb_examples)
+            self.jb_examples_list = jb_list
+            # Store as comma-separated string for backward compatibility (logging, etc.)
+            self.jb_examples = ','.join(jb_list) if jb_list else None
+            logger.info(f"JB examples Set: {self.jb_examples} ({len(jb_list)} patterns)")
         
+        # MC examples — support multiple patterns
         if mc_examples is not None:
-            if isinstance(mc_examples, list) and mc_examples:
-                self.mc_examples = mc_examples[0].upper()  # اولین عنصر را انتخاب کن
-            elif isinstance(mc_examples, str) and mc_examples.strip():
-                self.mc_examples = mc_examples.strip().upper()
-            logger.info(f"MC examples Set: {self.mc_examples}")
+            mc_list = self._parse_multi_patterns(mc_examples)
+            self.mc_examples_list = mc_list
+            self.mc_examples = ','.join(mc_list) if mc_list else None
+            logger.info(f"MC examples Set: {self.mc_examples} ({len(mc_list)} patterns)")
         
+        # SPARE examples — support multiple patterns
         if spare_examples is not None:
-            if isinstance(spare_examples, list) and spare_examples:
-                self.spare_examples = spare_examples[0].upper()  # اولین عنصر را انتخاب کن
-            elif isinstance(spare_examples, str) and spare_examples.strip():
-                self.spare_examples = spare_examples.strip().upper()
-            logger.info(f"SPARE examples Set: {self.spare_examples}")
+            spare_list = self._parse_multi_patterns(spare_examples)
+            self.spare_examples_list = spare_list
+            self.spare_examples = ','.join(spare_list) if spare_list else None
+            logger.info(f"SPARE examples Set: {self.spare_examples} ({len(spare_list)} patterns)")
         
         if cable_examples is not None:
             if isinstance(cable_examples, list):
@@ -1180,25 +1226,37 @@ class TagJBExtractor:
         
     def _compile_regex_patterns(self):
         """
-        کامپایل الگوهای regex بر اساس مثال‌های تنظیم شده
+        کامپایل الگوهای regex بر اساس مثال‌های تنظیم شده — پشتیبانی از چند الگو
         """
         try:
-            # الگوی JB
-            if self.jb_examples:
-                self.jb_regex = re.compile(rf'\b{re.escape(self.jb_examples)}-?\d+\b', re.IGNORECASE)
+            # JB regex — combine all patterns into one alternation
+            jb_list = getattr(self, 'jb_examples_list', None) or []
+            if jb_list:
+                # Build alternation: (JSF|JSX|JSY)-?\d+
+                jb_alt = '|'.join(re.escape(p) for p in jb_list)
+                self.jb_regex = re.compile(rf'\b({jb_alt})-?\d+\b', re.IGNORECASE)
                 logger.debug(f"JB regex compiled: {self.jb_regex.pattern}")
+            else:
+                self.jb_regex = None
             
-            # الگوی MC
-            if self.mc_examples:
-                self.mc_regex = re.compile(rf'\b{re.escape(self.mc_examples)}-?\d+\b', re.IGNORECASE)
+            # MC regex — combine all patterns
+            mc_list = getattr(self, 'mc_examples_list', None) or []
+            if mc_list:
+                mc_alt = '|'.join(re.escape(p) for p in mc_list)
+                self.mc_regex = re.compile(rf'\b({mc_alt})-?\d+\b', re.IGNORECASE)
                 logger.debug(f"MC regex compiled: {self.mc_regex.pattern}")
+            else:
+                self.mc_regex = None
             
-            # 🔧 FIX: الگوی SPARE ساده‌تر - فقط کلمه "spare" یا "sp"
-            if self.spare_examples:
+            # SPARE regex — simple pattern
+            spare_list = getattr(self, 'spare_examples_list', None) or []
+            if spare_list:
                 self.spare_regex = re.compile(r'\b(spare)\b', re.IGNORECASE)
                 logger.debug(f"SPARE regex compiled (simple pattern): {self.spare_regex.pattern}")
+            else:
+                self.spare_regex = None
             
-            logger.info("✅ All regex patterns compiled successfully")
+            logger.info(f"✅ Regex patterns compiled: JB={len(jb_list)}, MC={len(mc_list)}, SPARE={len(spare_list)}")
                 
         except Exception as e:
             logger.error(f"Error compiling regex patterns: {e}")
@@ -1297,7 +1355,7 @@ class TagJBExtractor:
             # اضافه کردن SPARE ها
             if spare_identifiers_with_positions:
                 for idx, item in enumerate(spare_identifiers_with_positions):
-                    spare_id = f"{getattr(self, 'spare_examples', 'SPARE')}_{idx + 1}"
+                    spare_id = f"{getattr(self, 'spare_examples', None)}_{idx + 1}"
                     all_items.append({
                         'name': spare_id,
                         'y_position': item['y'],
@@ -1423,7 +1481,7 @@ class TagJBExtractor:
         if jb_identifiers:
             jb_raw = list(jb_identifiers)[0]
             jb_norm = self._normalize_code_token(jb_raw)
-            if jb_norm and jb_prefix and jb_norm.startswith(jb_prefix):
+            if jb_norm and jb_prefix and any(jb_norm.startswith(p) for p in jb_prefix.split(',') if p):
                 expected_mc = mc_prefix + jb_norm[len(jb_prefix):]
 
         def candidate_score(cand: str) -> 'Tuple[float, int, int, int]':
@@ -1464,17 +1522,17 @@ class TagJBExtractor:
         t = str(token).strip().upper()
  
         # ── 1. JB ──────────────────────────────────────────────────────────
-        jb_prefix = (getattr(self, 'jb_examples', '') or 'JB').strip().upper()
+        jb_prefix = (getattr(self, 'jb_examples', '') or '').strip().upper()
         if jb_prefix and self._is_prefixed_identifier(t, jb_prefix, require_digit=False):
             return True
  
         # ── 2. MC ──────────────────────────────────────────────────────────
-        mc_prefix = (getattr(self, 'mc_examples', '') or 'MC').strip().upper()
+        mc_prefix = (getattr(self, 'mc_examples', '') or '').strip().upper()
         if mc_prefix and self._is_prefixed_identifier(t, mc_prefix, require_digit=False):
             return True
  
         # ── 3. SPARE ───────────────────────────────────────────────────────
-        spare_prefix = (getattr(self, 'spare_examples', '') or 'SPARE').strip().upper()
+        spare_prefix = (getattr(self, 'spare_examples', '') or '').strip().upper()
         if re.search(rf'\b{re.escape(spare_prefix)}\b', t, re.IGNORECASE):
             return True
  
@@ -1551,24 +1609,48 @@ class TagJBExtractor:
 
 
     def _get_mc_prefix(self):
-        """Get the MC prefix from user settings (not hardcoded)."""
-        return str(getattr(self, 'mc_examples', 'NC') or 'NC').strip().upper()
+        """Get the MC prefix from user settings. Returns None if not set.
+        Returns comma-separated string for backward compatibility.
+        Use _get_mc_prefixes() for list."""
+        val = getattr(self, 'mc_examples', None)
+        if not val:
+            return None  # No prefix set — don't match anything
+        return str(val).strip().upper()
+    
+    def _get_mc_prefixes(self):
+        """Get list of MC prefixes. Returns empty list if not set."""
+        return list(getattr(self, 'mc_examples_list', None) or [])
 
     def _get_jb_prefix(self):
-        """Get the JB prefix from user settings (not hardcoded)."""
-        return str(getattr(self, 'jb_examples', 'JB') or 'JB').strip().upper()
+        """Get the JB prefix from user settings. Returns None if not set.
+        Returns comma-separated string for backward compatibility.
+        Use _get_jb_prefixes() for list."""
+        val = getattr(self, 'jb_examples', None)
+        if not val:
+            return None  # No prefix set — don't match anything
+        return str(val).strip().upper()
+    
+    def _get_jb_prefixes(self):
+        """Get list of JB prefixes. Returns empty list if not set."""
+        return list(getattr(self, 'jb_examples_list', None) or [])
 
     def _is_mc_token(self, text):
-        """Check if a token is an MC identifier (dynamic prefix, not hardcoded 'NC')."""
+        """Check if a token is an MC identifier. Returns False if no prefix set.
+        Checks against ALL configured MC prefixes."""
         t = str(text).upper().strip()
-        mc_prefix = self._get_mc_prefix()
-        return t.startswith(mc_prefix)
+        prefixes = self._get_mc_prefixes()
+        if not prefixes:
+            return False  # No prefix configured — cannot be an MC token
+        return any(t.startswith(p) for p in prefixes)
 
     def _is_jb_token(self, text):
-        """Check if a token is a JB identifier (dynamic prefix, not hardcoded)."""
+        """Check if a token is a JB identifier. Returns False if no prefix set.
+        Checks against ALL configured JB prefixes."""
         t = str(text).upper().strip()
-        jb_prefix = self._get_jb_prefix()
-        return t.startswith(jb_prefix)
+        prefixes = self._get_jb_prefixes()
+        if not prefixes:
+            return False  # No prefix configured — cannot be a JB token
+        return any(t.startswith(p) for p in prefixes)
 
     def _inline_table_preprocess(self, image: 'np.ndarray') -> 'np.ndarray':
         """
@@ -1604,12 +1686,14 @@ class TagJBExtractor:
         # ============================================================
         # مقداردهی اولیه
         # ============================================================
-        if not hasattr(self, 'jb_examples') or not self.jb_examples:
-            self.jb_examples = "JB"
-        if not hasattr(self, 'mc_examples') or not self.mc_examples:
-            self.mc_examples = "MC"
-        if not hasattr(self, 'spare_examples') or not self.spare_examples:
-            self.spare_examples = "SPARE"
+        # Do NOT default to 'JB'/'MC'/'SPARE' — leave as None if not set by user
+        # Defaulting causes false positives (e.g., 'JUNCTION' detected as JB)
+        if not hasattr(self, 'jb_examples'):
+            self.jb_examples = None
+        if not hasattr(self, 'mc_examples'):
+            self.mc_examples = None
+        if not hasattr(self, 'spare_examples'):
+            self.spare_examples = None
         
         logger.info(f"Using patterns - JB: '{self.jb_examples}', MC: '{self.mc_examples}', SPARE: '{self.spare_examples}'")
         
@@ -1646,7 +1730,7 @@ class TagJBExtractor:
             #     rather than being forced into the whitelist alphabet.
             #     The post-processor (_post_process_table_extractions)
             #     handles cleanup of any false positives.
-            custom_config = r'--oem 3 --psm 6'
+            custom_config = r'--oem 1 --psm 6 -l eng'
             logger.info("extract_from_image: using TABLE OCR config (psm 6, no whitelist)")
             # REVISED: actually apply preprocess_image for table mode.
             # The previous code path declared a table-specific preprocessing
@@ -1694,7 +1778,7 @@ class TagJBExtractor:
                 image = self._inline_table_preprocess(image)
         else:
             # Diagram path — byte-for-byte identical to original
-            custom_config = r'--oem 3 --psm 11 -c tessedit_char_whiteList=ABCDEFGHIJKLMNOPQRSTUVWXYZsparetcoilpr0123456789-.'
+            custom_config = r'--oem 1 --psm 11 -c tessedit_char_whiteList=ABCDEFGHIJKLMNOPQRSTUVWXYZsparetcoilpr0123456789-.'
 
         logger.info("Starting OCR extraction...")
         ocr_data = pytesseract.image_to_data(image, config=custom_config, output_type=pytesseract.Output.DICT)
@@ -1737,16 +1821,15 @@ class TagJBExtractor:
             logger.warning("_extract_from_image_table_multipass: pdfplumber not available, falling back to simple OCR")
             # Fallback: simple single-pass OCR
             scale = BASE_DPI / 72
-            pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale))
+            pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), colorspace=_CS_GRAY)
             img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
             if pix.n == 3:
                 img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
             else:
-                img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                            gray = cv2.cvtColor(img, cv2.COLOR_RGBA2GRAY)  # OPTIMIZATION: direct RGBA→GRAY
             gray = cv2.GaussianBlur(gray, (3, 3), 0)
             _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            ocr_data = pytesseract.image_to_data(binary, config=r'--oem 3 --psm 6', output_type=pytesseract.Output.DICT)
+            ocr_data = pytesseract.image_to_data(binary, config=r'--oem 1 --psm 6 -l eng', output_type=pytesseract.Output.DICT)
             return self._extract_from_ocr_data(ocr_data, pdf_type)
         
         # ── Step 1: Detect table grid ────────────────────────────────
@@ -1767,16 +1850,15 @@ class TagJBExtractor:
         except Exception as grid_err:
             logger.warning("_extract_from_image_table_multipass: grid detection failed (%s), falling back", grid_err)
             scale = BASE_DPI / 72
-            pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale))
+            pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), colorspace=_CS_GRAY)
             img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
             if pix.n == 3:
                 img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
             else:
-                img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                            gray = cv2.cvtColor(img, cv2.COLOR_RGBA2GRAY)  # OPTIMIZATION: direct RGBA→GRAY
             gray = cv2.GaussianBlur(gray, (3, 3), 0)
             _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            ocr_data = pytesseract.image_to_data(binary, config=r'--oem 3 --psm 6', output_type=pytesseract.Output.DICT)
+            ocr_data = pytesseract.image_to_data(binary, config=r'--oem 1 --psm 6 -l eng', output_type=pytesseract.Output.DICT)
             return self._extract_from_ocr_data(ocr_data, pdf_type)
         
         h_lines = sorted([r for r in rects if r['width'] > 100 and r['height'] < 3],
@@ -1787,16 +1869,15 @@ class TagJBExtractor:
         if not h_lines or not v_lines:
             logger.warning("_extract_from_image_table_multipass: no table lines detected, falling back")
             scale = BASE_DPI / 72
-            pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale))
+            pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), colorspace=_CS_GRAY)
             img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
             if pix.n == 3:
                 img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
             else:
-                img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                            gray = cv2.cvtColor(img, cv2.COLOR_RGBA2GRAY)  # OPTIMIZATION: direct RGBA→GRAY
             gray = cv2.GaussianBlur(gray, (3, 3), 0)
             _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            ocr_data = pytesseract.image_to_data(binary, config=r'--oem 3 --psm 6', output_type=pytesseract.Output.DICT)
+            ocr_data = pytesseract.image_to_data(binary, config=r'--oem 1 --psm 6 -l eng', output_type=pytesseract.Output.DICT)
             return self._extract_from_ocr_data(ocr_data, pdf_type)
         
         # Group H lines by top (within 3pt tolerance)
@@ -1815,7 +1896,7 @@ class TagJBExtractor:
         
         # ── Step 2: Render full page at 300 DPI ──────────────────────
         scale = BASE_DPI / 72
-        pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale))
+        pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), colorspace=_CS_GRAY)
         img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
         if pix.n == 3:
             img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
@@ -1876,7 +1957,7 @@ class TagJBExtractor:
                 hdr_cell = img[py0_h:py1_h, px0_h:px1_h]
                 hdr_gray = cv2.cvtColor(hdr_cell, cv2.COLOR_BGR2GRAY)
                 _, hdr_bin = cv2.threshold(hdr_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-                hdr_text = pytesseract.image_to_string(hdr_bin, config=r'--oem 3 --psm 7').strip().upper()
+                hdr_text = pytesseract.image_to_string(hdr_bin, config=r'--oem 1 --psm 7 -l eng').strip().upper()
                 
                 # Check for tag column label
                 if 'TAG' in hdr_text and col_idx not in tag_col_indices:
@@ -1913,8 +1994,8 @@ class TagJBExtractor:
             "_extract_from_image_table_multipass: tag cols=%s, cable cols=%s, data_row_start=%d",
             tag_col_indices, cable_col_indices, DATA_ROW_START
         )
-        cfg_psm7 = r'--oem 3 --psm 7'  # Single line — best for individual cells
-        cfg_psm6 = r'--oem 3 --psm 6'  # Block — fallback
+        cfg_psm7 = r'--oem 1 --psm 7 -l eng'  # Single line — best for individual cells
+        cfg_psm6 = r'--oem 1 --psm 6 -l eng'  # Block — fallback
         
         cells_processed = 0
         tags_found = 0
@@ -2136,9 +2217,9 @@ class TagJBExtractor:
         seen_mc_tokens = set()
         seen_cable_tokens = set()
         
-        for extra_dpi in [300, 400]:
+        for extra_dpi in [300]:  # OPTIMIZATION: dropped 400 DPI (marginal accuracy gain, 1.78x slower)
             extra_scale = extra_dpi / 72
-            extra_pix = page.get_pixmap(matrix=fitz.Matrix(extra_scale, extra_scale))
+            extra_pix = page.get_pixmap(matrix=fitz.Matrix(extra_scale, extra_scale), colorspace=_CS_GRAY)
             extra_img = np.frombuffer(extra_pix.samples, dtype=np.uint8).reshape(extra_pix.height, extra_pix.width, extra_pix.n)
             if extra_pix.n == 3:
                 extra_img = cv2.cvtColor(extra_img, cv2.COLOR_RGB2BGR)
@@ -2148,7 +2229,7 @@ class TagJBExtractor:
             gray_extra = cv2.cvtColor(extra_img, cv2.COLOR_BGR2GRAY)
             gray_extra = cv2.GaussianBlur(gray_extra, (3, 3), 0)
             _, binary_extra = cv2.threshold(gray_extra, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            extra_data = pytesseract.image_to_data(binary_extra, config=r'--oem 3 --psm 6', output_type=pytesseract.Output.DICT)
+            extra_data = pytesseract.image_to_data(binary_extra, config=r'--oem 1 --psm 6 -l eng', output_type=pytesseract.Output.DICT)
             
             # Normalize coordinates to 300 DPI base
             coord_scale = BASE_DPI / extra_dpi
@@ -2174,8 +2255,8 @@ class TagJBExtractor:
                         ocr_data['word_num'].append(1)
                 
                 # Add JB tokens (matching jb_examples prefix, not hardcoded "JSF")
-                _jb_prefix = str(getattr(self, 'jb_examples', 'JB') or 'JB').strip().upper()
-                if jb_re.match(text) and text.startswith(_jb_prefix):
+                _jb_prefix = str(getattr(self, 'jb_examples', None) or '').strip().upper()
+                if jb_re.match(text) and _jb_prefix and any(text.startswith(p) for p in _jb_prefix.split(',') if p):
                     if text not in seen_jb_tokens:
                         seen_jb_tokens.add(text)
                         ocr_data['text'].append(text)
@@ -2286,8 +2367,8 @@ class TagJBExtractor:
         #   token[i] = "NC" or "NCJ" or "NCJSF"  (no dash)
         #   token[i+1] = "JSF-XXXX" or "XXX-XXXX"
         # and merge them into "NC-JSF-XXXX"
-        mc_examples = str(getattr(self, 'mc_examples', 'NC') or 'NC').strip().upper()
-        jb_examples = str(getattr(self, 'jb_examples', 'JB') or 'JB').strip().upper()
+        mc_examples = str(getattr(self, 'mc_examples', None) or '').strip().upper()
+        jb_examples = str(getattr(self, 'jb_examples', None) or '').strip().upper()
 
         # Build a list of (index, action) for merges
         merges = []  # list of (i, i+1, merged_text)
@@ -2665,12 +2746,12 @@ class TagJBExtractor:
                     continue
                 # Catch JB fragments that match the JB pattern
                 if _table_jb_re and _table_jb_re.match(word_clean):
-                    if self.jb_examples and _w_upper.startswith(str(self.jb_examples).upper()):
+                    if self.jb_examples and any(_w_upper.startswith(p) for p in str(self.jb_examples).upper().split(',') if p):
                         continue
             # ────────────────────────────────────────────────────────────────────
             
             if (
-                (self.jb_examples and word_clean.startswith(self.jb_examples)) or
+                (self.jb_examples and any(word_clean.startswith(p) for p in str(self.jb_examples).upper().split(',') if p)) or
                 self._is_prefixed_identifier(word_clean, self.mc_examples, require_digit=False) or
                 spare_pattern.search(word_clean) or
                 self._is_non_tag_pattern(word_clean) 
@@ -2968,7 +3049,7 @@ class TagJBExtractor:
                 continue
             
             # JB
-            if word_clean.startswith(self.jb_examples):
+            if any(word_clean.startswith(p) for p in str(self.jb_examples).upper().split(',') if p):
                 x, y = int(ocr_data['left'][i]), int(ocr_data['top'][i])
                 jb_positions.append({
                     'jb': word_clean,
@@ -3776,9 +3857,9 @@ class TagJBExtractor:
 
             # Multiple OCR passes with different configurations
             ocr_configs = [
-                r'--oem 3 --psm 6', 
-                r'--oem 3 --psm 11',  
-                r'--oem 3 --psm 12' 
+                r'--oem 1 --psm 6 -l eng', 
+                r'--oem 1 --psm 11 -l eng',  
+                r'--oem 1 --psm 12 -l eng' 
             ]
             
             for config in ocr_configs:
@@ -3900,8 +3981,8 @@ class TagJBExtractor:
             gray_h = cv2.GaussianBlur(gray_h, (3, 3), 0)
             _, binary_h = cv2.threshold(gray_h, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-            cfg_psm6 = r'--oem 3 --psm 6'
-            cfg_psm11 = r'--oem 3 --psm 11'
+            cfg_psm6 = r'--oem 1 --psm 6 -l eng'
+            cfg_psm11 = r'--oem 1 --psm 11 -l eng'
 
             text_psm6 = pytesseract.image_to_string(binary_h, config=cfg_psm6)
             text_psm11 = pytesseract.image_to_string(binary_h, config=cfg_psm11)
@@ -4361,8 +4442,8 @@ class TagJBExtractor:
             _, binary_h = cv2.threshold(gray_h, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
             # OCR with multiple PSMs and combine (NO whitelist — see extract_from_image)
-            cfg_psm6 = r'--oem 3 --psm 6'
-            cfg_psm11 = r'--oem 3 --psm 11'
+            cfg_psm6 = r'--oem 1 --psm 6 -l eng'
+            cfg_psm11 = r'--oem 1 --psm 11 -l eng'
 
             text_psm6 = pytesseract.image_to_string(binary_h, config=cfg_psm6)
             text_psm11 = pytesseract.image_to_string(binary_h, config=cfg_psm11)
@@ -4693,7 +4774,7 @@ class TagJBExtractor:
             if jb_re.match(t):
                 clean_jbs.add(t)
             # Also keep tokens that match the user-configured jb_examples prefix
-            elif self.jb_examples and t.startswith(str(self.jb_examples).upper()):
+            elif self.jb_examples and any(t.startswith(p) for p in str(self.jb_examples).upper().split(',') if p):
                 if any(c.isdigit() for c in t):
                     clean_jbs.add(t)
 
@@ -4785,7 +4866,7 @@ class TagJBExtractor:
             if s.startswith('NC'):
                 continue
             # Skip if matches JB pattern AND starts with jb_examples prefix
-            if self.jb_examples and s.startswith(str(self.jb_examples).upper()):
+            if self.jb_examples and any(s.startswith(p) for p in str(self.jb_examples).upper().split(',') if p):
                 if jb_re.match(s):
                     # This is a JB, not a tag — collect for merging below
                     jb_candidates_from_tags.add(s)
@@ -4802,7 +4883,7 @@ class TagJBExtractor:
             s = str(t).upper().strip()
             if s.startswith('NC'):
                 continue
-            if self.jb_examples and s.startswith(str(self.jb_examples).upper()):
+            if self.jb_examples and any(s.startswith(p) for p in str(self.jb_examples).upper().split(',') if p):
                 if jb_re.match(s):
                     jb_candidates_from_tags.add(s)
                     continue
@@ -4891,7 +4972,7 @@ class TagJBExtractor:
         # prefix (e.g. "JS"). Tokens like "FUY-5239" that don't start with
         # the JB prefix are NOT removed, even if they match the JB pattern,
         # because they could be real tags that aren't in the IO List.
-        _jb_prefix = str(getattr(self, 'jb_examples', 'JB') or 'JB').strip().upper()
+        _jb_prefix = str(getattr(self, 'jb_examples', None) or '').strip().upper()
         if io_list_tags and _jb_prefix:
             final_tags_upper = set(str(t).upper() for t in tags)
             tags_to_remove_final = set()
@@ -4905,7 +4986,7 @@ class TagJBExtractor:
                     continue
                 # Only check tokens that start with JB prefix (e.g. JS, JB)
                 # This prevents removing real tags like FUY-5239
-                if not ocr_upper.startswith(_jb_prefix):
+                if not any(ocr_upper.startswith(p) for p in _jb_prefix.split(',') if p):
                     continue
                 # Check if it matches JB pattern (letters-digits)
                 if jb_re.match(ocr_upper):
@@ -4996,7 +5077,7 @@ class TagJBExtractor:
                         page_num + 1
                     )
                     image_path = os.path.join(temp_dir, f"page_{page_num + 1}.png")
-                    pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor))
+                    pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor), colorspace=_CS_GRAY)
                     pix.save(image_path)
                     image = cv2.imread(image_path)
                     if image is None:
@@ -5006,7 +5087,7 @@ class TagJBExtractor:
                     extraction_mode = 'ocr'
             else:
                 image_path = os.path.join(temp_dir, f"page_{page_num + 1}.png")
-                pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor))
+                pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor), colorspace=_CS_GRAY)
                 pix.save(image_path)
                 image = cv2.imread(image_path)
                 if image is None:
@@ -5060,7 +5141,7 @@ class TagJBExtractor:
                 try:
                     if 'image' not in locals():
                         image_path = os.path.join(temp_dir, f"page_{page_num + 1}.png")
-                        pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor))
+                        pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor), colorspace=_CS_GRAY)
                         pix.save(image_path)
                         image = cv2.imread(image_path)
                         if image is None:
@@ -5371,7 +5452,7 @@ class TagJBExtractor:
                             extract_result = None
  
                     if extract_result is None:
-                        pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor))
+                        pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor), colorspace=_CS_GRAY)
                         image_path = os.path.join(temp_dir, f"page_{page_num + 1}.png")
                         pix.save(image_path)
                         
@@ -5453,8 +5534,21 @@ class TagJBExtractor:
                     
                     results[page_num + 1] = extract_result
                     
+                    # ── MEMORY CLEANUP AFTER EACH PAGE ──
+                    # For 400+ page PDFs, memory accumulates from:
+                    # - cv2 image buffers (not garbage collected immediately)
+                    # - pdfplumber page objects
+                    # - Tesseract subprocess overhead
+                    # Force cleanup to prevent OOM/SIGKILL
+                    del extract_result
+                    if 'image' in dir():
+                        del image
+                    gc.collect()
+                    
                 except Exception as e:
                     logger.error(f"Error processing page {page_num + 1}: {e}")
+                    # Still cleanup on error
+                    gc.collect()
                     continue
             
             return results
@@ -5602,12 +5696,13 @@ class TagJBExtractor:
             tag_match_info = {}
         
         # اطمینان از تنظیم الگوها
-        if not hasattr(self, 'jb_examples') or self.jb_examples is None:
-            self.jb_examples = "JB"
-        if not hasattr(self, 'mc_examples') or self.mc_examples is None:
-            self.mc_examples = "MC"
-        if not hasattr(self, 'spare_examples') or self.spare_examples is None:
-            self.spare_examples = "SPARE"
+        # Do NOT default to 'JB'/'MC'/'SPARE' — leave as None if not set by user
+        if not hasattr(self, 'jb_examples'):
+            self.jb_examples = None
+        if not hasattr(self, 'mc_examples'):
+            self.mc_examples = None
+        if not hasattr(self, 'spare_examples'):
+            self.spare_examples = None
 
         raw_mc_count = len(mc_identifiers) if mc_identifiers else 0
         selected_mc = self._select_best_mc_identifier(mc_identifiers, jb_identifiers)
@@ -5628,7 +5723,7 @@ class TagJBExtractor:
         # OCR config — NO whitelist (same fix as table mode)
         # The old whitelist was causing tags to be missed because Tesseract
         # couldn't recognize certain characters.
-        custom_config = r'--oem 3 --psm 11'
+        custom_config = r'--oem 1 --psm 11 -l eng'
         ocr_data = pytesseract.image_to_data(image, config=custom_config, output_type=pytesseract.Output.DICT)
 
         # جمع‌آوری تمام موارد با موقعیت‌ها
@@ -6081,7 +6176,7 @@ class TagJBExtractor:
                 for i, text in enumerate(ocr_data['text']):
                     text_clean = text.strip().upper()
                     # Skip MC tokens
-                    if text_clean.startswith(_mc_prefix + '-'):
+                    if any(text_clean.startswith(p + '-') for p in _mc_prefix.split(',') if p):
                         continue
                     
                     # Check if this token starts the cable code
@@ -6143,7 +6238,7 @@ class TagJBExtractor:
                 search_pattern = '-'.join(cable_parts[2:5])
                 for i, text in enumerate(ocr_data['text']):
                     text_clean = text.strip().upper()
-                    if text_clean.startswith(_mc_prefix + '-'):
+                    if any(text_clean.startswith(p + '-') for p in _mc_prefix.split(',') if p):
                         continue
                     if search_pattern in text_clean:
                         region_key = (ocr_data['left'][i], ocr_data['top'][i],
@@ -6360,7 +6455,7 @@ class TagJBExtractor:
                         logger.info(f"Annotating page {page_num + 1}/{total_pages}")
                         
                         page = pdf_document[page_num]
-                        pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor))
+                        pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor), colorspace=_CS_GRAY)
                         
                         image_path = os.path.join(temp_dir, f"page_{page_num + 1}.png")
                         pix.save(image_path)
@@ -7674,7 +7769,7 @@ class TagJBExtractor:
                         
                         # پردازش SPARE ها
                         for spare_idx, spare in enumerate(spare_identifiers):
-                            spare_id = f"{getattr(self, 'spare_examples', 'SPARE')}_{spare_idx + 1}"
+                            spare_id = f"{getattr(self, 'spare_examples', None)}_{spare_idx + 1}"
                             spare_number = tag_to_number.get(spare_id, page_tag_to_number.get(spare_id, ''))
                             
                             if not spare_number:
@@ -7897,7 +7992,7 @@ class TagJBExtractor:
             # پردازش SPAREs
             # ============================================================
             for spare_idx, spare in enumerate(spare_identifiers):
-                spare_id = f"{getattr(self, 'spare_examples', 'SPARE')}_{spare_idx + 1}"
+                spare_id = f"{getattr(self, 'spare_examples', None)}_{spare_idx + 1}"
  
                 # ── روش ۱: مستقیم از page_tag_to_number ─────────────────
                 spare_number = page_tag_to_number.get(spare_id)
@@ -7909,7 +8004,7 @@ class TagJBExtractor:
                 # ── روش ۳: اگر spare_id با SPARE_ شروع می‌شود،
                 #           بررسی کن آیا کلید مشابهی وجود دارد ──────────
                 if not spare_number:
-                    spare_prefix_key = getattr(self, 'spare_examples', 'SPARE').strip().upper()
+                    spare_prefix_key = getattr(self, 'spare_examples', None).strip().upper()
                     for k, v in page_tag_to_number.items():
                         if str(k).upper().startswith(spare_prefix_key + '_'):
                             # بررسی index

@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -21,6 +19,10 @@ services:
       retries: 10
     networks:
       - vakav_net
+    deploy:
+      resources:
+        limits:
+          memory: 1G
 
   jbdetection_v1:
     container_name: jbdetection_v1
@@ -40,15 +42,10 @@ services:
       - DATABASE_URL=postgresql+psycopg2://vakav:vakav_strong_password_change_me@postgres:5432/vakav
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-      - GUNICORN_TIMEOUT=3600
-      - GUNICORN_GRACEFUL_TIMEOUT=3600
-      # TensorFlow memory management
+      - GUNICORN_TIMEOUT=72000
+      - GUNICORN_GRACEFUL_TIMEOUT=72000
       - TF_FORCE_GPU_ALLOW_GROWTH=true
-      - TF_GPU_ALLOCATOR=cuda_malloc_async
       - TF_CPP_MIN_LOG_LEVEL=2
-      # Python memory optimization
-      - MALLOC_TRIM_THRESHOLD_=65536
-      - MALLOC_ARENA_MAX=2
       - OMP_NUM_THREADS=2
     gpus: all
     runtime: nvidia
@@ -62,26 +59,19 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/system-info"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
     networks:
       - vakav_net
     command: >
       gunicorn apps.backend.app:app
         -b 0.0.0.0:5000
-        --workers=2
-        --threads=4
-        --timeout=3600
-        --graceful-timeout=3600
+        --workers=1
+        --threads=2
+        --timeout=72000
+        --graceful-timeout=72000
         --keep-alive=5
-        --max-requests=100
-        --max-requests-jitter=20
+        --max-requests=15
+        --max-requests-jitter=3
         --worker-class=gthread
-        --preload
         --log-level=info
         --access-logfile=-
         --error-logfile=-
@@ -89,9 +79,7 @@ services:
       resources:
         limits:
           cpus: '2'
-          memory: 12G
-        reservations:
-          memory: 4G
+          memory: 20G
 
   jbdetection_test:
     container_name: jbdetection_test
@@ -111,13 +99,10 @@ services:
       - DATABASE_URL=postgresql+psycopg2://vakav:vakav_strong_password_change_me@postgres:5432/vakav
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-      - GUNICORN_TIMEOUT=3600
-      - GUNICORN_GRACEFUL_TIMEOUT=3600
+      - GUNICORN_TIMEOUT=72000
+      - GUNICORN_GRACEFUL_TIMEOUT=7200
       - TF_FORCE_GPU_ALLOW_GROWTH=true
-      - TF_GPU_ALLOCATOR=cuda_malloc_async
       - TF_CPP_MIN_LOG_LEVEL=2
-      - MALLOC_TRIM_THRESHOLD_=65536
-      - MALLOC_ARENA_MAX=2
       - OMP_NUM_THREADS=1
     gpus: all
     runtime: nvidia
@@ -131,26 +116,19 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/system-info"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
     networks:
       - vakav_net
     command: >
       gunicorn apps.backend.app:app
         -b 0.0.0.0:5000
         --workers=1
-        --threads=2
-        --timeout=3600
-        --graceful-timeout=3600
+        --threads=1
+        --timeout=72000
+        --graceful-timeout=72000
         --keep-alive=5
-        --max-requests=50
-        --max-requests-jitter=10
+        --max-requests=10
+        --max-requests-jitter=2
         --worker-class=gthread
-        --preload
         --log-level=info
         --access-logfile=-
         --error-logfile=-
@@ -158,9 +136,7 @@ services:
       resources:
         limits:
           cpus: '1'
-          memory: 6G
-        reservations:
-          memory: 2G
+          memory: 8G
 
 volumes:
   postgres_data:
