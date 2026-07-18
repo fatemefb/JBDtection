@@ -612,7 +612,10 @@ class Cabinet:
         max_total = self.limits.get("Max_Total_Boards", None)
         if max_total is None:
             return None, None
-        max_total = float(max_total)
+        try:
+            max_total = float(max_total)
+        except (TypeError, ValueError):
+            return None, None
         if abs(max_total - 100.0) < 1e-9:
             return "PERCENT_PER_BOARD", 100.0
         return "COUNT", max_total
@@ -635,7 +638,9 @@ class Cabinet:
             total_channels = current_channels + added_channels
             req = self._required_boards(total_channels, board_key, 16)
             if mode == "PERCENT_PER_BOARD":
-                usage += req * float(self.limits[board_key])
+                limit_val = self.limits[board_key]
+                if limit_val is not None:
+                    usage += req * float(limit_val)
             else:
                 usage += req
 
@@ -654,7 +659,9 @@ class Cabinet:
             total = current + added
             req = self._required_boards(total, limit_key, 32)
             if mode == "PERCENT_PER_BOARD":
-                usage += req * float(self.limits[limit_key])
+                limit_val = self.limits[limit_key]
+                if limit_val is not None:
+                    usage += req * float(limit_val)
             else:
                 usage += req
 
@@ -664,7 +671,9 @@ class Cabinet:
         if self.safety_type != jb.safety_type:
             return False, "Safety_Mismatch"
 
-        rail_limit = self.limits.get("Max rail terminals", 0)
+        rail_limit = self.limits.get("Max rail terminals") or 0
+        if rail_limit is None:
+            rail_limit = 0
         if rail_limit > 0 and (self.rail_used + jb.rail_load > rail_limit):
             return False, "Rail_Limit"
 
@@ -676,7 +685,10 @@ class Cabinet:
                 board_key = f"{prefix} Board ({io_suffix})"
                 if board_key not in self.limits:
                     continue
-                max_boards = int(self.limits[board_key])
+                max_boards = self.limits[board_key]
+                if max_boards is None:
+                    continue
+                max_boards = int(max_boards)
                 granular_key = f"{prefix}_{io_suffix}"
                 current_channels = self.granular_counts.get(granular_key, 0)
                 added_channels = jb.channel_counts.get(granular_key, 0)
@@ -694,7 +706,10 @@ class Cabinet:
             for r_type, (attr_name, limit_key) in relay_map.items():
                 if limit_key not in self.limits:
                     continue
-                max_boards = int(self.limits[limit_key])
+                max_boards = self.limits[limit_key]
+                if max_boards is None:
+                    continue
+                max_boards = int(max_boards)
                 current = getattr(self, attr_name, 0)
                 added = jb.channel_counts.get(f"Relay_{r_type}", 0)
                 total = current + added
@@ -770,9 +785,34 @@ def assign_cabinets(jb_demands: Dict[str, JBDemand], config: IOConfig):
                     chosen_type = tdef
                     break
             if chosen_type is None:
-                raise RuntimeError(
-                    f"JB {jb.name} cannot fit in any remaining defined Cabinet Types."
+                logger.warning(
+                    "JB %s (safety=%s, rail_load=%d, channels=%s) cannot fit in any remaining "
+                    "defined Cabinet Types. Creating default cabinet with max capacity.",
+                    jb.name, jb.safety_type, jb.rail_load, jb.channel_counts
                 )
+                default_limits = {
+                    "Max rail terminals": 9999,
+                    "Max_Total_Boards": 999,
+                    "Barrier Board (AI)": 999,
+                    "Barrier Board (AO)": 999,
+                    "Barrier Board (DI)": 999,
+                    "Barrier Board (DO)": 999,
+                    "Terminal Board (AI)": 999,
+                    "Terminal Board (AO)": 999,
+                    "Terminal Board (DI)": 999,
+                    "Terminal Board (DO)": 999,
+                    "Relay Board AO capacity": 999,
+                    "Relay Board AI capacity": 999,
+                    "Relay Board DO capacity": 999,
+                    "Relay Board DI capacity": 999,
+                }
+                st = jb.safety_type
+                name = f"{config.is_cab_prefix if st == 'IS' else config.nis_cab_prefix}{counters[st]:02d}-OVERFLOW"
+                counters[st] += 1
+                new_cab = Cabinet(name, st, "Overflow", default_limits, "", config)
+                new_cab.add_jb(jb)
+                cabinets.append(new_cab)
+                continue
             cabinet_type_pool.pop(chosen_idx)
 
             st = jb.safety_type
@@ -823,7 +863,9 @@ def assign_cabinets(jb_demands: Dict[str, JBDemand], config: IOConfig):
             cabinets.append(new_cab)
 
     for cab in cabinets:
-        rail_limit = cab.limits.get("Max rail terminals", 0)
+        rail_limit = cab.limits.get("Max rail terminals") or 0
+        if rail_limit is None:
+            rail_limit = 0
         rail_pct = cab.rail_used / rail_limit if rail_limit > 0 else 0.0
         cab.limiting_factor = f"Rail ({rail_pct:.1%})"
 

@@ -1628,18 +1628,18 @@
             active: false,
             cabinetDimensions: {},
             cardCatalog: {
-                "Barrier Board (AI)": 75,
-                "Barrier Board (AO)": 75,
-                "Barrier Board (DI)": 45,
-                "Barrier Board (DO)": 45,
-                "Terminal Board (AI)": 60,
-                "Terminal Board (AO)": 60,
-                "Terminal Board (DI)": 45,
-                "Terminal Board (DO)": 45,
-                "Relay Board AI capacity": 90,
-                "Relay Board AO capacity": 90,
-                "Relay Board DI capacity": 90,
-                "Relay Board DO capacity": 90
+                "Barrier Board (AI)": 300,
+                "Barrier Board (AO)": 300,
+                "Barrier Board (DI)": 180,
+                "Barrier Board (DO)": 180,
+                "Terminal Board (AI)": 250,
+                "Terminal Board (AO)": 250,
+                "Terminal Board (DI)": 180,
+                "Terminal Board (DO)": 180,
+                "Relay Board AI capacity": 360,
+                "Relay Board AO capacity": 360,
+                "Relay Board DI capacity": 360,
+                "Relay Board DO capacity": 360
             },
 
             // Board type keys matching engine.py
@@ -1664,6 +1664,7 @@
                 document.querySelectorAll('.tab-btn').forEach(btn => {
                     btn.addEventListener('click', () => {
                         if (DimensionMode.active) {
+                            DimensionMode.saveCurrentState();
                             setTimeout(() => DimensionMode.renderDimensionUI(), 50);
                         }
                     });
@@ -1707,6 +1708,22 @@
                 }
             },
 
+            // Save current dimension inputs from DOM into cabinetDimensions
+            saveCurrentState() {
+                const dimInput = document.querySelector('.dim-input[data-type]');
+                if (!dimInput) return;
+                const typeNum = dimInput.dataset.type;
+                const hasDirs = document.getElementById('hasDirections').checked;
+                const directions = hasDirs ? ['FRONT', 'REAR'] : ['SINGLE'];
+                for (const dir of directions) {
+                    const dimData = this.collectDimensionData(typeNum, dir);
+                    if (dimData.terminal_rail && dimData.terminal_rail.rail_count > 0) {
+                        this.cabinetDimensions[`Type ${typeNum}`] = this.cabinetDimensions[`Type ${typeNum}`] || {};
+                        this.cabinetDimensions[`Type ${typeNum}`][dir] = dimData;
+                    }
+                }
+            },
+
             // Render dimension input UI for the active cabinet type
             renderDimensionUI() {
                 const container = document.getElementById('dimensionContent');
@@ -1716,6 +1733,22 @@
                 const typeNum = activeTab.dataset.type;
                 const hasDirs = document.getElementById('hasDirections').checked;
                 const directions = hasDirs ? ['FRONT', 'REAR'] : ['SINGLE'];
+
+                // Save any unsaved input from the current DOM before re-rendering
+                this.saveCurrentState();
+
+                // Use stored defaults if available, otherwise fallback
+                const getStored = (dir, field) => {
+                    const stored = this.cabinetDimensions[`Type ${typeNum}`]?.[dir];
+                    if (!stored) return undefined;
+                    if (field.startsWith('col_')) {
+                        return stored.card_column?.[field.replace('col_', '')];
+                    }
+                    if (field === 'side_count') return stored.side_count;
+                    if (field === 'side_length_mm') return stored.side_length_mm;
+                    if (field === 'side_element_count') return undefined;
+                    return stored.terminal_rail?.[field];
+                };
 
                 let html = '';
 
@@ -1729,35 +1762,51 @@
                 html += '</div></div>';
 
                 for (const dir of directions) {
+                    const def = (field, fallback) => {
+                        const v = getStored(dir, field);
+                        return v !== undefined ? v : fallback;
+                    };
+
                     html += `<div class="dim-section">`;
                     html += `<div class="dim-section-title"><i class="fas fa-server"></i> Type ${typeNum} — ${dir}</div>`;
 
                     html += '<div class="dim-sub-title" style="color:var(--accent);">Terminal Rail</div>';
                     html += '<div class="dim-compact-grid">';
-                    html += `<label>Rail Count<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="rail_count" value="4" min="1"></label>`;
-                    html += `<label>Rail Length<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="rail_length_mm" value="1711" step="0.1"></label>`;
-                    html += `<label>Top Gap<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="top_gap_mm" value="52" step="0.1"></label>`;
-                    html += `<label>Bot Gap<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="bottom_gap_mm" value="20" step="0.1"></label>`;
-                    html += `<label>Term Height<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="terminal_height_mm" value="5" step="0.1"></label>`;
-                    html += `<label>JB Gap<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="jb_gap_mm" value="10" step="0.1"></label>`;
+                    html += `<label>Rail Count<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="rail_count" value="${def('rail_count', 1)}" min="1"></label>`;
+                    html += `<label>Rail Length<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="rail_length_mm" value="${def('rail_length_mm', 1135)}" step="0.1"></label>`;
+                    html += `<label>Top Gap<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="top_gap_mm" value="${def('top_gap_mm', 200)}" step="0.1"></label>`;
+                    html += `<label>Bot Gap<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="bottom_gap_mm" value="${def('bottom_gap_mm', 20)}" step="0.1"></label>`;
+                    html += `<label>Term Height<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="terminal_height_mm" value="${def('terminal_height_mm', 5)}" step="0.1"></label>`;
+                    html += `<label>JB Gap<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="jb_gap_mm" value="${def('jb_gap_mm', 10)}" step="0.1"></label>`;
                     html += '</div>';
 
                     html += '<div class="dim-sub-title" style="color:var(--accent-2);">Card Column</div>';
                     html += '<div class="dim-compact-grid">';
-                    html += `<label>Col Count<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="column_count" value="1" min="1"></label>`;
-                    html += `<label>Col Length<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="column_length_mm" value="1711" step="0.1"></label>`;
-                    html += `<label>Top Gap<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="col_top_gap_mm" value="52" step="0.1"></label>`;
-                    html += `<label>Bot Gap<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="col_bottom_gap_mm" value="20" step="0.1"></label>`;
-                    html += `<label>Reserved<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="reserved_space_mm" value="0" step="0.1"></label>`;
-                    html += `<label>Card Gap<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="card_gap_mm" value="2" step="0.1"></label>`;
+                    html += `<label>Col Count<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="column_count" value="${def('column_count', 2)}" min="1"></label>`;
+                    html += `<label>Col Length<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="column_length_mm" value="${def('col_length_mm', 1713.5)}" step="0.1"></label>`;
+                    html += `<label>Col Top Gap<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="col_top_gap_mm" value="${def('col_top_gap_mm', 52)}" step="0.1"></label>`;
+                    html += `<label>Col Bot Gap<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="col_bottom_gap_mm" value="${def('col_bottom_gap_mm', 20)}" step="0.1"></label>`;
+                    html += `<label>Reserved<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="reserved_space_mm" value="${def('reserved_space_mm', 0)}" step="0.1"></label>`;
+                    html += `<label>Card Gap<input type="number" class="dim-input" data-type="${typeNum}" data-dir="${dir}" data-field="card_gap_mm" value="${def('card_gap_mm', 2)}" step="0.1"></label>`;
                     html += '</div>';
 
                     if (hasDirs) {
-                        html += '<div class="dim-sub-title" style="color:var(--muted);">Side (Optional)</div>';
+                        const sideChecked = def('side_checked', true);
+                        html += '<div class="dim-sub-title" style="color:var(--muted);">Side Panels (Optional)</div>';
                         html += '<div class="dim-compact-grid">';
-                        html += `<label class="checkbox-label">Has Side<input type="checkbox" class="dim-side-toggle" data-type="${typeNum}" data-dir="${dir}"></label>`;
-                        html += `<label>Side Count<input type="number" class="dim-input dim-side" data-type="${typeNum}" data-dir="${dir}" data-field="side_count" value="2" min="1" disabled></label>`;
-                        html += `<label>Side Length<input type="number" class="dim-input dim-side" data-type="${typeNum}" data-dir="${dir}" data-field="side_length_mm" value="600" step="0.1" disabled></label>`;
+                        html += `<label class="checkbox-label">Has Side<input type="checkbox" class="dim-side-toggle" data-type="${typeNum}" data-dir="${dir}" ${sideChecked ? 'checked' : ''}></label>`;
+                        html += `<label>Count<input type="number" class="dim-input dim-side" data-type="${typeNum}" data-dir="${dir}" data-field="side_count" value="${def('side_count', 2)}" min="1"></label>`;
+                        html += `<label>Length<input type="number" class="dim-input dim-side" data-type="${typeNum}" data-dir="${dir}" data-field="side_length_mm" value="${def('side_length_mm', 600)}" step="0.1"></label>`;
+                        html += '</div>';
+                        html += '<div class="dim-compact-grid">';
+                        const leftType = def('side_left_type', 'columns');
+                        const rightType = def('side_right_type', 'columns');
+                        html += `<label>Left Side<select class="dim-input dim-side-type" data-type="${typeNum}" data-dir="${dir}" data-side="left"><option value="empty"${leftType === 'empty' ? ' selected' : ''}>Empty</option><option value="columns"${leftType === 'columns' ? ' selected' : ''}>Columns</option><option value="rails"${leftType === 'rails' ? ' selected' : ''}>Rails</option></select></label>`;
+                        html += `<label>Right Side<select class="dim-input dim-side-type" data-type="${typeNum}" data-dir="${dir}" data-side="right"><option value="empty"${rightType === 'empty' ? ' selected' : ''}>Empty</option><option value="columns"${rightType === 'columns' ? ' selected' : ''}>Columns</option><option value="rails"${rightType === 'rails' ? ' selected' : ''}>Rails</option></select></label>`;
+                        html += '</div>';
+                        html += '<div class="dim-compact-grid" style="margin-top:4px;">';
+                        html += `<label>Left Count<input type="number" class="dim-input dim-side-element" data-type="${typeNum}" data-dir="${dir}" data-side="left" data-field="side_element_count" value="${def('side_left_count', 1)}" min="0"></label>`;
+                        html += `<label>Right Count<input type="number" class="dim-input dim-side-element" data-type="${typeNum}" data-dir="${dir}" data-side="right" data-field="side_element_count" value="${def('side_right_count', 1)}" min="0"></label>`;
                         html += '</div>';
                     }
 
@@ -1783,6 +1832,16 @@
 
                 // Attach event listeners
                 this.attachListeners();
+
+                // Sync side toggle disabled state from stored/rendered checkbox state
+                document.querySelectorAll('.dim-side-toggle').forEach(cb => {
+                    const typeNum = cb.dataset.type;
+                    const dir = cb.dataset.dir;
+                    const checked = cb.checked;
+                    document.querySelectorAll(`.dim-side[data-type="${typeNum}"][data-dir="${dir}"]`).forEach(inp => { inp.disabled = !checked; });
+                    document.querySelectorAll(`.dim-side-type[data-type="${typeNum}"][data-dir="${dir}"]`).forEach(sel => { sel.disabled = !checked; });
+                    document.querySelectorAll(`.dim-side-element[data-type="${typeNum}"][data-dir="${dir}"]`).forEach(inp => { inp.disabled = !checked; });
+                });
             },
 
             // Attach input listeners for live calculation
@@ -1801,12 +1860,28 @@
                     inp.addEventListener('input', () => this.calculateAll());
                 });
 
+                // Side type selects
+                document.querySelectorAll('.dim-side-type').forEach(select => {
+                    select.addEventListener('change', () => this.calculateAll());
+                });
+
+                // Side element count inputs
+                document.querySelectorAll('.dim-side-element').forEach(inp => {
+                    inp.addEventListener('input', () => this.calculateAll());
+                });
+
                 // Side toggle
                 document.querySelectorAll('.dim-side-toggle').forEach(cb => {
                     cb.addEventListener('change', (e) => {
                         const typeNum = e.target.dataset.type;
                         const dir = e.target.dataset.dir;
                         document.querySelectorAll(`.dim-side[data-type="${typeNum}"][data-dir="${dir}"]`).forEach(inp => {
+                            inp.disabled = !e.target.checked;
+                        });
+                        document.querySelectorAll(`.dim-side-type[data-type="${typeNum}"][data-dir="${dir}"]`).forEach(select => {
+                            select.disabled = !e.target.checked;
+                        });
+                        document.querySelectorAll(`.dim-side-element[data-type="${typeNum}"][data-dir="${dir}"]`).forEach(inp => {
                             inp.disabled = !e.target.checked;
                         });
                         this.calculateAll();
@@ -1830,8 +1905,6 @@
                 const typeNum = activeTab.dataset.type;
                 const hasDirs = document.getElementById('hasDirections').checked;
                 const directions = hasDirs ? ['FRONT', 'REAR'] : ['SINGLE'];
-
-                this.cabinetDimensions = {};
 
                 for (const dir of directions) {
                     const dimData = this.collectDimensionData(typeNum, dir);
@@ -1870,9 +1943,17 @@
 
                 // Side
                 const sideToggle = document.querySelector(`.dim-side-toggle[data-type="${typeNum}"][data-dir="${dir}"]`);
+                data.side_checked = sideToggle ? sideToggle.checked : true;
                 if (sideToggle && sideToggle.checked) {
                     data.side_count = getInput('side_count');
                     data.side_length_mm = getInput('side_length_mm');
+                    data.side_left_type = document.querySelector(`.dim-side-type[data-type="${typeNum}"][data-dir="${dir}"][data-side="left"]`)?.value || 'empty';
+                    data.side_right_type = document.querySelector(`.dim-side-type[data-type="${typeNum}"][data-dir="${dir}"][data-side="right"]`)?.value || 'empty';
+                    
+                    const leftCountEl = document.querySelector(`.dim-side-element[data-type="${typeNum}"][data-dir="${dir}"][data-side="left"]`);
+                    const rightCountEl = document.querySelector(`.dim-side-element[data-type="${typeNum}"][data-dir="${dir}"][data-side="right"]`);
+                    data.side_left_count = leftCountEl ? parseFloat(leftCountEl.value) || 0 : 0;
+                    data.side_right_count = rightCountEl ? parseFloat(rightCountEl.value) || 0 : 0;
                 }
 
                 return data;
@@ -1935,6 +2016,7 @@
 
             // Apply calculated percentages to the existing percentage input fields
             applyToPercentages() {
+                this.saveCurrentState();
                 const activeTab = document.querySelector('.tab-btn.active');
                 if (!activeTab) return;
                 const typeNum = activeTab.dataset.type;
@@ -1992,22 +2074,21 @@
             getCabinetLimits() {
                 if (!DimensionMode.active) return null;
 
-                // If dimension mode is active, collect all dimensions from all types
-                // and call the backend to derive limits, OR calculate client-side.
-                // For now, we calculate client-side (no API call needed).
+                // Save all current DOM inputs into cabinetDimensions first
+                this.saveCurrentState();
 
                 const typeCount = parseInt(document.getElementById('typeCount').value, 10);
                 const hasDirs = document.getElementById('hasDirections').checked;
                 const cabinetLimits = {};
 
                 for (let t = 1; t <= typeCount; t++) {
+                    const typeName = `Type ${t}`;
                     const directions = hasDirs ? ['FRONT', 'REAR'] : ['SINGLE'];
 
                     for (const dir of directions) {
-                        const dirLower = dir.toLowerCase();
-                        const dimData = DimensionMode.collectDimensionData(t, dir);
+                        const dimData = DimensionMode.cabinetDimensions[typeName]?.[dir];
 
-                        if (!dimData.terminal_rail || !dimData.card_column) continue;
+                        if (!dimData?.terminal_rail || !dimData?.card_column) continue;
 
                         const tr = dimData.terminal_rail;
                         const cc = dimData.card_column;
@@ -2018,9 +2099,29 @@
 
                         const usableCard = cc.column_length_mm - cc.top_gap_mm - cc.bottom_gap_mm - cc.reserved_space_mm;
 
+                        // Calculate side panel capacities
+                        let sideTerminals = 0;
+                        let sideCards = 0;
+                        
+                        if (dimData.side_count && dimData.side_length_mm) {
+                            const sideRailUsable = dimData.side_length_mm - 20;
+                            
+                            if (dimData.side_left_type === 'rails' && (dimData.side_left_count || 0) > 0) {
+                                sideTerminals += Math.floor(sideRailUsable / tr.terminal_height_mm) * (dimData.side_left_count || 0);
+                            } else if (dimData.side_left_type === 'columns' && (dimData.side_left_count || 0) > 0) {
+                                sideCards += (dimData.side_left_count || 0);
+                            }
+                            
+                            if (dimData.side_right_type === 'rails' && (dimData.side_right_count || 0) > 0) {
+                                sideTerminals += Math.floor(sideRailUsable / tr.terminal_height_mm) * (dimData.side_right_count || 0);
+                            } else if (dimData.side_right_type === 'columns' && (dimData.side_right_count || 0) > 0) {
+                                sideCards += (dimData.side_right_count || 0);
+                            }
+                        }
+
                         const limits = {
                             "Max_Total_Boards": 100,
-                            "Max rail terminals": maxTerminals
+                            "Max rail terminals": maxTerminals + sideTerminals
                         };
 
                         for (const boardKey of DimensionMode.boardKeys) {
@@ -2031,11 +2132,11 @@
                             }
                             const effectivePitch = cardHeight + cc.card_gap_mm;
                             const cardsFit = Math.floor(usableCard / effectivePitch);
-                            const totalCards = cardsFit * cc.column_count;
+                            const totalCards = (cardsFit * cc.column_count) + sideCards;
                             limits[boardKey] = totalCards > 0 ? Math.floor((100 / totalCards) * 10) / 10 : 100;
                         }
 
-                        cabinetLimits[`Type ${t}|${dir}`] = limits;
+                        cabinetLimits[`${typeName}|${dir}`] = limits;
                     }
                 }
 
@@ -2169,222 +2270,166 @@
                             <div class="cviz-pane-title"><i class="fas fa-vector-square"></i><span>${isFa ? 'نمای روبرو (مهندسی)' : 'Front Elevation'}</span></div>
                             ${this._renderEmptyFront2D(typeNum, dir, dimData, railUsable, cardUsable)}
                         </div>
-                        <div class="cviz-pane">
-                            <div class="cviz-pane-title"><i class="fas fa-cube"></i><span>${isFa ? 'نمای ایزومتریک' : 'Isometric View'}</span></div>
-                            ${this._renderEmptyIso3D(typeNum, dir, dimData)}
-                            <div class="cviz-iso-info" id="cvizIsoInfo-${typeNum}-${dir}">
-                                <span class="cviz-iso-info-icon"><i class="fas fa-info-circle"></i></span>
-                                <span>${isFa ? 'روی هر بخش بروید' : 'Hover any section'}</span>
-                            </div>
-                        </div>
                     </div>`;
-                this._attachIsoHover(typeNum, dir, dimData, railUsable, cardUsable);
             },
 
             // ── 2D Front Elevation — Engineering Drawing ──
             _renderEmptyFront2D(typeNum, dir, dimData, railUsable, cardUsable) {
                 const tr = dimData.terminal_rail;
                 const cc = dimData.card_column;
-                const hasSide = dimData.side_count && dimData.side_length_mm;
+                const hasSide = !!(dimData.side_count && dimData.side_length_mm);
                 const isFa = currentLang === 'fa';
 
-                const W = 760, H = 560;
-                const cabH_mm = tr.rail_length_mm;
-                const leftSide_mm = hasSide ? 60 : 0;
-                const rightSide_mm = hasSide ? 60 : 0;
-                const mainW_mm = 400;
-                const totalW_mm = leftSide_mm + mainW_mm + rightSide_mm;
-
-                const scale = Math.min((W - 120) / totalW_mm, (H - 100) / cabH_mm, 0.28);
+                const W = 1120, H = 900;
+                const cabH_mm = Math.max(tr.rail_length_mm, tr.top_gap_mm + tr.bottom_gap_mm + 120);
+                const mainW_mm = Math.max(240, Math.min(420, cc.column_length_mm * 0.82));
+                const sideW_mm = hasSide ? Math.max(50, Math.min(90, cc.column_length_mm * 0.16)) : 0;
+                const totalW_mm = sideW_mm * 2 + mainW_mm;
+                const scale = Math.min((W - 180) / totalW_mm, (H - 200) / cabH_mm, 0.54);
                 const cabW = totalW_mm * scale;
                 const cabH = cabH_mm * scale;
-                const leftW = leftSide_mm * scale;
-                const rightW = rightSide_mm * scale;
+                const leftW = sideW_mm * scale;
+                const rightW = sideW_mm * scale;
                 const mainW = mainW_mm * scale;
                 const ox = (W - cabW) / 2;
-                const oy = 45;
+                const oy = 60;
 
-                // Power band
-                const powerH_mm = 52;
-                const vacH_mm = 26;
+                const powerH_mm = Math.max(28, Math.min(cabH_mm * 0.12, tr.rail_length_mm * 0.08));
+                const vacH_mm = powerH_mm * 0.5;
                 const powerH = powerH_mm * scale;
                 const vacH = vacH_mm * scale;
-
-                // Rail area
                 const topGapH = tr.top_gap_mm * scale;
                 const botGapH = tr.bottom_gap_mm * scale;
                 const railTop = oy + powerH + topGapH;
                 const railBot = oy + cabH - botGapH;
-                const railH = railBot - railTop;
-
-                // Column layout
-                const colCount = cc.column_count || 1;
-                let leftColW = 0, rightColW = 0, railAreaStartX, railAreaW;
-                if (colCount >= 2) {
-                    const colTotalW = mainW * 0.42;
-                    leftColW = colTotalW / colCount * Math.ceil(colCount / 2);
-                    rightColW = colTotalW / colCount * Math.floor(colCount / 2);
-                    railAreaW = mainW - colTotalW - 20;
-                    railAreaStartX = ox + leftW + 10 + leftColW + 10;
-                } else {
-                    railAreaW = mainW * 0.58;
-                    railAreaStartX = ox + leftW + 5;
-                    rightColW = mainW * 0.36;
-                }
+                const railH = Math.max(70, railBot - railTop);
+                const colCount = Math.max(1, cc.column_count || 1);
+                
+                // THINNER RAILS + BOTH-SIDED COLUMNS
+                const railThickness = 2.8;  // Much thinner
+                const railAreaW = mainW - 6;
+                const railCenterX = ox + leftW + mainW / 2;
+                const colAreaPerSide = (mainW - railThickness) / 2 - 8;
+                const colPerSide = Math.floor(colCount / 2);
+                const colPerSideRemainder = colCount % 2;
+                const cardGap = 2;
+                const colInnerW = (colAreaPerSide - (colPerSide + 1) * cardGap) / Math.max(1, colPerSide);
+                
+                // LEFT COLUMNS
+                const leftColStartX = ox + leftW + 4;
+                // RIGHT COLUMNS
+                const rightColStartX = railCenterX + railThickness / 2 + 4;
 
                 let svg = `<svg viewBox="0 0 ${W} ${H}" class="cviz-svg cviz-svg-2d" preserveAspectRatio="xMidYMid meet">`;
 
-                // ── Title block ──
-                svg += `<text x="${W / 2}" y="22" text-anchor="middle" font-size="14" fill="var(--text)" font-weight="700" font-family="var(--font)">CABINET TYPE ${typeNum} — ${dir} ELEVATION</text>`;
-                svg += `<text x="${W / 2}" y="36" text-anchor="middle" font-size="9" fill="var(--muted)" font-family="var(--mono)">${tr.rail_length_mm}mm × ${totalW_mm}mm</text>`;
+                svg += `<defs><pattern id="hatch-bg-${typeNum}-${dir}" patternUnits="userSpaceOnUse" width="6" height="6"><path d="M-2,2 l4,-4 M0,6 l6,-6 M4,8 l4,-4" stroke="var(--accent)" stroke-width="0.3" opacity="0.08"/></pattern></defs>`;
+                svg += `<rect width="${W}" height="${H}" fill="url(#hatch-bg-${typeNum}-${dir})"/>`;
 
-                // ── Cabinet frame with door thickness ──
+                svg += `<text x="${W / 2}" y="24" text-anchor="middle" font-size="18" fill="var(--text)" font-weight="800" font-family="var(--font)">CABINET TYPE ${typeNum}</text>`;
+                svg += `<text x="${W / 2}" y="42" text-anchor="middle" font-size="16" fill="var(--accent)" font-weight="700" font-family="var(--mono)">${dir} ELEVATION</text>`;
+                svg += `<text x="${W / 2}" y="58" text-anchor="middle" font-size="11" fill="var(--muted)" font-family="var(--mono)">${tr.rail_length_mm}mm H × ${totalW_mm.toFixed(0)}mm W</text>`;
+
                 const doorThick = 3;
                 svg += `<rect x="${ox - doorThick}" y="${oy - doorThick}" width="${cabW + doorThick * 2}" height="${cabH + doorThick * 2}" fill="none" stroke="var(--border)" stroke-width="0.5" rx="1"/>`;
                 svg += `<rect x="${ox}" y="${oy}" width="${cabW}" height="${cabH}" fill="var(--bg-card)" stroke="var(--text)" stroke-width="1.2" rx="1"/>`;
 
-                // ── Section dividers ──
+                // ── SIDE PANELS ──
                 if (hasSide) {
-                    svg += `<line x1="${ox + leftW}" y1="${oy}" x2="${ox + leftW}" y2="${oy + cabH}" stroke="var(--text)" stroke-width="0.6" stroke-dasharray="4,3"/>`;
-                    svg += `<line x1="${ox + leftW + mainW}" y1="${oy}" x2="${ox + leftW + mainW}" y2="${oy + cabH}" stroke="var(--text)" stroke-width="0.6" stroke-dasharray="4,3"/>`;
-                    svg += this._hatch(ox + 2, oy + 2, leftW - 4, cabH - 4, `hatch-l-${typeNum}-${dir}`);
-                    svg += this._hatch(ox + leftW + mainW + 2, oy + 2, rightW - 4, cabH - 4, `hatch-r-${typeNum}-${dir}`);
-                    svg += `<text x="${ox + leftW / 2}" y="${oy + cabH + 16}" text-anchor="middle" font-size="8" fill="var(--muted)" font-weight="600">SIDE</text>`;
-                    svg += `<text x="${ox + leftW + mainW + rightW / 2}" y="${oy + cabH + 16}" text-anchor="middle" font-size="8" fill="var(--muted)" font-weight="600">SIDE</text>`;
+                    const leftType = dimData.side_left_type || 'empty';
+                    const rightType = dimData.side_right_type || 'empty';
+                    const leftCount = dimData.side_left_count || 0;
+                    const rightCount = dimData.side_right_count || 0;
+                    
+                    // LEFT SIDE
+                    svg += this._drawSidePanel(ox + 1, railTop, leftW - 2, railH, 'LEFT', leftType, leftCount, tr, scale);
+                    
+                    // RIGHT SIDE
+                    svg += this._drawSidePanel(ox + cabW - rightW + 1, railTop, rightW - 2, railH, 'RIGHT', rightType, rightCount, tr, scale);
                 }
 
-                // ── Power Section ──
+                // ── POWER SECTION ──
                 const px = ox + leftW + 3;
                 const pw = mainW - 6;
-                // 230 VAC
-                svg += `<rect x="${px}" y="${oy + 3}" width="${pw}" height="${vacH}" fill="rgba(220,38,38,0.15)" stroke="var(--danger)" stroke-width="0.5" rx="1"/>`;
+                svg += `<rect x="${px}" y="${oy + 3}" width="${pw}" height="${vacH}" fill="rgba(220,38,38,0.18)" stroke="var(--danger)" stroke-width="0.5" rx="1" data-zone="power"/>`;
                 svg += `<text x="${px + pw / 2}" y="${oy + 3 + vacH / 2 + 3}" text-anchor="middle" font-size="9" fill="var(--danger)" font-weight="700">230 VAC</text>`;
-                svg += `<line x1="${px}" y1="${oy + 3 + vacH}" x2="${px + pw}" y2="${oy + 3 + vacH}" stroke="var(--danger)" stroke-width="0.4" stroke-dasharray="2,2"/>`;
-                // 24 VDC
                 const vdcY = oy + 3 + vacH;
                 const vdcH = (powerH_mm - vacH_mm) * scale;
-                svg += `<rect x="${px}" y="${vdcY}" width="${pw}" height="${vdcH}" fill="rgba(37,99,235,0.12)" stroke="var(--accent-2)" stroke-width="0.5" rx="1"/>`;
+                svg += `<rect x="${px}" y="${vdcY}" width="${pw}" height="${vdcH}" fill="rgba(37,99,235,0.16)" stroke="var(--accent-2)" stroke-width="0.5" rx="1" data-zone="power"/>`;
                 svg += `<text x="${px + pw / 2}" y="${vdcY + vdcH / 2 + 3}" text-anchor="middle" font-size="9" fill="var(--accent-2)" font-weight="700">24 VDC</text>`;
+                svg += `<text x="${px + 4}" y="${oy + 14}" text-anchor="start" font-size="7" fill="var(--muted)" font-weight="600">POWER SECTION</text>`;
 
-                // Power section label
-                svg += `<text x="${px + 4}" y="${oy + 14}" text-anchor="start" font-size="7" fill="var(--muted)" font-weight="600">POWER</text>`;
-
-                // ── Top clearance ──
                 svg += this._hatch(px, oy + powerH, pw, topGapH, `hatch-tc-${typeNum}-${dir}`);
-                svg += `<text x="${px + pw / 2}" y="${oy + powerH + topGapH / 2 + 3}" text-anchor="middle" font-size="7" fill="var(--muted)">CLEARANCE</text>`;
+                svg += `<rect x="${px}" y="${oy + powerH}" width="${pw}" height="${topGapH}" fill="rgba(255,255,255,0.04)" stroke="var(--border)" stroke-width="0.3" data-zone="topclearance"/>`;
+                svg += `<text x="${px + pw / 2}" y="${oy + powerH + topGapH / 2 + 3}" text-anchor="middle" font-size="7" fill="var(--muted)">${isFa ? 'سازگاری بالا' : 'TOP CLEARANCE'}</text>`;
 
-                // ── DIN Rails ──
-                const railStripW = railAreaW / tr.rail_count;
-                const termPitch = tr.terminal_height_mm * scale;
-                const termPerRail = Math.floor(railH / termPitch);
+                // ── LEFT COLUMNS ──
+                for (let i = 0; i < colPerSide; i++) {
+                    const cx = leftColStartX + i * (colInnerW + cardGap) + cardGap;
+                    const cw = colInnerW;
+                    svg += `<rect x="${cx}" y="${railTop}" width="${cw}" height="${railH}" fill="var(--bg-soft)" stroke="var(--accent-2)" stroke-width="0.6" stroke-dasharray="4,3" rx="1" data-zone="cardcol-${i}"/>`;
+                    svg += `<text x="${cx + cw / 2}" y="${railTop - 5}" text-anchor="middle" font-size="8" fill="var(--accent-2)" font-weight="700">L${i + 1}</text>`;
+                }
 
+                // ── RAILS (VERY THIN) ──
                 for (let i = 0; i < tr.rail_count; i++) {
-                    const rx = railAreaStartX + i * railStripW;
-                    const rw = railStripW - 4;
-
-                    // Rail body
-                    svg += `<rect class="cviz-rail" data-zone="rail-${i}" data-rail-idx="${i}" x="${rx}" y="${railTop}" width="${rw}" height="${railH}" fill="var(--bg-strong)" stroke="var(--muted)" stroke-width="0.5" rx="1"/>`;
-
-                    // Rail top mounting profile
-                    svg += `<rect x="${rx}" y="${railTop}" width="${rw}" height="2" fill="var(--muted)" opacity="0.4"/>`;
-                    svg += `<rect x="${rx}" y="${railBot - 2}" width="${rw}" height="2" fill="var(--muted)" opacity="0.4"/>`;
-
-                    // Rail label
-                    svg += `<text x="${rx + rw / 2}" y="${railTop - 5}" text-anchor="middle" font-size="8" fill="var(--muted)" font-weight="700" font-family="var(--mono)">R${i + 1}</text>`;
-
-                    // Terminal blocks
-                    if (termPitch >= 1.2) {
-                        for (let j = 0; j < termPerRail; j++) {
-                            const ty = railTop + j * termPitch;
-                            const blockH = Math.min(termPitch - 0.5, 3);
-                            // Terminal block
-                            svg += `<rect x="${rx + 1}" y="${ty}" width="${rw - 2}" height="${blockH}" fill="var(--muted)" fill-opacity="0.5" rx="0.3"/>`;
-                            // Separator line
-                            if (j > 0) {
-                                svg += `<line x1="${rx}" y1="${ty}" x2="${rx + rw}" y2="${ty}" stroke="var(--text)" stroke-width="0.2" opacity="0.2"/>`;
-                            }
-                        }
-                        // Every 10th terminal — accent marker
-                        for (let j = 0; j < termPerRail; j += 10) {
-                            const ty = railTop + j * termPitch;
-                            svg += `<line x1="${rx - 2}" y1="${ty}" x2="${rx + rw + 2}" y2="${ty}" stroke="var(--accent)" stroke-width="0.5"/>`;
-                            svg += `<text x="${rx - 4}" y="${ty + 3}" text-anchor="end" font-size="6" fill="var(--accent)" font-family="var(--mono)">${j + 1}</text>`;
-                        }
-                    } else {
-                        // Density gradient
-                        svg += `<rect x="${rx}" y="${railTop}" width="${rw}" height="${railH}" fill="var(--muted)" opacity="0.15"/>`;
-                        svg += `<text x="${rx + rw / 2}" y="${railTop + railH / 2}" text-anchor="middle" font-size="6" fill="var(--muted)" transform="rotate(-90 ${rx + rw / 2} ${railTop + railH / 2})">${termPerRail}T</text>`;
-                    }
+                    const rx = railCenterX - (tr.rail_count * railThickness) / 2 + i * railThickness;
+                    svg += `<rect class="cviz-rail" data-zone="rail-${i}" data-rail-idx="${i}" x="${rx}" y="${railTop}" width="${railThickness}" height="${railH}" fill="var(--muted)" stroke="var(--text)" stroke-width="0.3" rx="0.2"/>`;
+                    svg += `<text x="${rx + railThickness / 2}" y="${railTop - 5}" text-anchor="middle" font-size="7" fill="var(--text)" font-weight="700" font-family="var(--mono)">R${i + 1}</text>`;
                 }
 
-                // Rail section label
-                svg += `<text x="${railAreaStartX + railAreaW / 2}" y="${railBot + 14}" text-anchor="middle" font-size="9" fill="var(--accent)" font-weight="700">DIN RAILS — ${tr.rail_count} × ${railUsable.toFixed(0)}mm</text>`;
-                svg += `<text x="${railAreaStartX + railAreaW / 2}" y="${railBot + 25}" text-anchor="middle" font-size="7" fill="var(--muted)" font-family="var(--mono)">${termPerRail * tr.rail_count} terminals @ ${tr.terminal_height_mm}mm pitch</text>`;
+                svg += `<text x="${railCenterX}" y="${railBot + 14}" text-anchor="middle" font-size="9" fill="var(--accent)" font-weight="700">DIN RAILS · ${tr.rail_count} × ${railUsable.toFixed(0)}mm</text>`;
 
-                // ── Card Columns ──
-                const drawCardCol = (cx, cw, label, isLeft) => {
-                    svg += `<rect x="${cx}" y="${railTop}" width="${cw}" height="${railH}" fill="var(--bg-soft)" stroke="var(--accent-2)" stroke-width="0.6" stroke-dasharray="4,3" rx="1"/>`;
-                    svg += `<text x="${cx + cw / 2}" y="${railTop - 5}" text-anchor="middle" font-size="8" fill="var(--accent-2)" font-weight="700">${label}</text>`;
-                    // Card fit summary
-                    const cardCatalog = this.getCardCatalog();
-                    const boardKeys = this.getBoardKeys();
-                    let yC = railTop + 12;
-                    const halfCol = isLeft ? Math.ceil(colCount / 2) : Math.floor(colCount / 2);
-                    for (const bk of boardKeys) {
-                        const ch = cardCatalog[bk] || 0;
-                        if (ch <= 0) continue;
-                        const eff = ch + cc.card_gap_mm;
-                        const fit = Math.floor(cardUsable / eff);
-                        const total = fit * (isLeft ? halfCol : (colCount >= 2 ? halfCol : colCount));
-                        const sn = bk.replace('Barrier Board ', 'B-').replace('Terminal Board ', 'T-').replace('Relay Board ', 'R-').replace(' capacity', '');
-                        if (yC < railBot - 8) {
-                            svg += `<text x="${cx + 4}" y="${yC}" text-anchor="start" font-size="7" fill="var(--text)">${sn}: ${total}</text>`;
-                            yC += 10;
-                        }
-                    }
-                    // Reserved space
-                    if (cc.reserved_space_mm > 0) {
-                        const resH = cc.reserved_space_mm * scale;
-                        const resY = railBot - resH;
-                        svg += this._hatch(cx, resY, cw, resH, `hatch-res-${isLeft ? 'l' : 'r'}-${typeNum}-${dir}`);
-                        svg += `<rect x="${cx}" y="${resY}" width="${cw}" height="${resH}" fill="rgba(246,84,106,0.1)" stroke="var(--danger)" stroke-width="0.4" stroke-dasharray="2,2"/>`;
-                        svg += `<text x="${cx + cw / 2}" y="${resY + resH / 2 + 3}" text-anchor="middle" font-size="7" fill="var(--danger)" font-weight="600">RESERVED</text>`;
-                        svg += `<text x="${cx + cw / 2}" y="${resY + resH / 2 + 11}" text-anchor="middle" font-size="6" fill="var(--danger)" font-family="var(--mono)">${cc.reserved_space_mm}mm</text>`;
-                    }
-                    svg += `<text x="${cx + cw / 2}" y="${railBot + 14}" text-anchor="middle" font-size="8" fill="var(--muted)" font-weight="600">${label} (${cardUsable.toFixed(0)}mm)</text>`;
-                };
-
-                if (colCount >= 2) {
-                    const lcx = ox + leftW + 10;
-                    drawCardCol(lcx, leftColW, 'COL-L', true);
-                    const rcx = railAreaStartX + railAreaW + 10;
-                    drawCardCol(rcx, rightColW, 'COL-R', false);
-                } else {
-                    const rcx = railAreaStartX + railAreaW + 5;
-                    drawCardCol(rcx, rightColW, 'CARD COL', false);
+                // ── RIGHT COLUMNS ──
+                for (let i = 0; i < colPerSide + colPerSideRemainder; i++) {
+                    const cx = rightColStartX + i * (colInnerW + cardGap) + cardGap;
+                    const cw = colInnerW;
+                    svg += `<rect x="${cx}" y="${railTop}" width="${cw}" height="${railH}" fill="var(--bg-soft)" stroke="var(--accent-2)" stroke-width="0.6" stroke-dasharray="4,3" rx="1" data-zone="cardcol-${colPerSide + i}"/>`;
+                    svg += `<text x="${cx + cw / 2}" y="${railTop - 5}" text-anchor="middle" font-size="8" fill="var(--accent-2)" font-weight="700">R${i + 1}</text>`;
                 }
 
-                // ── Bottom clearance ──
                 svg += this._hatch(px, railBot, pw, botGapH, `hatch-bc-${typeNum}-${dir}`);
+                svg += `<rect x="${px}" y="${railBot}" width="${pw}" height="${botGapH}" fill="rgba(255,255,255,0.04)" stroke="var(--border)" stroke-width="0.3" data-zone="bottomclearance"/>`;
+                svg += `<text x="${px + pw / 2}" y="${railBot + botGapH / 2 + 3}" text-anchor="middle" font-size="7" fill="var(--muted)">${isFa ? 'فاصله پایین' : 'BOTTOM CLEARANCE'}</text>`;
 
-                // ── Dimension annotations ──
-                // Total height (left side)
-                svg += this._dimV(oy, oy + cabH, ox - 22, `${tr.rail_length_mm}mm`);
-                // Top gap
-                svg += this._dimV(oy, railTop, ox - 8, `${tr.top_gap_mm + powerH_mm}`);
-                // Bottom gap
-                svg += this._dimV(railBot, oy + cabH, ox - 8, `${tr.bottom_gap_mm}`);
-                // Total width (top)
-                svg += this._dimH(ox, ox + cabW, oy - 12, `${totalW_mm}mm`);
+                svg += this._dimV(oy, oy + cabH, ox - 20, `${tr.rail_length_mm}mm`);
+                svg += this._dimH(ox, ox + cabW, oy - 12, `${totalW_mm.toFixed(0)}mm`);
 
-                // COL badge
-                svg += `<rect x="${ox + cabW - 68}" y="${oy + 5}" width="63" height="18" fill="var(--accent)" fill-opacity="0.15" stroke="var(--accent)" stroke-width="0.5" rx="3"/>`;
-                svg += `<text x="${ox + cabW - 36.5}" y="${oy + 18}" text-anchor="middle" font-size="9" fill="var(--accent)" font-weight="700" font-family="var(--mono)">COL × ${colCount}</text>`;
-
-                // Front label
-                svg += `<text x="${ox + leftW + mainW / 2}" y="${oy + cabH + 16}" text-anchor="middle" font-size="10" fill="var(--accent)" font-weight="700">FRONT — TYPE ${typeNum}</text>`;
+                svg += `<rect x="${ox + cabW - 72}" y="${oy + 5}" width="68" height="18" fill="var(--accent)" fill-opacity="0.16" stroke="var(--accent)" stroke-width="0.5" rx="3"/>`;
+                svg += `<text x="${ox + cabW - 38}" y="${oy + 18}" text-anchor="middle" font-size="9" fill="var(--accent)" font-weight="700" font-family="var(--mono)">COL × ${colCount}</text>`;
+                svg += `<text x="${ox + leftW + mainW / 2}" y="${oy + cabH + 18}" text-anchor="middle" font-size="10" fill="var(--accent)" font-weight="700">FRONT ELEVATION · ${dir}</text>`;
 
                 svg += `</svg>`;
+                return svg;
+            },
+
+            // ── Helper: Draw side panel with content type ──
+            _drawSidePanel(x, y, w, h, side, type, count, tr, scale) {
+                let svg = '';
+                const railThickness = 2.8;
+                
+                // Base panel
+                svg += `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="var(--bg-soft)" stroke="var(--muted)" stroke-width="0.5" stroke-dasharray="4,3" data-zone="${side.toLowerCase()}side"/>`;
+                
+                if (type === 'empty') {
+                    svg += `<text x="${x + w / 2}" y="${y + h / 2 + 3}" text-anchor="middle" font-size="7" fill="var(--muted)" font-weight="600">EMPTY</text>`;
+                } else if (type === 'columns') {
+                    const colPerSide = Math.max(1, count > 0 ? count : Math.floor(w / 30));
+                    const colW = (w - (colPerSide + 1) * 2) / colPerSide;
+                    for (let i = 0; i < colPerSide; i++) {
+                        const cx = x + 2 + i * (colW + 2);
+                        svg += `<rect x="${cx}" y="${y}" width="${colW}" height="${h}" fill="var(--accent-2)" fill-opacity="0.15" stroke="var(--accent-2)" stroke-width="0.4" stroke-dasharray="2,2" rx="0.5"/>`;
+                    }
+                    svg += `<text x="${x + w / 2}" y="${y + 12}" text-anchor="middle" font-size="6" fill="var(--accent-2)" font-weight="600">COLS × ${colPerSide}</text>`;
+                } else if (type === 'rails') {
+                    const railCount = Math.max(1, count > 0 ? count : Math.floor(w / 8));
+                    const railSpacing = w / (railCount + 1);
+                    for (let i = 0; i < railCount; i++) {
+                        const rx = x + railSpacing * (i + 1) - railThickness / 2;
+                        svg += `<rect x="${rx}" y="${y}" width="${railThickness}" height="${h}" fill="var(--muted)" stroke="var(--text)" stroke-width="0.3" rx="0.2"/>`;
+                    }
+                    svg += `<text x="${x + w / 2}" y="${y + 12}" text-anchor="middle" font-size="6" fill="var(--text)" font-weight="600">RAILS × ${railCount}</text>`;
+                }
+                
                 return svg;
             },
 
@@ -2394,13 +2439,15 @@
                 const cc = dimData.card_column;
                 const isFa = currentLang === 'fa';
 
-                const W = 300, H = 240;
-                const cabW = 160, cabH = 140, cabD = 65;
+                const W = 620, H = 560;
+                const cabW = Math.max(180, Math.min(280, cc.column_length_mm / 4));
+                const cabH = Math.max(170, Math.min(280, tr.rail_length_mm / 5.5));
+                const cabD = Math.max(90, Math.min(140, cc.column_length_mm / 6));
                 const iso = (x, y, z) => ({
-                    x: (x - z) * 0.866,
-                    y: y * 0.92 - (x + z) * 0.25
+                    x: (x - z) * 0.86,
+                    y: y * 0.90 - (x + z) * 0.28
                 });
-                const ox = 75, oy = 28;
+                const ox = 140, oy = 60;
                 const A = (p) => ({ x: ox + p.x, y: oy + p.y });
 
                 const c = {};
@@ -2412,80 +2459,63 @@
 
                 let svg = `<svg viewBox="0 0 ${W} ${H}" class="cviz-svg cviz-svg-3d" preserveAspectRatio="xMidYMid meet">`;
 
-                // Shadow
-                svg += `<ellipse cx="${(c['010'].x + c['111'].x) / 2}" cy="${c['010'].y + 5}" rx="${(c['111'].x - c['010'].x) / 2 + 10}" ry="5" fill="var(--text)" opacity="0.15"/>`;
-
-                // ── Top face with ventilation grid ──
+                svg += `<ellipse cx="${(c['010'].x + c['111'].x) / 2}" cy="${c['010'].y + 8}" rx="${(c['111'].x - c['010'].x) / 2 + 12}" ry="5" fill="var(--text)" opacity="0.14"/>`;
                 svg += `<polygon class="cviz-iso-face cviz-iso-top" data-zone="top" points="${pts('000','100','101','001')}"/>`;
-                // Ventilation lines on top
+                svg += `<polygon class="cviz-iso-face cviz-iso-left" data-zone="leftside" points="${pts('000','010','011','001')}"/>`;
+                svg += `<polygon class="cviz-iso-face cviz-iso-right" data-zone="rightside" points="${pts('100','110','111','101')}"/>`;
+                svg += `<polygon class="cviz-iso-face cviz-iso-front" data-zone="front" points="${pts('010','110','111','011')}"/>`;
+
                 for (let i = 1; i < 5; i++) {
                     const p1 = A(iso(cabW * i / 5, 0, 0));
                     const p2 = A(iso(cabW * i / 5, 0, cabD));
                     svg += `<line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="var(--muted)" stroke-width="0.3" opacity="0.2"/>`;
                 }
 
-                // ── Left face ──
-                svg += `<polygon class="cviz-iso-face cviz-iso-left" data-zone="leftside" points="${pts('000','010','011','001')}"/>`;
-
-                // ── Right face (door) with thickness ──
-                svg += `<polygon class="cviz-iso-face cviz-iso-right" data-zone="rightside" points="${pts('100','110','111','101')}"/>`;
-                // Door handle
-                const dh = A(iso(cabW, cabH * 0.5, cabD * 0.5));
-                svg += `<circle cx="${dh.x}" cy="${dh.y}" r="2" fill="var(--muted)" opacity="0.5"/>`;
-
-                // ── Front face ──
-                svg += `<polygon class="cviz-iso-face cviz-iso-front" data-zone="front" points="${pts('010','110','111','011')}"/>`;
-
-                // ── Power section on front ──
-                const fbT = 0.06, fbB = 0.20;
-                const pp1 = A(iso(0.04 * cabW, fbT * cabH, 0));
-                const pp2 = A(iso(0.96 * cabW, fbT * cabH, 0));
-                const pp3 = A(iso(0.96 * cabW, fbB * cabH, 0));
-                const pp4 = A(iso(0.04 * cabW, fbB * cabH, 0));
-                svg += `<polygon class="cviz-iso-zone" data-zone="power" fill="rgba(220,38,38,0.25)" stroke="var(--danger)" stroke-width="0.5" points="${pp1.x},${pp1.y} ${pp2.x},${pp2.y} ${pp3.x},${pp3.y} ${pp4.x},${pp4.y}"/>`;
-                // Power divider
-                const pm1 = A(iso(0.04 * cabW, (fbT + fbB) / 2 * cabH, 0));
-                const pm2 = A(iso(0.96 * cabW, (fbT + fbB) / 2 * cabH, 0));
+                const powerTop = cabH * 0.06;
+                const powerBot = cabH * 0.24;
+                const pp1 = A(iso(0.04 * cabW, powerTop, 0));
+                const pp2 = A(iso(0.96 * cabW, powerTop, 0));
+                const pp3 = A(iso(0.96 * cabW, powerBot, 0));
+                const pp4 = A(iso(0.04 * cabW, powerBot, 0));
+                svg += `<polygon class="cviz-iso-zone" data-zone="power" fill="rgba(220,38,38,0.24)" stroke="var(--danger)" stroke-width="0.5" points="${pp1.x},${pp1.y} ${pp2.x},${pp2.y} ${pp3.x},${pp3.y} ${pp4.x},${pp4.y}"/>`;
+                const pm1 = A(iso(0.04 * cabW, (powerTop + powerBot) / 2, 0));
+                const pm2 = A(iso(0.96 * cabW, (powerTop + powerBot) / 2, 0));
                 svg += `<line x1="${pm1.x}" y1="${pm1.y}" x2="${pm2.x}" y2="${pm2.y}" stroke="var(--danger)" stroke-width="0.3" stroke-dasharray="2,1"/>`;
 
-                // ── Card columns ──
                 const colCount = cc.column_count || 1;
-                const drawIsoCol = (x1, x2, label, zoneName) => {
-                    const p1 = A(iso(x1 * cabW, 0.26 * cabH, 0));
-                    const p2 = A(iso(x2 * cabW, 0.26 * cabH, 0));
-                    const p3 = A(iso(x2 * cabW, 0.94 * cabH, 0));
-                    const p4 = A(iso(x1 * cabW, 0.94 * cabH, 0));
+                const drawIsoCol = (x1, x2, zoneName) => {
+                    const p1 = A(iso(x1 * cabW, 0.24 * cabH, 0));
+                    const p2 = A(iso(x2 * cabW, 0.24 * cabH, 0));
+                    const p3 = A(iso(x2 * cabW, 0.92 * cabH, 0));
+                    const p4 = A(iso(x1 * cabW, 0.92 * cabH, 0));
                     svg += `<polygon class="cviz-iso-zone" data-zone="${zoneName}" fill="var(--accent-2)" fill-opacity="0.18" stroke="var(--accent-2)" stroke-width="0.5" stroke-dasharray="3,2" points="${p1.x},${p1.y} ${p2.x},${p2.y} ${p3.x},${p3.y} ${p4.x},${p4.y}"/>`;
                 };
-
                 if (colCount >= 2) {
-                    drawIsoCol(0.05, 0.30, 'L', 'cardcol-left');
-                    drawIsoCol(0.70, 0.95, 'R', 'cardcol-right');
+                    drawIsoCol(0.04, 0.30, 'cardcol-left');
+                    drawIsoCol(0.70, 0.96, 'cardcol-right');
                 } else {
-                    drawIsoCol(0.60, 0.95, '', 'cardcol');
+                    drawIsoCol(0.60, 0.96, 'cardcol');
                 }
 
-                // ── DIN rails zone ──
-                const rr1 = A(iso(0.35 * cabW, 0.26 * cabH, 0));
-                const rr2 = A(iso(0.65 * cabW, 0.26 * cabH, 0));
-                const rr3 = A(iso(0.65 * cabW, 0.94 * cabH, 0));
-                const rr4 = A(iso(0.35 * cabW, 0.94 * cabH, 0));
-                svg += `<polygon class="cviz-iso-zone" data-zone="rails" fill="var(--accent)" fill-opacity="0.2" stroke="var(--accent)" stroke-width="0.5" points="${rr1.x},${rr1.y} ${rr2.x},${rr2.y} ${rr3.x},${rr3.y} ${rr4.x},${rr4.y}"/>`;
-
-                // Rail lines inside zone
+                const rr1 = A(iso(0.34 * cabW, 0.24 * cabH, 0));
+                const rr2 = A(iso(0.64 * cabW, 0.24 * cabH, 0));
+                const rr3 = A(iso(0.64 * cabW, 0.92 * cabH, 0));
+                const rr4 = A(iso(0.34 * cabW, 0.92 * cabH, 0));
+                svg += `<polygon class="cviz-iso-zone" data-zone="rails" fill="var(--accent)" fill-opacity="0.18" stroke="var(--accent)" stroke-width="0.5" points="${rr1.x},${rr1.y} ${rr2.x},${rr2.y} ${rr3.x},${rr3.y} ${rr4.x},${rr4.y}"/>`;
                 for (let i = 1; i < tr.rail_count + 1; i++) {
-                    const xP = 0.35 + (0.30 * i / (tr.rail_count + 1));
-                    const rl1 = A(iso(xP * cabW, 0.28 * cabH, 0));
-                    const rl2 = A(iso(xP * cabW, 0.92 * cabH, 0));
-                    svg += `<line x1="${rl1.x}" y1="${rl1.y}" x2="${rl2.x}" y2="${rl2.y}" stroke="var(--accent)" stroke-width="0.4" opacity="0.5"/>`;
+                    const xP = 0.34 + (0.30 * i / (tr.rail_count + 1));
+                    const rl1 = A(iso(xP * cabW, 0.26 * cabH, 0));
+                    const rl2 = A(iso(xP * cabW, 0.90 * cabH, 0));
+                    svg += `<line x1="${rl1.x}" y1="${rl1.y}" x2="${rl2.x}" y2="${rl2.y}" stroke="var(--accent)" stroke-width="0.4" opacity="0.55"/>`;
                 }
 
-                // ── Labels ──
-                svg += `<text x="${(c['000'].x + c['101'].x) / 2}" y="${(c['000'].y + c['001'].y) / 2 + 2}" text-anchor="middle" font-size="7" fill="var(--muted)" font-weight="600">TOP</text>`;
-                svg += `<text x="${(c['010'].x + c['011'].x) / 2 - 6}" y="${(c['010'].y + c['011'].y) / 2 + 2}" text-anchor="middle" font-size="7" fill="var(--muted)" font-weight="600" transform="rotate(-90 ${(c['010'].x + c['011'].x) / 2 - 6} ${(c['010'].y + c['011'].y) / 2 + 2})">SIDE</text>`;
-                svg += `<text x="${(c['100'].x + c['101'].x) / 2 + 6}" y="${(c['100'].y + c['101'].y) / 2 + 2}" text-anchor="middle" font-size="7" fill="var(--muted)" font-weight="600" transform="rotate(90 ${(c['100'].x + c['101'].x) / 2 + 6} ${(c['100'].y + c['101'].y) / 2 + 2})">DOOR</text>`;
-                svg += `<text x="${(c['010'].x + c['111'].x) / 2}" y="${c['110'].y + 14}" text-anchor="middle" font-size="10" fill="var(--accent)" font-weight="700">${dir}</text>`;
-                svg += `<text x="${(c['010'].x + c['111'].x) / 2}" y="${c['110'].y + 25}" text-anchor="middle" font-size="7" fill="var(--muted)" font-family="var(--mono)">T${typeNum} · COL×${colCount} · ${tr.rail_count}R</text>`;
+                const dh = A(iso(cabW, cabH * 0.52, cabD * 0.48));
+                svg += `<circle cx="${dh.x}" cy="${dh.y}" r="2.2" fill="var(--muted)" opacity="0.5"/>`;
+                svg += `<text x="${(c['000'].x + c['101'].x) / 2}" y="${(c['000'].y + c['001'].y) / 2 + 2}" text-anchor="middle" font-size="10" fill="var(--accent-2)" font-weight="700" font-family="var(--mono)">TOP VIEW</text>`;
+                svg += `<text x="${(c['010'].x + c['011'].x) / 2 - 8}" y="${(c['010'].y + c['011'].y) / 2 + 2}" text-anchor="middle" font-size="10" fill="var(--muted)" font-weight="700" font-family="var(--mono)" transform="rotate(-90 ${(c['010'].x + c['011'].x) / 2 - 8} ${(c['010'].y + c['011'].y) / 2 + 2})">SIDE</text>`;
+                svg += `<text x="${(c['100'].x + c['101'].x) / 2 + 8}" y="${(c['100'].y + c['101'].y) / 2 + 2}" text-anchor="middle" font-size="10" fill="var(--accent)" font-weight="800" font-family="var(--mono)" transform="rotate(90 ${(c['100'].x + c['101'].x) / 2 + 8} ${(c['100'].y + c['101'].y) / 2 + 2})">FRONT</text>`;
+                svg += `<text x="${(c['010'].x + c['111'].x) / 2}" y="${c['110'].y + 14}" text-anchor="middle" font-size="16" fill="var(--accent)" font-weight="800" font-family="var(--mono)">${dir}</text>`;
+                svg += `<text x="${(c['010'].x + c['111'].x) / 2}" y="${c['110'].y + 32}" text-anchor="middle" font-size="10" fill="var(--accent-2)" font-weight="700" font-family="var(--mono)">Type ${typeNum} · ${colCount}C · ${tr.rail_count}R · ISOMETRIC</text>`;
 
                 svg += `</svg>`;
                 return svg;
@@ -2502,28 +2532,31 @@
                 const cc = dimData.card_column;
                 const isFa = currentLang === 'fa';
                 const colCount = cc.column_count || 1;
-                const totalTerminals = Math.floor(railUsable / tr.terminal_height_mm) * tr.rail_count;
+                const totalTerminals = Math.max(0, Math.floor(railUsable / Math.max(1, tr.terminal_height_mm)) * tr.rail_count);
 
                 const zones = {
-                    'top': { icon: 'fa-fan', t: isFa ? 'سقف کابینت' : 'Cabinet Top', d: `${isFa ? 'فن و تهویه' : 'Fan & ventilation'} · ${tr.rail_length_mm}mm` },
-                    'leftside': { icon: 'fa-square', t: isFa ? 'پنل کناری' : 'Side Panel', d: isFa ? 'دسترسی جانبی' : 'Side access panel' },
+                    'top': { icon: 'fa-fan', t: isFa ? 'سقف کابینت' : 'Cabinet Top', d: `${isFa ? 'تهویه و فضای بالایی' : 'Ventilation and top clearance'} · ${tr.rail_length_mm}mm` },
+                    'leftside': { icon: 'fa-square', t: isFa ? 'پنل کناری' : 'Side Panel', d: isFa ? 'پشتیبان سازه و دسترسی' : 'Structural side access' },
                     'rightside': { icon: 'fa-door-closed', t: isFa ? 'در کابینت' : 'Cabinet Door', d: isFa ? `دسترسی ${dir}` : `${dir} access door` },
-                    'front': { icon: 'fa-square', t: isFa ? 'پنل جلو' : 'Front Panel', d: isFa ? `ریل‌ها + کارت‌ها` : `Rails + card columns` },
+                    'front': { icon: 'fa-square', t: isFa ? 'پانل جلو' : 'Front Panel', d: isFa ? `ریل‌ها و ستون‌های کارت` : `Rails and card columns` },
                     'power': { icon: 'fa-bolt', t: isFa ? 'بخش توان' : 'Power Section', d: `230 VAC + 24 VDC · ${isFa ? 'ایزوله' : 'isolated'}` },
                     'rails': { icon: 'fa-grip-vertical', t: isFa ? `ریل‌های DIN (${tr.rail_count})` : `DIN Rails (${tr.rail_count})`, d: `${totalTerminals} ${isFa ? 'ترمینال' : 'terminals'} @ ${tr.terminal_height_mm}mm` },
                     'cardcol': { icon: 'fa-microchip', t: isFa ? 'ستون کارت' : 'Card Column', d: `${cardUsable.toFixed(0)}mm × ${colCount}` },
-                    'cardcol-left': { icon: 'fa-microchip', t: isFa ? 'ستون چپ' : 'Left Column', d: `${cardUsable.toFixed(0)}mm × ${Math.ceil(colCount / 2)}` },
-                    'cardcol-right': { icon: 'fa-microchip', t: isFa ? 'ستون راست' : 'Right Column', d: `${cardUsable.toFixed(0)}mm × ${Math.floor(colCount / 2)}` },
+                    'cardcol-0': { icon: 'fa-microchip', t: isFa ? 'ستون کارت ۱' : 'Card Column 1', d: `${cardUsable.toFixed(0)}mm × ${Math.ceil(colCount / 2)}` },
+                    'cardcol-1': { icon: 'fa-microchip', t: isFa ? 'ستون کارت ۲' : 'Card Column 2', d: `${cardUsable.toFixed(0)}mm × ${Math.floor(colCount / 2)}` },
+                    'cardcol-2': { icon: 'fa-microchip', t: isFa ? 'ستون کارت ۳' : 'Card Column 3', d: `${cardUsable.toFixed(0)}mm × ${Math.max(1, colCount - 2)}` },
+                    'cardcol-3': { icon: 'fa-microchip', t: isFa ? 'ستون کارت ۴' : 'Card Column 4', d: `${cardUsable.toFixed(0)}mm × ${Math.max(1, colCount - 3)}` },
+                    'reserved': { icon: 'fa-toolbox', t: isFa ? 'فضای رزرو' : 'Reserved Space', d: `${cc.reserved_space_mm}mm ${isFa ? 'محدوده نگهداری' : 'maintenance zone'}` },
+                    'topclearance': { icon: 'fa-arrows-up-down', t: isFa ? 'فضای بالایی' : 'Top Clearance', d: `${tr.top_gap_mm}mm ${isFa ? 'فاصله بالایی' : 'top clearance'}` },
+                    'bottomclearance': { icon: 'fa-arrows-up-down', t: isFa ? 'فضای پایینی' : 'Bottom Clearance', d: `${tr.bottom_gap_mm}mm ${isFa ? 'فاصله پایینی' : 'bottom clearance'}` }
                 };
 
-                // Also attach to rails in 2D
                 container.querySelectorAll('[data-zone]').forEach(zone => {
                     zone.addEventListener('mouseenter', () => {
                         const z = zone.dataset.zone;
-                        // Check if it's a specific rail
                         if (z.startsWith('rail-')) {
-                            const idx = parseInt(z.split('-')[1]);
-                            const termPerRail = Math.floor(railUsable / tr.terminal_height_mm);
+                            const idx = parseInt(z.split('-')[1], 10);
+                            const termPerRail = Math.max(1, Math.floor(railUsable / Math.max(1, tr.terminal_height_mm)));
                             infoText.innerHTML = `<strong><i class="fas fa-grip-vertical"></i> ${isFa ? 'ریل' : 'Rail'} R${idx + 1}</strong> — ${termPerRail} ${isFa ? 'ترمینال' : 'terminals'} · ${railUsable.toFixed(0)}mm`;
                         } else {
                             const info = zones[z];
@@ -2574,104 +2607,88 @@
                             <div class="cviz-pane-title"><i class="fas fa-vector-square"></i><span>${isFa ? 'نمای روبرو' : 'Front Elevation'}</span></div>
                             ${this._renderFilledFront2D(cab, placed, totalCardHeight, cardGap)}
                         </div>
-                        <div class="cviz-pane">
-                            <div class="cviz-pane-title"><i class="fas fa-cube"></i><span>${isFa ? 'نمای ایزومتریک' : 'Isometric View'}</span></div>
-                            ${this._renderFilledIso3D(cab, placed, totalCardHeight, cardGap)}
-                            <div class="cviz-iso-info" id="cvizFilledIsoInfo">
-                                <span class="cviz-iso-info-icon"><i class="fas fa-info-circle"></i></span>
-                                <span>${isFa ? 'روی کارت بروید' : 'Hover any card'}</span>
-                            </div>
-                        </div>
                     </div>
                     <div class="cviz-stats-row">${this._renderStats(cab, placed, isFa)}</div>`;
 
                 wrapper.style.display = 'block';
                 this._attachFilledHover(placed, cab);
-                this._attachFilledIsoHover(placed, cab, isFa);
             },
 
-            // ── Filled 2D Front Elevation ──
             _renderFilledFront2D(cab, placed, totalH, cardGap) {
-                const W = 760, H = 560;
-                const scale = Math.min((H - 100) / totalH, 0.38, (W - 120) / 280);
-                const cabW = 280;
-                const cabH = totalH * scale;
+                const W = 1120, H = 900;
+                const scale = Math.min((H - 200) / Math.max(totalH, 1), 0.52, (W - 220) / 260);
+                const cabW = 320;
+                const cabH = Math.max(160, totalH * scale);
                 const ox = (W - cabW) / 2;
-                const oy = 45;
+                const oy = 60;
 
                 let svg = `<svg viewBox="0 0 ${W} ${H}" class="cviz-svg cviz-svg-2d" preserveAspectRatio="xMidYMid meet">`;
+                svg += `<text x="${W / 2}" y="28" text-anchor="middle" font-size="18" fill="var(--text)" font-weight="800">${cab.cabinet_id}</text>`;
+                svg += `<text x="${W / 2}" y="48" text-anchor="middle" font-size="15" fill="var(--accent)" font-weight="700" font-family="var(--mono)">TYPE ${cab.cabinet_type} · ${cab.direction}</text>`;
 
-                // Title
-                svg += `<text x="${W / 2}" y="22" text-anchor="middle" font-size="14" fill="var(--text)" font-weight="700">${cab.cabinet_id} — ${cab.cabinet_type} ${cab.direction}</text>`;
-
-                // Cabinet frame with door thickness
                 const dt = 3;
                 svg += `<rect x="${ox - dt}" y="${oy - dt}" width="${cabW + dt * 2}" height="${cabH + dt * 2}" fill="none" stroke="var(--border)" stroke-width="0.5" rx="1"/>`;
                 svg += `<rect x="${ox}" y="${oy}" width="${cabW}" height="${cabH}" fill="var(--bg-card)" stroke="var(--text)" stroke-width="1.2" rx="1"/>`;
+                svg += `<rect x="${ox + 6}" y="${oy + 6}" width="${cabW - 12}" height="${cabH - 12}" fill="rgba(255,255,255,0.03)" stroke="var(--border)" stroke-width="0.4" rx="1"/>`;
 
-                // ── Boards as physical representations ──
-                const cardStripW = (cabW - 12) / placed.length;
+                const innerX = ox + 36;
+                const innerW = cabW - 72;
+                const boardAreaY = oy + 10;
+                const boardAreaH = cabH - 20;
+                const contentStart = boardAreaY + 6;
+                let cursorY = contentStart;
+
+                const boardW = Math.min(140, innerW - 20);
+                const boardX = ox + (cabW - boardW) / 2;
 
                 placed.forEach((board, idx) => {
-                    const x = ox + 6 + idx * cardStripW;
-                    const y = oy + 4;
-                    const h = cabH - 8;
+                    const h = Math.max(24, (board._h || 60) * scale);
+                    const y = cursorY;
                     const fillPct = board.fill_pct || 0;
                     const color = this.cardColors[board.board_type] || '#6b7280';
                     const intensity = Math.min(0.92, Math.max(0.55, fillPct / 100));
                     const category = this._boardCategory(board.board_type);
-                    const bw = cardStripW - 2;
+                    const panelH = h - 2;
+                    const panelY = y + 1;
+                    svg += `<rect class="phys-card" data-board-idx="${idx}" x="${boardX}" y="${panelY}" width="${boardW}" height="${panelH}" fill="${color}" fill-opacity="${intensity}" stroke="var(--text)" stroke-width="0.5" rx="1.2"/>`;
+                    svg += `<rect x="${boardX}" y="${panelY}" width="${boardW}" height="2.2" fill="rgba(255,255,255,0.28)"/>`;
+                    svg += `<rect x="${boardX + 4}" y="${panelY + 4}" width="${boardW - 8}" height="4" fill="rgba(0,0,0,0.18)" rx="0.8"/>`;
 
-                    // Board body
-                    svg += `<rect class="phys-card" data-board-idx="${idx}" x="${x}" y="${y}" width="${bw}" height="${h}" fill="${color}" fill-opacity="${intensity}" stroke="var(--text)" stroke-width="0.5" rx="1"/>`;
-
-                    // Top edge highlight
-                    svg += `<rect x="${x}" y="${y}" width="${bw}" height="2.5" fill="rgba(255,255,255,0.3)"/>`;
-
-                    // Board type-specific details
                     if (category === 'terminal' || category === 'barrier') {
-                        // Terminal rows
-                        const rowH = 4;
-                        const rowCount = Math.floor(h / rowH);
+                        const rowH = Math.max(3.2, Math.min(5.2, panelH / 10));
+                        const rowCount = Math.max(2, Math.floor(panelH / rowH));
                         for (let r = 1; r < rowCount; r++) {
-                            const ry = y + r * rowH;
-                            svg += `<line x1="${x + 1}" y1="${ry}" x2="${x + bw - 1}" y2="${ry}" stroke="rgba(0,0,0,0.15)" stroke-width="0.3"/>`;
+                            const ry = panelY + r * rowH;
+                            svg += `<line x1="${boardX + 4}" y1="${ry}" x2="${boardX + boardW - 4}" y2="${ry}" stroke="rgba(0,0,0,0.16)" stroke-width="0.3"/>`;
                         }
-                        // Connector strip at top
-                        svg += `<rect x="${x + 2}" y="${y + 3}" width="${bw - 4}" height="3" fill="rgba(0,0,0,0.2)" rx="0.5"/>`;
+                        svg += `<rect x="${boardX + 6}" y="${panelY + 3}" width="${boardW - 12}" height="2.4" fill="rgba(0,0,0,0.2)" rx="0.6"/>`;
+                        svg += `<rect x="${boardX + 6}" y="${panelY + panelH - 6}" width="${boardW - 12}" height="2.4" fill="rgba(0,0,0,0.18)" rx="0.6"/>`;
                     } else if (category === 'relay') {
-                        // Relay modules
-                        const modH = 10;
-                        const modCount = Math.floor(h / modH);
+                        const modH = Math.max(7, panelH / 6);
+                        const modCount = Math.max(2, Math.floor(panelH / modH));
                         for (let m = 0; m < modCount; m++) {
-                            const my = y + 4 + m * modH;
-                            svg += `<rect x="${x + 2}" y="${my}" width="${bw - 4}" height="${modH - 2}" fill="rgba(0,0,0,0.1)" stroke="rgba(0,0,0,0.2)" stroke-width="0.3" rx="0.5"/>`;
+                            const my = panelY + 4 + m * modH;
+                            svg += `<rect x="${boardX + 3}" y="${my}" width="${boardW - 6}" height="${Math.max(4, modH - 2)}" fill="rgba(0,0,0,0.1)" stroke="rgba(0,0,0,0.2)" stroke-width="0.3" rx="0.6"/>`;
                         }
                     }
 
-                    // Label
-                    if (cardStripW > 12) {
-                        const labelText = this._boardLabel(board);
-                        svg += `<text x="${x + bw / 2}" y="${y + h / 2}" text-anchor="middle" font-size="11" fill="#fff" font-weight="700" transform="rotate(-90 ${x + bw / 2} ${y + h / 2})" pointer-events="none">${labelText}</text>`;
+                    const labelText = this._boardLabel(board);
+                    svg += `<text x="${boardX + boardW / 2}" y="${panelY + panelH / 2 + 2}" text-anchor="middle" font-size="9.5" fill="#fff" font-weight="700" transform="rotate(-90 ${boardX + boardW / 2} ${panelY + panelH / 2 + 2})" pointer-events="none">${labelText}</text>`;
+                    svg += `<text x="${boardX + boardW / 2}" y="${panelY + 10}" text-anchor="middle" font-size="7" fill="rgba(255,255,255,0.9)" pointer-events="none">#${idx + 1}</text>`;
+                    if (h > 32) {
+                        svg += `<text x="${boardX + boardW / 2}" y="${panelY + panelH - 5}" text-anchor="middle" font-size="6.2" fill="rgba(255,255,255,0.92)" pointer-events="none" font-family="var(--mono)">${formatNumber(board.active_signals || 0, 0)}/${formatNumber(board.capacity || 0, 0)}</text>`;
                     }
-                    // Index
-                    svg += `<text x="${x + bw / 2}" y="${y + 10}" text-anchor="middle" font-size="7" fill="rgba(255,255,255,0.85)" pointer-events="none">#${idx + 1}</text>`;
-                    // Capacity
-                    if (h > 35) {
-                        svg += `<text x="${x + bw / 2}" y="${y + h - 5}" text-anchor="middle" font-size="6" fill="rgba(255,255,255,0.9)" pointer-events="none" font-family="var(--mono)">${formatNumber(board.active_signals || 0, 0)}/${formatNumber(board.capacity || 0, 0)}</text>`;
-                    }
+
+                    cursorY += h + cardGap * scale;
                 });
 
-                // ── Rail usage indicator ──
-                const railX = ox + cabW + 10;
+                const railX = ox + cabW + 12;
                 const railBarW = 18;
                 const railPct = cab.rail_pct || 0;
                 const railFillH = cabH * Math.min(railPct / 100, 1);
-
                 svg += `<rect x="${railX}" y="${oy}" width="${railBarW}" height="${cabH}" fill="var(--bg-strong)" stroke="var(--border)" stroke-width="0.5" rx="2"/>`;
-                let railColor = railPct >= 90 ? 'var(--danger)' : (railPct >= 70 ? 'var(--warning)' : 'var(--success)');
+                const railColor = railPct >= 90 ? 'var(--danger)' : (railPct >= 70 ? 'var(--warning)' : 'var(--success)');
                 svg += `<rect x="${railX}" y="${oy + cabH - railFillH}" width="${railBarW}" height="${railFillH}" fill="${railColor}" fill-opacity="0.75" rx="2"/>`;
-                // Tick marks
                 for (let p = 25; p < 100; p += 25) {
                     const py = oy + cabH * (1 - p / 100);
                     svg += `<line x1="${railX}" y1="${py}" x2="${railX + railBarW}" y2="${py}" stroke="var(--text)" stroke-width="0.3" opacity="0.3"/>`;
@@ -2681,7 +2698,6 @@
                 svg += `<text x="${railX + railBarW / 2}" y="${oy + cabH + 12}" text-anchor="middle" font-size="10" fill="var(--text)" font-weight="700" font-family="var(--mono)">${formatPercent(railPct)}</text>`;
                 svg += `<text x="${railX + railBarW / 2}" y="${oy + cabH + 23}" text-anchor="middle" font-size="7" fill="var(--muted)" font-family="var(--mono)">${formatNumber(cab.rail_used || 0, 0)}/${toEnglishDigits(cab.rail_limit || '-')}</text>`;
 
-                // ── Slot indicator ──
                 const slotX = railX + railBarW + 8;
                 const slotW = 12;
                 const slotPct = cab.board_slot_pct || 0;
@@ -2691,25 +2707,20 @@
                 svg += `<text x="${slotX + slotW / 2}" y="${oy - 5}" text-anchor="middle" font-size="7" fill="var(--muted)" font-weight="700">SLOT</text>`;
                 svg += `<text x="${slotX + slotW / 2}" y="${oy + cabH + 12}" text-anchor="middle" font-size="9" fill="var(--text)" font-weight="700" font-family="var(--mono)">${formatPercent(slotPct)}</text>`;
 
-                // ── Dimension line ──
                 svg += this._dimV(oy, oy + cabH, ox - 20, `${totalH.toFixed(0)}mm`);
-
-                // Bottom info
                 svg += `<text x="${W / 2}" y="${oy + cabH + 32}" text-anchor="middle" font-size="9" fill="var(--muted)">${placed.length} ${currentLang === 'fa' ? 'کارت نصب شده' : 'boards installed'} · ${totalH.toFixed(0)}mm total</text>`;
-
                 svg += `</svg>`;
                 return svg;
             },
 
-            // ── Filled 3D Isometric ──
             _renderFilledIso3D(cab, placed, totalH, cardGap) {
-                const W = 300, H = 240;
-                const cabW = 160, cabH = 140, cabD = 65;
+                const W = 620, H = 560;
+                const cabW = 240, cabH = 210, cabD = 100;
                 const iso = (x, y, z) => ({
                     x: (x - z) * 0.866,
                     y: y * 0.92 - (x + z) * 0.25
                 });
-                const ox = 75, oy = 28;
+                const ox = 120, oy = 50;
                 const A = (p) => ({ x: ox + p.x, y: oy + p.y });
 
                 const c = {};
@@ -2719,52 +2730,44 @@
                 const pts = (...keys) => keys.map(k => `${c[k].x},${c[k].y}`).join(' ');
 
                 let svg = `<svg viewBox="0 0 ${W} ${H}" class="cviz-svg cviz-svg-3d" preserveAspectRatio="xMidYMid meet">`;
-
-                // Shadow
-                svg += `<ellipse cx="${(c['010'].x + c['111'].x) / 2}" cy="${c['010'].y + 5}" rx="${(c['111'].x - c['010'].x) / 2 + 10}" ry="5" fill="var(--text)" opacity="0.15"/>`;
-
-                // Faces
+                svg += `<ellipse cx="${(c['010'].x + c['111'].x) / 2}" cy="${c['010'].y + 6}" rx="${(c['111'].x - c['010'].x) / 2 + 10}" ry="5" fill="var(--text)" opacity="0.15"/>`;
                 svg += `<polygon class="cviz-iso-face cviz-iso-top" points="${pts('000','100','101','001')}"/>`;
                 svg += `<polygon class="cviz-iso-face cviz-iso-left" points="${pts('000','010','011','001')}"/>`;
                 svg += `<polygon class="cviz-iso-face cviz-iso-right" points="${pts('100','110','111','101')}"/>`;
                 svg += `<polygon class="cviz-iso-face cviz-iso-front" points="${pts('010','110','111','011')}"/>`;
 
-                // Cards on front face
-                const cardAreaX = 0.06 * cabW, cardAreaW = 0.88 * cabW;
-                const cardAreaTop = 0.10 * cabH, cardAreaBot = 0.92 * cabH;
-                const stripW = cardAreaW / placed.length;
+                const cardAreaX = 0.08 * cabW;
+                const cardAreaW = 0.74 * cabW;
+                const cardAreaTop = 0.12 * cabH;
+                const cardAreaBot = 0.92 * cabH;
+                const boardStackHeight = cardAreaBot - cardAreaTop;
+                let cursorY = cardAreaTop;
 
                 placed.forEach((board, idx) => {
-                    const x = cardAreaX + idx * stripW;
+                    const boardH = Math.max(18, Math.min(boardStackHeight, ((board._h || 60) / Math.max(totalH, 1)) * boardStackHeight));
+                    const boardW = Math.max(16, cardAreaW / Math.max(2.8, Math.max(1, placed.length)));
+                    const x = cardAreaX + (idx % 2) * (boardW + 2);
+                    const y = cursorY;
                     const color = this.cardColors[board.board_type] || '#6b7280';
-                    const fillPct = board.fill_pct || 0;
-                    const opacity = Math.min(0.92, Math.max(0.55, fillPct / 100));
-
-                    const p1 = A(iso(x, cardAreaTop, 0));
-                    const p2 = A(iso(x + stripW - 0.5, cardAreaTop, 0));
-                    const p3 = A(iso(x + stripW - 0.5, cardAreaBot, 0));
-                    const p4 = A(iso(x, cardAreaBot, 0));
+                    const opacity = Math.min(0.92, Math.max(0.55, (board.fill_pct || 0) / 100));
+                    const p1 = A(iso(x, y, 0));
+                    const p2 = A(iso(x + boardW, y, 0));
+                    const p3 = A(iso(x + boardW, y + boardH, 0));
+                    const p4 = A(iso(x, y + boardH, 0));
                     svg += `<polygon class="phys-card-iso" data-board-idx="${idx}" fill="${color}" fill-opacity="${opacity}" stroke="var(--text)" stroke-width="0.4" points="${p1.x},${p1.y} ${p2.x},${p2.y} ${p3.x},${p3.y} ${p4.x},${p4.y}"/>`;
-
-                    // Top highlight
-                    const ht1 = A(iso(x, cardAreaTop, 0));
-                    const ht2 = A(iso(x + stripW - 0.5, cardAreaTop, 0));
-                    svg += `<line x1="${ht1.x}" y1="${ht1.y}" x2="${ht2.x}" y2="${ht2.y}" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>`;
-
-                    // Label
-                    if (stripW > 8) {
-                        const lp = A(iso(x + stripW / 2, cardAreaTop + (cardAreaBot - cardAreaTop) / 2, 0));
-                        svg += `<text x="${lp.x}" y="${lp.y + 2}" text-anchor="middle" font-size="8" fill="#fff" font-weight="700" pointer-events="none" transform="rotate(-90 ${lp.x} ${lp.y + 2})">${this._boardLabel(board)}</text>`;
-                    }
+                    const ht1 = A(iso(x, y, 0));
+                    const ht2 = A(iso(x + boardW, y, 0));
+                    svg += `<line x1="${ht1.x}" y1="${ht1.y}" x2="${ht2.x}" y2="${ht2.y}" stroke="rgba(255,255,255,0.28)" stroke-width="0.8"/>`;
+                    const lp = A(iso(x + boardW / 2, y + boardH / 2, 0));
+                    svg += `<text x="${lp.x}" y="${lp.y + 2}" text-anchor="middle" font-size="7" fill="#fff" font-weight="700" pointer-events="none" transform="rotate(-90 ${lp.x} ${lp.y + 2})">${this._boardLabel(board)}</text>`;
+                    cursorY += boardH + Math.max(1, cardGap * 0.6);
                 });
 
-                // Labels
                 svg += `<text x="${(c['000'].x + c['101'].x) / 2}" y="${(c['000'].y + c['001'].y) / 2 + 2}" text-anchor="middle" font-size="7" fill="var(--muted)" font-weight="600">TOP</text>`;
                 svg += `<text x="${(c['010'].x + c['011'].x) / 2 - 6}" y="${(c['010'].y + c['011'].y) / 2 + 2}" text-anchor="middle" font-size="7" fill="var(--muted)" font-weight="600" transform="rotate(-90 ${(c['010'].x + c['011'].x) / 2 - 6} ${(c['010'].y + c['011'].y) / 2 + 2})">SIDE</text>`;
                 svg += `<text x="${(c['100'].x + c['101'].x) / 2 + 6}" y="${(c['100'].y + c['101'].y) / 2 + 2}" text-anchor="middle" font-size="7" fill="var(--muted)" font-weight="600" transform="rotate(90 ${(c['100'].x + c['101'].x) / 2 + 6} ${(c['100'].y + c['101'].y) / 2 + 2})">DOOR</text>`;
                 svg += `<text x="${(c['010'].x + c['111'].x) / 2}" y="${c['110'].y + 14}" text-anchor="middle" font-size="10" fill="var(--accent)" font-weight="700">${cab.cabinet_id}</text>`;
                 svg += `<text x="${(c['010'].x + c['111'].x) / 2}" y="${c['110'].y + 25}" text-anchor="middle" font-size="7" fill="var(--muted)" font-family="var(--mono)">${placed.length} ${currentLang === 'fa' ? 'کارت' : 'boards'}</text>`;
-
                 svg += `</svg>`;
                 return svg;
             },
