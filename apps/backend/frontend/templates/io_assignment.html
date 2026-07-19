@@ -1660,14 +1660,13 @@
                     });
                 });
 
-                // Listen for type tab changes to rebuild dimension UI
-                document.querySelectorAll('.tab-btn').forEach(btn => {
-                    btn.addEventListener('click', () => {
-                        if (DimensionMode.active) {
-                            DimensionMode.saveCurrentState();
-                            setTimeout(() => DimensionMode.renderDimensionUI(), 50);
-                        }
-                    });
+                // Listen for type tab changes to rebuild dimension UI (event delegation)
+                document.querySelector('.tab-row')?.addEventListener('click', (e) => {
+                    const btn = e.target.closest('.tab-btn');
+                    if (btn && DimensionMode.active) {
+                        DimensionMode.saveCurrentState();
+                        setTimeout(() => DimensionMode.renderDimensionUI(), 50);
+                    }
                 });
 
                 // Listen for hasDirections toggle
@@ -1675,6 +1674,7 @@
                 if (hasDirs) {
                     hasDirs.addEventListener('change', () => {
                         if (DimensionMode.active) {
+                            DimensionMode.saveCurrentState();
                             setTimeout(() => DimensionMode.renderDimensionUI(), 50);
                         }
                     });
@@ -1697,6 +1697,7 @@
                     }
                     this.renderDimensionUI();
                 } else {
+                    this.saveCurrentState();
                     dimPanel.classList.remove('active');
                     // Restore percentage inputs to editable
                     if (limitsGrid) {
@@ -1708,7 +1709,9 @@
                 }
             },
 
-            // Save current dimension inputs from DOM into cabinetDimensions
+            // Save current dimension inputs from DOM into cabinetDimensions.
+            // Saves ONLY the currently-active cabinet type (the one whose inputs are in the DOM).
+            // Other types' saved state in cabinetDimensions is left untouched.
             saveCurrentState() {
                 const dimInput = document.querySelector('.dim-input[data-type]');
                 if (!dimInput) return;
@@ -1723,6 +1726,61 @@
                     }
                 }
             },
+
+            // Default dimension values — used when a type/dir has NEVER been edited.
+            // Kept in sync with the defaults that renderDimensionUI() inlines.
+            // CRITICAL: unvisited cabinet types fall back to this so they still feed
+            // the assignment engine with sensible limits instead of being silently
+            // skipped (which was the root cause of "JB X cannot fit in any remaining
+            // defined Cabinet Types").
+            defaultDimData() {
+                return {
+                    terminal_rail: {
+                        rail_count: 1,
+                        rail_length_mm: 1135,
+                        top_gap_mm: 200,
+                        bottom_gap_mm: 20,
+                        terminal_height_mm: 5,
+                        jb_gap_mm: 10
+                    },
+                    card_column: {
+                        column_count: 2,
+                        column_length_mm: 1713.5,
+                        top_gap_mm: 52,
+                        bottom_gap_mm: 20,
+                        reserved_space_mm: 0,
+                        card_gap_mm: 2
+                    },
+                    side_checked: true,
+                    side_count: 2,
+                    side_length_mm: 600,
+                    side_left_type: 'columns',
+                    side_right_type: 'columns',
+                    side_left_count: 1,
+                    side_right_count: 1
+                };
+            },
+
+            // Ensure every (type, dir) in 1..typeCount has at least default data.
+            // Types the user never visited still get sensible limits this way.
+            // Does NOT overwrite existing user-saved data — only fills gaps.
+            ensureAllTypesPopulated() {
+                const typeCount = parseInt(document.getElementById('typeCount').value, 10) || 1;
+                const hasDirs = document.getElementById('hasDirections').checked;
+                const directions = hasDirs ? ['FRONT', 'REAR'] : ['SINGLE'];
+                for (let t = 1; t <= typeCount; t++) {
+                    const typeKey = `Type ${t}`;
+                    if (!this.cabinetDimensions[typeKey]) {
+                        this.cabinetDimensions[typeKey] = {};
+                    }
+                    for (const dir of directions) {
+                        if (!this.cabinetDimensions[typeKey][dir]) {
+                            this.cabinetDimensions[typeKey][dir] = this.defaultDimData();
+                        }
+                    }
+                }
+            },
+
 
             // Render dimension input UI for the active cabinet type
             renderDimensionUI() {
@@ -1826,7 +1884,10 @@
                     html += '</div>';
                 }
 
-                html += '<button class="primary-btn" id="applyDimensions" style="margin-top:10px;">APPLY TO PERCENTAGES</button>';
+                html += '<div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">';
+                html += '<button class="primary-btn" id="applyDimensionsActive" style="flex:1; min-width:160px;">APPLY THIS TYPE</button>';
+                html += '<button class="primary-btn" id="applyDimensionsAll" style="flex:2; min-width:220px; background:var(--accent-2);">SAVE ALL &amp; APPLY TO PERCENTAGES</button>';
+                html += '</div>';
 
                 container.innerHTML = html;
 
@@ -1888,10 +1949,14 @@
                     });
                 });
 
-                // Apply button
-                const applyBtn = document.getElementById('applyDimensions');
-                if (applyBtn) {
-                    applyBtn.addEventListener('click', () => this.applyToPercentages());
+                // Apply buttons — one for the active type, one for ALL types
+                const applyActiveBtn = document.getElementById('applyDimensionsActive');
+                if (applyActiveBtn) {
+                    applyActiveBtn.addEventListener('click', () => this.applyToPercentages(false));
+                }
+                const applyAllBtn = document.getElementById('applyDimensionsAll');
+                if (applyAllBtn) {
+                    applyAllBtn.addEventListener('click', () => this.applyToPercentages(true));
                 }
 
                 // Initial calculation
@@ -2014,50 +2079,72 @@
                 CabinetViz.renderEmptyCabinet(typeNum, dir, dimData);
             },
 
-            // Apply calculated percentages to the existing percentage input fields
-            applyToPercentages() {
+            // Apply calculated percentages to the existing percentage input fields.
+            // If applyAll=false (default), applies ONLY the active cabinet type.
+            // If applyAll=true, iterates every type 1..typeCount and writes each
+            // type's calculated percentages into its own #limits-type{N}-{dir} block —
+            // this is the fix for the previous "only the last-edited type is applied" bug.
+            applyToPercentages(applyAll = false) {
                 this.saveCurrentState();
                 const activeTab = document.querySelector('.tab-btn.active');
                 if (!activeTab) return;
-                const typeNum = activeTab.dataset.type;
+                const activeTypeNum = activeTab.dataset.type;
                 const hasDirs = document.getElementById('hasDirections').checked;
-                const directions = hasDirs ? ['front', 'rear'] : ['front'];
+                const typeCount = parseInt(document.getElementById('typeCount').value, 10) || 1;
 
-                for (const dir of directions) {
-                    const dirUpper = dir.toUpperCase();
-                    const dimData = this.cabinetDimensions[`Type ${typeNum}`]?.[dirUpper];
-                    if (!dimData) continue;
+                // Make sure cabinetDimensions has data for every type we're about to apply.
+                this.ensureAllTypesPopulated();
 
-                    const tr = dimData.terminal_rail;
-                    const cc = dimData.card_column;
+                const typesToApply = applyAll
+                    ? Array.from({ length: typeCount }, (_, i) => i + 1)
+                    : [parseInt(activeTypeNum, 10)];
 
-                    // Calculate max terminals
-                    const usableRail = tr.rail_length_mm - tr.top_gap_mm - tr.bottom_gap_mm;
-                    const maxTerminals = Math.floor(usableRail / tr.terminal_height_mm) * tr.rail_count;
+                let appliedCount = 0;
+                for (const typeNum of typesToApply) {
+                    const typeKey = `Type ${typeNum}`;
+                    const directions = hasDirs ? ['front', 'rear'] : ['front'];
 
-                    // Calculate percentages
-                    const usableCard = cc.column_length_mm - cc.top_gap_mm - cc.bottom_gap_mm - cc.reserved_space_mm;
+                    for (const dir of directions) {
+                        const dirUpper = dir.toUpperCase();
+                        let dimData = this.cabinetDimensions[typeKey]?.[dirUpper];
+                        if (!dimData) {
+                            // For SINGLE mode the data lives under 'SINGLE' — fall back to defaults if missing.
+                            dimData = this.cabinetDimensions[typeKey]?.['SINGLE'] || this.defaultDimData();
+                        }
 
-                    // Find the limit block
-                    const limitBlock = document.getElementById(`limits-type${typeNum}-${dir}`);
-                    if (!limitBlock) continue;
+                        const tr = dimData.terminal_rail || {};
+                        const cc = dimData.card_column || {};
 
-                    // Set Max rail terminals
-                    const railInput = limitBlock.querySelector('input[data-key="Max rail terminals"]');
-                    if (railInput) railInput.value = maxTerminals;
+                        // Calculate max terminals (guard against divide-by-zero / negative usable length)
+                        const usableRail = (tr.rail_length_mm || 0) - (tr.top_gap_mm || 0) - (tr.bottom_gap_mm || 0);
+                        const termHeight = Math.max(0.0001, tr.terminal_height_mm || 1);
+                        const maxTerminals = Math.max(0, Math.floor(usableRail / termHeight) * (tr.rail_count || 1));
 
-                    // Set each board percentage
-                    for (const boardKey of this.boardKeys) {
-                        const cardHeight = this.cardCatalog[boardKey] || 0;
-                        if (cardHeight <= 0) continue;
+                        // Calculate percentages
+                        const usableCard = (cc.column_length_mm || 0) - (cc.top_gap_mm || 0) - (cc.bottom_gap_mm || 0) - (cc.reserved_space_mm || 0);
 
-                        const effectivePitch = cardHeight + cc.card_gap_mm;
-                        const cardsFit = Math.floor(usableCard / effectivePitch);
-                        const totalCards = cardsFit * cc.column_count;
-                        const pct = Math.floor((100 / totalCards) * 10) / 10;
+                        // Find the limit block
+                        const limitBlock = document.getElementById(`limits-type${typeNum}-${dir}`);
+                        if (!limitBlock) continue;
 
-                        const boardInput = limitBlock.querySelector(`input[data-key="${boardKey}"]`);
-                        if (boardInput) boardInput.value = pct;
+                        // Set Max rail terminals
+                        const railInput = limitBlock.querySelector('input[data-key="Max rail terminals"]');
+                        if (railInput) railInput.value = maxTerminals;
+
+                        // Set each board percentage
+                        for (const boardKey of this.boardKeys) {
+                            const cardHeight = this.cardCatalog[boardKey] || 0;
+                            if (cardHeight <= 0) continue;
+
+                            const effectivePitch = cardHeight + (cc.card_gap_mm || 0);
+                            const cardsFit = effectivePitch > 0 ? Math.floor(usableCard / effectivePitch) : 0;
+                            const totalCards = cardsFit * (cc.column_count || 1);
+                            const pct = totalCards > 0 ? Math.floor((100 / totalCards) * 10) / 10 : 100;
+
+                            const boardInput = limitBlock.querySelector(`input[data-key="${boardKey}"]`);
+                            if (boardInput) boardInput.value = pct;
+                        }
+                        appliedCount++;
                     }
                 }
 
@@ -2068,52 +2155,65 @@
                     limitsGrid.style.background = 'rgba(39, 174, 96, 0.1)';
                     setTimeout(() => { limitsGrid.style.background = ''; }, 1000);
                 }
+                console.log(`[DimensionMode] applyToPercentages(applyAll=${applyAll}) → applied to ${appliedCount} type/dir block(s)`);
             },
 
-            // Get cabinet_limits for buildConfig() — called by the extended buildConfig
+            // Get cabinet_limits for buildConfig() — called by the extended buildConfig.
+            // Reads from the PERSISTENT cabinetDimensions state (not the DOM), so every
+            // configured cabinet type contributes its own dimension-derived limits to the
+            // assignment engine — not just whichever tab the user happened to be on last.
+            // Types the user never visited fall back to defaultDimData() so they still
+            // produce sensible limits instead of being silently skipped.
             getCabinetLimits() {
                 if (!DimensionMode.active) return null;
 
                 // Save all current DOM inputs into cabinetDimensions first
                 this.saveCurrentState();
 
-                const typeCount = parseInt(document.getElementById('typeCount').value, 10);
+                const typeCount = parseInt(document.getElementById('typeCount').value, 10) || 1;
                 const hasDirs = document.getElementById('hasDirections').checked;
                 const cabinetLimits = {};
+
+                // Ensure every (type, dir) has at least default data, so types the user
+                // never visited still produce sensible limits instead of being skipped.
+                this.ensureAllTypesPopulated();
 
                 for (let t = 1; t <= typeCount; t++) {
                     const typeName = `Type ${t}`;
                     const directions = hasDirs ? ['FRONT', 'REAR'] : ['SINGLE'];
 
                     for (const dir of directions) {
-                        const dimData = DimensionMode.cabinetDimensions[typeName]?.[dir];
+                        let dimData = DimensionMode.cabinetDimensions[typeName]?.[dir];
+                        if (!dimData) {
+                            // Fall back to defaults if still missing (e.g. hasDirections was toggled).
+                            dimData = this.defaultDimData();
+                        }
 
-                        if (!dimData?.terminal_rail || !dimData?.card_column) continue;
+                        const tr = dimData.terminal_rail || {};
+                        const cc = dimData.card_column || {};
 
-                        const tr = dimData.terminal_rail;
-                        const cc = dimData.card_column;
+                        // Calculate (guard against divide-by-zero / negative usable length)
+                        const usableRail = (tr.rail_length_mm || 0) - (tr.top_gap_mm || 0) - (tr.bottom_gap_mm || 0);
+                        const termHeight = Math.max(0.0001, tr.terminal_height_mm || 1);
+                        const maxTerminals = Math.max(0, Math.floor(usableRail / termHeight) * (tr.rail_count || 1));
 
-                        // Calculate
-                        const usableRail = tr.rail_length_mm - tr.top_gap_mm - tr.bottom_gap_mm;
-                        const maxTerminals = Math.floor(usableRail / tr.terminal_height_mm) * tr.rail_count;
-
-                        const usableCard = cc.column_length_mm - cc.top_gap_mm - cc.bottom_gap_mm - cc.reserved_space_mm;
+                        const usableCard = (cc.column_length_mm || 0) - (cc.top_gap_mm || 0) - (cc.bottom_gap_mm || 0) - (cc.reserved_space_mm || 0);
 
                         // Calculate side panel capacities
                         let sideTerminals = 0;
                         let sideCards = 0;
-                        
-                        if (dimData.side_count && dimData.side_length_mm) {
-                            const sideRailUsable = dimData.side_length_mm - 20;
-                            
+
+                        if (dimData.side_checked !== false && dimData.side_count && dimData.side_length_mm) {
+                            const sideRailUsable = (dimData.side_length_mm || 0) - 20;
+
                             if (dimData.side_left_type === 'rails' && (dimData.side_left_count || 0) > 0) {
-                                sideTerminals += Math.floor(sideRailUsable / tr.terminal_height_mm) * (dimData.side_left_count || 0);
+                                sideTerminals += Math.floor(sideRailUsable / termHeight) * (dimData.side_left_count || 0);
                             } else if (dimData.side_left_type === 'columns' && (dimData.side_left_count || 0) > 0) {
                                 sideCards += (dimData.side_left_count || 0);
                             }
-                            
+
                             if (dimData.side_right_type === 'rails' && (dimData.side_right_count || 0) > 0) {
-                                sideTerminals += Math.floor(sideRailUsable / tr.terminal_height_mm) * (dimData.side_right_count || 0);
+                                sideTerminals += Math.floor(sideRailUsable / termHeight) * (dimData.side_right_count || 0);
                             } else if (dimData.side_right_type === 'columns' && (dimData.side_right_count || 0) > 0) {
                                 sideCards += (dimData.side_right_count || 0);
                             }
@@ -2130,9 +2230,9 @@
                                 limits[boardKey] = 14.3;
                                 continue;
                             }
-                            const effectivePitch = cardHeight + cc.card_gap_mm;
-                            const cardsFit = Math.floor(usableCard / effectivePitch);
-                            const totalCards = (cardsFit * cc.column_count) + sideCards;
+                            const effectivePitch = cardHeight + (cc.card_gap_mm || 0);
+                            const cardsFit = effectivePitch > 0 ? Math.floor(usableCard / effectivePitch) : 0;
+                            const totalCards = (cardsFit * (cc.column_count || 1)) + sideCards;
                             limits[boardKey] = totalCards > 0 ? Math.floor((100 / totalCards) * 10) / 10 : 100;
                         }
 
@@ -2140,6 +2240,7 @@
                     }
                 }
 
+                console.log(`[DimensionMode] getCabinetLimits() → ${Object.keys(cabinetLimits).length} type/dir entries`, cabinetLimits);
                 return cabinetLimits;
             }
         };

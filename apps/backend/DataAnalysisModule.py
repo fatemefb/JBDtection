@@ -7,19 +7,6 @@ import os
 import gc
 import fitz 
 import tempfile
-
-# ─────────────────────────────────────────────────────────────────
-# COMPATIBILITY: Resolve gray colorspace across PyMuPDF versions
-# fitz.cs_GRAY (new) | fitz.csGRAY (old) | fitz.COLORSPACE_GRAY (very old)
-# ─────────────────────────────────────────────────────────────────
-def _get_gray_colorspace():
-    """Return gray colorspace constant, compatible across PyMuPDF versions."""
-    for attr in ('cs_GRAY', 'csGRAY', 'COLORSPACE_GRAY'):
-        if hasattr(fitz, attr):
-            return getattr(fitz, attr)
-    return None  # None = default (RGB)
-
-_CS_GRAY = _get_gray_colorspace()
 import logging
 from multiprocessing import Pool, cpu_count
 import Levenshtein
@@ -68,7 +55,7 @@ class VectorMatcher:
         self.match_scores = []
         self.required_columns = {
             'generated_excel': ['JB', 'MC', 'Tag/SPARE'],
-            'io_list': ['Tag No', 'Tag', 'Tag No.','Tag no','tag','tag no', 'tag no.','TAG NO','TAG NO.','TAG','TAG.']
+            'io_list': ['Tag No', 'Tag']
         }
 
     def add_reference_tag(self, tag: str) -> None:
@@ -314,10 +301,6 @@ class TagJBExtractor:
         self.jb_examples = None
         self.mc_examples = None
         self.spare_examples = None
-        # Multi-pattern support (lists of prefixes)
-        self.jb_examples_list = []
-        self.mc_examples_list = []
-        self.spare_examples_list = []
         self.cable_examples = None
         self.wire_color_rule = None
         self.scr_number_rule = None
@@ -1141,70 +1124,41 @@ class TagJBExtractor:
             logger.error(f"Error comparing numeric parts {num1} and {num2}: {e}")
             return False
 
-    def _parse_multi_patterns(self, value):
-        """Parse a comma/space/newline separated list of patterns into a list of uppercased strings.
-        
-        Accepts:
-          - "JSF"                    → ["JSF"]
-          - "JSF,JSX,JSY"            → ["JSF", "JSX", "JSY"]
-          - "JSF, JSX, JSY"          → ["JSF", "JSX", "JSY"]
-          - "JSF JSX JSY"            → ["JSF", "JSX", "JSY"]
-          - ["JSF", "JSX"]           → ["JSF", "JSX"]
-          - ["JSF,JSX"]              → ["JSF", "JSX"]
-        Returns: list of uppercased non-empty strings (may be empty list)
-        """
-        if value is None:
-            return []
-        if isinstance(value, list):
-            # flatten list items that may themselves contain commas
-            items = []
-            for v in value:
-                items.extend(str(v).replace('\n', ',').replace(' ', ',').split(','))
-        else:
-            items = str(value).replace('\n', ',').replace(' ', ',').split(',')
-        return [i.strip().upper() for i in items if i.strip()]
-
     def set_patterns(self, jb_examples=None, mc_examples=None, spare_examples=None, 
                     cable_examples=None, wire_color_rule=None, scr_number_rule=None):
         """
-        تنظیم الگوهای سفارشی برای بهبود تشخیص — پشتیبانی از چند الگو
+        تنظیم الگوهای سفارشی برای بهبود تشخیص
         
         Args:
-            jb_examples: مثال JB (رشته با کاما، یا لیست). مثال: "JSF,JSX,JSY"
-            mc_examples: مثال MC (رشته با کاما، یا لیست). مثال: "NC,IC"
-            spare_examples: مثال SPARE (رشته با کاما، یا لیست)
+            jb_examples: مثال JB (رشته یا لیست)
+            mc_examples: مثال MC (رشته یا لیست)
+            spare_examples: مثال SPARE (رشته یا لیست)
             cable_examples: مثال توصیف کابل (رشته یا لیست)
             wire_color_rule: قاعده تولید رنگ سیم
             scr_number_rule: قاعده تولید شماره SCR
-        
-        Note:
-            - jb_examples می‌تونه چند الگو با کاما داشته باشه: "JSF,JSX,JSY"
-            - همه الگوها برای تشخیص استفاده می‌شن
-            - self.jb_examples به‌صورت رشته با کاما ذخیره می‌شه (backward compatible)
-            - self.jb_examples_list لیست واقعی الگوهاست
         """
         
-        # JB examples — support multiple patterns
+        # تبدیل لیست‌ها به رشته (اولین عنصر) اگر لازم باشد
         if jb_examples is not None:
-            jb_list = self._parse_multi_patterns(jb_examples)
-            self.jb_examples_list = jb_list
-            # Store as comma-separated string for backward compatibility (logging, etc.)
-            self.jb_examples = ','.join(jb_list) if jb_list else None
-            logger.info(f"JB examples Set: {self.jb_examples} ({len(jb_list)} patterns)")
+            if isinstance(jb_examples, list) and jb_examples:
+                self.jb_examples = jb_examples[0].upper()  # اولین عنصر را انتخاب کن
+            elif isinstance(jb_examples, str) and jb_examples.strip():
+                self.jb_examples = jb_examples.strip().upper()
+            logger.info(f"JB examples Set: {self.jb_examples}")
         
-        # MC examples — support multiple patterns
         if mc_examples is not None:
-            mc_list = self._parse_multi_patterns(mc_examples)
-            self.mc_examples_list = mc_list
-            self.mc_examples = ','.join(mc_list) if mc_list else None
-            logger.info(f"MC examples Set: {self.mc_examples} ({len(mc_list)} patterns)")
+            if isinstance(mc_examples, list) and mc_examples:
+                self.mc_examples = mc_examples[0].upper()  # اولین عنصر را انتخاب کن
+            elif isinstance(mc_examples, str) and mc_examples.strip():
+                self.mc_examples = mc_examples.strip().upper()
+            logger.info(f"MC examples Set: {self.mc_examples}")
         
-        # SPARE examples — support multiple patterns
         if spare_examples is not None:
-            spare_list = self._parse_multi_patterns(spare_examples)
-            self.spare_examples_list = spare_list
-            self.spare_examples = ','.join(spare_list) if spare_list else None
-            logger.info(f"SPARE examples Set: {self.spare_examples} ({len(spare_list)} patterns)")
+            if isinstance(spare_examples, list) and spare_examples:
+                self.spare_examples = spare_examples[0].upper()  # اولین عنصر را انتخاب کن
+            elif isinstance(spare_examples, str) and spare_examples.strip():
+                self.spare_examples = spare_examples.strip().upper()
+            logger.info(f"SPARE examples Set: {self.spare_examples}")
         
         if cable_examples is not None:
             if isinstance(cable_examples, list):
@@ -1226,37 +1180,25 @@ class TagJBExtractor:
         
     def _compile_regex_patterns(self):
         """
-        کامپایل الگوهای regex بر اساس مثال‌های تنظیم شده — پشتیبانی از چند الگو
+        کامپایل الگوهای regex بر اساس مثال‌های تنظیم شده
         """
         try:
-            # JB regex — combine all patterns into one alternation
-            jb_list = getattr(self, 'jb_examples_list', None) or []
-            if jb_list:
-                # Build alternation: (JSF|JSX|JSY)-?\d+
-                jb_alt = '|'.join(re.escape(p) for p in jb_list)
-                self.jb_regex = re.compile(rf'\b({jb_alt})-?\d+\b', re.IGNORECASE)
+            # الگوی JB
+            if self.jb_examples:
+                self.jb_regex = re.compile(rf'\b{re.escape(self.jb_examples)}-?\d+\b', re.IGNORECASE)
                 logger.debug(f"JB regex compiled: {self.jb_regex.pattern}")
-            else:
-                self.jb_regex = None
             
-            # MC regex — combine all patterns
-            mc_list = getattr(self, 'mc_examples_list', None) or []
-            if mc_list:
-                mc_alt = '|'.join(re.escape(p) for p in mc_list)
-                self.mc_regex = re.compile(rf'\b({mc_alt})-?\d+\b', re.IGNORECASE)
+            # الگوی MC
+            if self.mc_examples:
+                self.mc_regex = re.compile(rf'\b{re.escape(self.mc_examples)}-?\d+\b', re.IGNORECASE)
                 logger.debug(f"MC regex compiled: {self.mc_regex.pattern}")
-            else:
-                self.mc_regex = None
             
-            # SPARE regex — simple pattern
-            spare_list = getattr(self, 'spare_examples_list', None) or []
-            if spare_list:
+            # 🔧 FIX: الگوی SPARE ساده‌تر - فقط کلمه "spare" یا "sp"
+            if self.spare_examples:
                 self.spare_regex = re.compile(r'\b(spare)\b', re.IGNORECASE)
                 logger.debug(f"SPARE regex compiled (simple pattern): {self.spare_regex.pattern}")
-            else:
-                self.spare_regex = None
             
-            logger.info(f"✅ Regex patterns compiled: JB={len(jb_list)}, MC={len(mc_list)}, SPARE={len(spare_list)}")
+            logger.info("✅ All regex patterns compiled successfully")
                 
         except Exception as e:
             logger.error(f"Error compiling regex patterns: {e}")
@@ -1355,7 +1297,7 @@ class TagJBExtractor:
             # اضافه کردن SPARE ها
             if spare_identifiers_with_positions:
                 for idx, item in enumerate(spare_identifiers_with_positions):
-                    spare_id = f"{getattr(self, 'spare_examples', None)}_{idx + 1}"
+                    spare_id = f"{getattr(self, 'spare_examples', 'SPARE')}_{idx + 1}"
                     all_items.append({
                         'name': spare_id,
                         'y_position': item['y'],
@@ -1481,7 +1423,7 @@ class TagJBExtractor:
         if jb_identifiers:
             jb_raw = list(jb_identifiers)[0]
             jb_norm = self._normalize_code_token(jb_raw)
-            if jb_norm and jb_prefix and any(jb_norm.startswith(p) for p in jb_prefix.split(',') if p):
+            if jb_norm and jb_prefix and jb_norm.startswith(jb_prefix):
                 expected_mc = mc_prefix + jb_norm[len(jb_prefix):]
 
         def candidate_score(cand: str) -> 'Tuple[float, int, int, int]':
@@ -1522,17 +1464,17 @@ class TagJBExtractor:
         t = str(token).strip().upper()
  
         # ── 1. JB ──────────────────────────────────────────────────────────
-        jb_prefix = (getattr(self, 'jb_examples', '') or '').strip().upper()
+        jb_prefix = (getattr(self, 'jb_examples', '') or 'JB').strip().upper()
         if jb_prefix and self._is_prefixed_identifier(t, jb_prefix, require_digit=False):
             return True
  
         # ── 2. MC ──────────────────────────────────────────────────────────
-        mc_prefix = (getattr(self, 'mc_examples', '') or '').strip().upper()
+        mc_prefix = (getattr(self, 'mc_examples', '') or 'MC').strip().upper()
         if mc_prefix and self._is_prefixed_identifier(t, mc_prefix, require_digit=False):
             return True
  
         # ── 3. SPARE ───────────────────────────────────────────────────────
-        spare_prefix = (getattr(self, 'spare_examples', '') or '').strip().upper()
+        spare_prefix = (getattr(self, 'spare_examples', '') or 'SPARE').strip().upper()
         if re.search(rf'\b{re.escape(spare_prefix)}\b', t, re.IGNORECASE):
             return True
  
@@ -1608,73 +1550,6 @@ class TagJBExtractor:
         return False
 
 
-    def _get_mc_prefix(self):
-        """Get the MC prefix from user settings. Returns None if not set.
-        Returns comma-separated string for backward compatibility.
-        Use _get_mc_prefixes() for list."""
-        val = getattr(self, 'mc_examples', None)
-        if not val:
-            return None  # No prefix set — don't match anything
-        return str(val).strip().upper()
-    
-    def _get_mc_prefixes(self):
-        """Get list of MC prefixes. Returns empty list if not set."""
-        return list(getattr(self, 'mc_examples_list', None) or [])
-
-    def _get_jb_prefix(self):
-        """Get the JB prefix from user settings. Returns None if not set.
-        Returns comma-separated string for backward compatibility.
-        Use _get_jb_prefixes() for list."""
-        val = getattr(self, 'jb_examples', None)
-        if not val:
-            return None  # No prefix set — don't match anything
-        return str(val).strip().upper()
-    
-    def _get_jb_prefixes(self):
-        """Get list of JB prefixes. Returns empty list if not set."""
-        return list(getattr(self, 'jb_examples_list', None) or [])
-
-    def _is_mc_token(self, text):
-        """Check if a token is an MC identifier. Returns False if no prefix set.
-        Checks against ALL configured MC prefixes."""
-        t = str(text).upper().strip()
-        prefixes = self._get_mc_prefixes()
-        if not prefixes:
-            return False  # No prefix configured — cannot be an MC token
-        return any(t.startswith(p) for p in prefixes)
-
-    def _is_jb_token(self, text):
-        """Check if a token is a JB identifier. Returns False if no prefix set.
-        Checks against ALL configured JB prefixes."""
-        t = str(text).upper().strip()
-        prefixes = self._get_jb_prefixes()
-        if not prefixes:
-            return False  # No prefix configured — cannot be a JB token
-        return any(t.startswith(p) for p in prefixes)
-
-    def _inline_table_preprocess(self, image: 'np.ndarray') -> 'np.ndarray':
-        """
-        Inline table preprocessing — applied as a fallback when
-        self.preprocess_image() does not accept the pdf_type parameter
-        (e.g. legacy subclasses like LinuxTagJBExtractor / LoggedLinuxTagJBExtractor
-        before they were updated).
-
-        This duplicates the table branch of preprocess_image() so that
-        table-mode extraction still works even if the active subclass
-        overrides preprocess_image with an incompatible signature.
-        """
-        if len(image.shape) == 3:
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = image.copy()
-        # Light Gaussian blur + Otsu threshold — identical to the table
-        # branch in preprocess_image().
-        gray = cv2.GaussianBlur(gray, (3, 3), 0)
-        _, gray = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        logger.info("_inline_table_preprocess: applied Gaussian + Otsu fallback preprocessing")
-        return gray
-
-
     def extract_from_image(self, image: np.ndarray) -> 'Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str], Dict[str, Dict]]':
         """
         ✅ بازنویسی کامل: استخراج تگ‌ها با شماره‌گذاری بر اساس موقعیت عمودی
@@ -1686,14 +1561,12 @@ class TagJBExtractor:
         # ============================================================
         # مقداردهی اولیه
         # ============================================================
-        # Do NOT default to 'JB'/'MC'/'SPARE' — leave as None if not set by user
-        # Defaulting causes false positives (e.g., 'JUNCTION' detected as JB)
-        if not hasattr(self, 'jb_examples'):
-            self.jb_examples = None
-        if not hasattr(self, 'mc_examples'):
-            self.mc_examples = None
-        if not hasattr(self, 'spare_examples'):
-            self.spare_examples = None
+        if not hasattr(self, 'jb_examples') or not self.jb_examples:
+            self.jb_examples = "JB"
+        if not hasattr(self, 'mc_examples') or not self.mc_examples:
+            self.mc_examples = "MC"
+        if not hasattr(self, 'spare_examples') or not self.spare_examples:
+            self.spare_examples = "SPARE"
         
         logger.info(f"Using patterns - JB: '{self.jb_examples}', MC: '{self.mc_examples}', SPARE: '{self.spare_examples}'")
         
@@ -1719,915 +1592,23 @@ class TagJBExtractor:
             pdf_type = 'diagrams'
 
         if pdf_type == 'table':
-            # Table-optimised OCR config (REVISED v2):
+            # Table-optimised OCR config:
             #   psm 6  → treat image as a single uniform block of text;
             #            more reliable for horizontally aligned table rows
-            #   NO WHITELIST → previous whitelist was dropping tokens like
-            #     "JSF-576S" (the trailing 'S' was being stripped, producing
-            #     "JSF-576" or "JSF-5765"). Empirically, Tesseract without a
-            #     whitelist produces far better results on CID-broken table
-            #     PDFs because it's free to recognise the actual characters
-            #     rather than being forced into the whitelist alphabet.
-            #     The post-processor (_post_process_table_extractions)
-            #     handles cleanup of any false positives.
-            custom_config = r'--oem 1 --psm 6 -l eng'
-            logger.info("extract_from_image: using TABLE OCR config (psm 6, no whitelist)")
-            # REVISED: actually apply preprocess_image for table mode.
-            # The previous code path declared a table-specific preprocessing
-            # branch in preprocess_image() but never invoked it here, so the
-            # raw BGR image was fed directly to Tesseract. For CID-broken
-            # PDFium PDFs this returned garbage tokens for small cell text.
-            # We now apply the (simple) table preprocessing pipeline before
-            # handing the image to Tesseract.
-            #
-            # ⚠ SUBCLASS COMPATIBILITY: We use a try/except + **kwargs-style
-            # call because subclasses (LinuxTagJBExtractor, LoggedLinuxTagJBExtractor)
-            # historically overrode preprocess_image(self, image) WITHOUT the
-            # pdf_type parameter. If the subclass version doesn't accept
-            # pdf_type, we fall back to calling it without the keyword argument,
-            # and apply the table preprocessing inline as a last resort.
-            try:
-                try:
-                    image = self.preprocess_image(image, pdf_type='table')
-                except TypeError as te:
-                    if "pdf_type" in str(te) or "unexpected keyword argument" in str(te):
-                        logger.warning(
-                            "extract_from_image: subclass %s.preprocess_image does not accept "
-                            "pdf_type parameter — calling without it and applying table "
-                            "preprocessing inline",
-                            type(self).__name__
-                        )
-                        # Try without pdf_type (legacy subclass signature)
-                        try:
-                            image = self.preprocess_image(image)
-                        except Exception as inner:
-                            logger.warning(
-                                "extract_from_image: preprocess_image(image) also failed: %s — "
-                                "applying inline table preprocessing",
-                                inner
-                            )
-                            image = self._inline_table_preprocess(image)
-                    else:
-                        raise
-            except Exception as preprocess_err:
-                logger.warning(
-                    "extract_from_image: preprocess_image failed (%s) — applying inline "
-                    "table preprocessing",
-                    preprocess_err
-                )
-                image = self._inline_table_preprocess(image)
+            custom_config = (
+                r'--oem 3 --psm 6 '
+                r'-c tessedit_char_whiteList=ABCDEFGHIJKLMNOPQRSTUVWXYZsparetcoilpr0123456789-.'
+            )
+            logger.info("extract_from_image: using TABLE OCR config (psm 6)")
         else:
             # Diagram path — byte-for-byte identical to original
-            custom_config = r'--oem 1 --psm 11 -c tessedit_char_whiteList=ABCDEFGHIJKLMNOPQRSTUVWXYZsparetcoilpr0123456789-.'
+            custom_config = r'--oem 3 --psm 11 -c tessedit_char_whiteList=ABCDEFGHIJKLMNOPQRSTUVWXYZsparetcoilpr0123456789-.'
 
         logger.info("Starting OCR extraction...")
         ocr_data = pytesseract.image_to_data(image, config=custom_config, output_type=pytesseract.Output.DICT)
         return self._extract_from_ocr_data(ocr_data, pdf_type)
 
-    def _extract_from_image_table_multipass(self, page, temp_dir, page_num):
-        """
-        Table-mode CELL-BASED extractor (REVISED v4 — cell-by-cell OCR).
-        
-        Instead of full-page multi-pass OCR, this method:
-        1. Uses pdfplumber to detect the table grid (rows × columns)
-        2. OCRs each DATA CELL individually at 300 DPI with PSM 7
-           (single line mode — much more accurate than block mode)
-        3. Classifies cells by column position:
-           - Col 1 (x≈124-179) → Tags / SPARE
-           - Col 4 (x≈225-281) → Cable codes
-        4. Header (rows 0-3) is handled by _extract_header_references_only
-        
-        WHY this is better than full-page OCR:
-        - Each cell is OCR'd in isolation → no interference from neighbors
-        - V/Y confusion disappears (cell boundary gives Tesseract context)
-        - 5/S confusion disappears (single-line PSM 7 is more precise)
-        - Column position tells us the element type → no post-processing needed
-        - Garbage tokens from SPARE rows are filtered by tag pattern
-        
-        Args:
-            page: fitz.Page object
-            temp_dir: not used (we render directly)
-            page_num: 0-indexed page number
-            
-        Returns:
-            9-tuple from _extract_from_ocr_data
-        """
-        pdf_type = 'table'
-        BASE_DPI = 300
-        
-        try:
-            import pdfplumber
-        except ImportError:
-            logger.warning("_extract_from_image_table_multipass: pdfplumber not available, falling back to simple OCR")
-            # Fallback: simple single-pass OCR
-            scale = BASE_DPI / 72
-            pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), colorspace=_CS_GRAY)
-            img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
-            if pix.n == 3:
-                img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-            else:
-                            gray = cv2.cvtColor(img, cv2.COLOR_RGBA2GRAY)  # OPTIMIZATION: direct RGBA→GRAY
-            gray = cv2.GaussianBlur(gray, (3, 3), 0)
-            _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            ocr_data = pytesseract.image_to_data(binary, config=r'--oem 1 --psm 6 -l eng', output_type=pytesseract.Output.DICT)
-            return self._extract_from_ocr_data(ocr_data, pdf_type)
-        
-        # ── Step 1: Detect table grid ────────────────────────────────
-        try:
-            doc = page.parent
-            if doc is None:
-                raise RuntimeError("page has no parent doc")
-            page_index = page.number if hasattr(page, 'number') else 0
-            pdf_path = getattr(doc, 'name', None)
-            if not pdf_path or not os.path.exists(pdf_path):
-                raise RuntimeError("cannot resolve PDF path")
-            
-            with pdfplumber.open(pdf_path) as pp_doc:
-                if page_index >= len(pp_doc.pages):
-                    raise RuntimeError("page_index out of range")
-                pp_page = pp_doc.pages[page_index]
-                rects = pp_page.rects or []
-        except Exception as grid_err:
-            logger.warning("_extract_from_image_table_multipass: grid detection failed (%s), falling back", grid_err)
-            scale = BASE_DPI / 72
-            pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), colorspace=_CS_GRAY)
-            img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
-            if pix.n == 3:
-                img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-            else:
-                            gray = cv2.cvtColor(img, cv2.COLOR_RGBA2GRAY)  # OPTIMIZATION: direct RGBA→GRAY
-            gray = cv2.GaussianBlur(gray, (3, 3), 0)
-            _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            ocr_data = pytesseract.image_to_data(binary, config=r'--oem 1 --psm 6 -l eng', output_type=pytesseract.Output.DICT)
-            return self._extract_from_ocr_data(ocr_data, pdf_type)
-        
-        h_lines = sorted([r for r in rects if r['width'] > 100 and r['height'] < 3],
-                         key=lambda r: r['top'])
-        v_lines = sorted([r for r in rects if r['height'] > 100 and r['width'] < 3],
-                         key=lambda r: r['x0'])
-        
-        if not h_lines or not v_lines:
-            logger.warning("_extract_from_image_table_multipass: no table lines detected, falling back")
-            scale = BASE_DPI / 72
-            pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), colorspace=_CS_GRAY)
-            img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
-            if pix.n == 3:
-                img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-            else:
-                            gray = cv2.cvtColor(img, cv2.COLOR_RGBA2GRAY)  # OPTIMIZATION: direct RGBA→GRAY
-            gray = cv2.GaussianBlur(gray, (3, 3), 0)
-            _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            ocr_data = pytesseract.image_to_data(binary, config=r'--oem 1 --psm 6 -l eng', output_type=pytesseract.Output.DICT)
-            return self._extract_from_ocr_data(ocr_data, pdf_type)
-        
-        # Group H lines by top (within 3pt tolerance)
-        row_tops = []
-        for r in h_lines:
-            top = round(r['top'], 0)
-            if not row_tops or abs(row_tops[-1] - top) > 3:
-                row_tops.append(top)
-        
-        col_lefts = sorted(set(round(r['x0'], 0) for r in v_lines))
-        
-        logger.info(
-            "_extract_from_image_table_multipass: page %d — %d rows, %d cols detected",
-            page_num + 1, len(row_tops), len(col_lefts)
-        )
-        
-        # ── Step 2: Render full page at 300 DPI ──────────────────────
-        scale = BASE_DPI / 72
-        pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), colorspace=_CS_GRAY)
-        img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
-        if pix.n == 3:
-            img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-        else:
-            img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
-        
-        # ── Step 3: Cell-by-cell OCR ─────────────────────────────────
-        # Build ocr_data dict from cell results
-        ocr_data = {
-            'text': [], 'left': [], 'top': [], 'width': [], 'height': [],
-            'conf': [], 'block_num': [], 'par_num': [], 'line_num': [], 'word_num': []
-        }
-        
-        # Tag pattern for filtering garbage from SPARE cells
-        # These patterns are GENERIC — they work on any table PDF:
-        #   tag_like_re: matches any LETTERS-DIGITS-LETTER? pattern
-        #   cable_re: matches PREFIX-DIGIT-DIGIT-DIGIT-LETTER-DIGIT-LETTERS
-        #     where PREFIX comes from self.mc_examples (not hardcoded "NC")
-        tag_like_re = re.compile(r'^[A-Z]{1,5}-\d{3,4}[A-Z]?$', re.IGNORECASE)
-        _mc_prefix = self._get_mc_prefix()
-        cable_re = re.compile(
-            re.escape(_mc_prefix) + r'-\d{1,2}-\d{1,2}-\d{1,2}-[A-Z]-\d{1,2}-[A-Z]{1,3}',
-            re.IGNORECASE
-        )
-        spare_re = re.compile(r'SPARE', re.IGNORECASE)
-        
-        # ── DYNAMIC column detection via header text ──────────────────
-        # Instead of hardcoding x-position ranges (which are page-specific),
-        # we OCR the HEADER ROW (row 0-3) and look for column labels:
-        #   "TAG No."  → tag column
-        #   "Multi Cable No." / "MC No." → cable column
-        # This makes the code work on ANY table PDF regardless of page size
-        # or column layout.
-        tag_col_indices = []
-        cable_col_indices = []
-        DATA_ROW_START = 4  # default; will be adjusted below
-        
-        # OCR each header cell to find which column is which
-        page_w = page.rect.width
-        for hdr_row in range(min(4, len(row_tops) - 1)):
-            top_h = row_tops[hdr_row]
-            bottom_h = row_tops[hdr_row + 1] if hdr_row + 1 < len(row_tops) else top_h + 20
-            if bottom_h - top_h < 5:
-                continue
-            
-            for col_idx in range(len(col_lefts) - 1):
-                left_h = col_lefts[col_idx]
-                right_h = col_lefts[col_idx + 1]
-                
-                px0_h = max(0, int(left_h * scale) - 2)
-                px1_h = min(img.shape[1], int(right_h * scale) + 2)
-                py0_h = max(0, int(top_h * scale) - 2)
-                py1_h = min(img.shape[0], int(bottom_h * scale) + 2)
-                
-                if px1_h - px0_h < 8 or py1_h - py0_h < 8:
-                    continue
-                
-                hdr_cell = img[py0_h:py1_h, px0_h:px1_h]
-                hdr_gray = cv2.cvtColor(hdr_cell, cv2.COLOR_BGR2GRAY)
-                _, hdr_bin = cv2.threshold(hdr_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-                hdr_text = pytesseract.image_to_string(hdr_bin, config=r'--oem 1 --psm 7 -l eng').strip().upper()
-                
-                # Check for tag column label
-                if 'TAG' in hdr_text and col_idx not in tag_col_indices:
-                    tag_col_indices.append(col_idx)
-                    # Data starts AFTER the header row that contains "TAG No."
-                    if hdr_row + 1 > DATA_ROW_START - 1:
-                        DATA_ROW_START = hdr_row + 1
-                
-                # Check for cable column label
-                if ('CABLE' in hdr_text or 'MC' in hdr_text) and col_idx not in cable_col_indices:
-                    # Make sure it's not just "MC:" label — check for "Multi" or "Cable"
-                    if 'CABLE' in hdr_text or 'MULTI' in hdr_text or 'MC' in hdr_text:
-                        cable_col_indices.append(col_idx)
-        
-        # If header-based detection failed, fall back to width-based heuristic:
-        # The tag column is typically the narrowest column that can fit a tag
-        # (e.g. "UY-5021"). The cable column is typically wider (e.g. "NC-0-1-2-C-3-BL").
-        if not tag_col_indices and len(col_lefts) > 2:
-            # Find columns that are wide enough for a tag but narrower than the cable column
-            col_widths = [(i, col_lefts[i+1] - col_lefts[i]) for i in range(len(col_lefts)-1)]
-            col_widths.sort(key=lambda x: x[1])
-            # Pick the 2nd narrowest column (1st is usually the row-number column)
-            if len(col_widths) >= 2:
-                tag_col_indices = [col_widths[1][0]]
-        
-        if not cable_col_indices and len(col_lefts) > 5:
-            # Find the widest non-edge column
-            col_widths = [(i, col_lefts[i+1] - col_lefts[i]) for i in range(1, len(col_lefts)-2)]
-            if col_widths:
-                col_widths.sort(key=lambda x: x[1], reverse=True)
-                cable_col_indices = [col_widths[0][0]]
-        
-        logger.info(
-            "_extract_from_image_table_multipass: tag cols=%s, cable cols=%s, data_row_start=%d",
-            tag_col_indices, cable_col_indices, DATA_ROW_START
-        )
-        cfg_psm7 = r'--oem 1 --psm 7 -l eng'  # Single line — best for individual cells
-        cfg_psm6 = r'--oem 1 --psm 6 -l eng'  # Block — fallback
-        
-        cells_processed = 0
-        tags_found = 0
-        spares_found = 0
-        cables_found = 0
-        
-        for row_idx in range(DATA_ROW_START, len(row_tops) - 1):
-            top = row_tops[row_idx]
-            bottom = row_tops[row_idx + 1]
-            if bottom - top < 5:
-                continue
-            
-            # Process tag column
-            for col_idx in tag_col_indices:
-                if col_idx >= len(col_lefts) - 1:
-                    continue
-                left = col_lefts[col_idx]
-                right = col_lefts[col_idx + 1]
-                
-                # Convert to pixel coordinates
-                px0 = max(0, int(left * scale) - 3)
-                px1 = min(img.shape[1], int(right * scale) + 3)
-                py0 = max(0, int(top * scale) - 3)
-                py1 = min(img.shape[0], int(bottom * scale) + 3)
-                
-                if px1 - px0 < 10 or py1 - py0 < 10:
-                    continue
-                
-                cell_img = img[py0:py1, px0:px1]
-                gray = cv2.cvtColor(cell_img, cv2.COLOR_BGR2GRAY)
-                gray = cv2.GaussianBlur(gray, (3, 3), 0)
-                _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-                binary = cv2.resize(binary, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-                
-                # Use image_to_data to get EXACT text bounding box within the cell
-                # (not the full cell dimensions). This makes bounding boxes tight
-                # around the actual text, matching the pre-cell-based behavior.
-                cell_tsv = pytesseract.image_to_data(binary, config=cfg_psm7, output_type=pytesseract.Output.DICT)
-                cell_text_parts = []
-                # Collect the tightest bounding box from all non-empty words
-                min_x, min_y = 999999, 999999
-                max_x, max_y = 0, 0
-                has_words = False
-                for ci in range(len(cell_tsv['text'])):
-                    w = str(cell_tsv['text'][ci]).strip()
-                    if not w:
-                        continue
-                    has_words = True
-                    cell_text_parts.append(w)
-                    wx = int(cell_tsv['left'][ci])
-                    wy = int(cell_tsv['top'][ci])
-                    ww = int(cell_tsv['width'][ci])
-                    wh = int(cell_tsv['height'][ci])
-                    if wx < min_x: min_x = wx
-                    if wy < min_y: min_y = wy
-                    if wx + ww > max_x: max_x = wx + ww
-                    if wy + wh > max_y: max_y = wy + wh
-                
-                if not has_words:
-                    # Fallback to image_to_string
-                    text7 = pytesseract.image_to_string(binary, config=cfg_psm7).strip()
-                    text6 = pytesseract.image_to_string(binary, config=cfg_psm6).strip()
-                    text = text7 if len(text7) >= len(text6) else text6
-                    # Use full cell coords as fallback
-                    tight_left = int(left * scale)
-                    tight_top = int(top * scale)
-                    tight_width = int((right - left) * scale)
-                    tight_height = int((bottom - top) * scale)
-                else:
-                    text = ' '.join(cell_text_parts)
-                    # Convert cell-local coords (in 2x upscaled space) back to
-                    # full-page 300 DPI coords.
-                    # The cell image was: cell_img[py0:py1, px0:px1] → upscaled 2x
-                    # So: page_coord = px0 + (cell_coord / 2)
-                    # But we also added padding (-3) when extracting, so:
-                    # tight_left = px0 + min_x / 2  (in page pixels at 300 DPI)
-                    tight_left = px0 + int(min_x / 2)
-                    tight_top = py0 + int(min_y / 2)
-                    tight_width = int((max_x - min_x) / 2)
-                    tight_height = int((max_y - min_y) / 2)
-                    # Clamp to page bounds
-                    tight_left = max(0, tight_left)
-                    tight_top = max(0, tight_top)
-                    tight_width = max(10, tight_width)
-                    tight_height = max(10, tight_height)
-                
-                if not text or len(text) < 2:
-                    continue
-                
-                # Clean the text
-                text = text.strip().strip('[](){}|<>\'"')
-                
-                # Check if it's SPARE
-                if spare_re.search(text.upper()):
-                    ocr_data['text'].append('SPARE')
-                    ocr_data['left'].append(tight_left)
-                    ocr_data['top'].append(tight_top)
-                    ocr_data['width'].append(tight_width)
-                    ocr_data['height'].append(tight_height)
-                    ocr_data['conf'].append(95)
-                    ocr_data['block_num'].append(1)
-                    ocr_data['par_num'].append(1)
-                    ocr_data['line_num'].append(row_idx)
-                    ocr_data['word_num'].append(1)
-                    spares_found += 1
-                    cells_processed += 1
-                    continue
-                
-                # Check if it looks like a tag (letters-digits pattern)
-                text_upper = text.upper().strip()
-                if tag_like_re.match(text_upper):
-                    ocr_data['text'].append(text_upper)
-                    ocr_data['left'].append(tight_left)
-                    ocr_data['top'].append(tight_top)
-                    ocr_data['width'].append(tight_width)
-                    ocr_data['height'].append(tight_height)
-                    ocr_data['conf'].append(90)
-                    ocr_data['block_num'].append(1)
-                    ocr_data['par_num'].append(1)
-                    ocr_data['line_num'].append(row_idx)
-                    ocr_data['word_num'].append(1)
-                    tags_found += 1
-                    cells_processed += 1
-                # Skip garbage tokens from SPARE cells
-            
-            # Process cable column
-            for col_idx in cable_col_indices:
-                if col_idx >= len(col_lefts) - 1:
-                    continue
-                left = col_lefts[col_idx]
-                right = col_lefts[col_idx + 1]
-                
-                px0 = max(0, int(left * scale) - 3)
-                px1 = min(img.shape[1], int(right * scale) + 3)
-                py0 = max(0, int(top * scale) - 3)
-                py1 = min(img.shape[0], int(bottom * scale) + 3)
-                
-                if px1 - px0 < 10 or py1 - py0 < 10:
-                    continue
-                
-                cell_img = img[py0:py1, px0:px1]
-                gray = cv2.cvtColor(cell_img, cv2.COLOR_BGR2GRAY)
-                gray = cv2.GaussianBlur(gray, (3, 3), 0)
-                _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-                binary = cv2.resize(binary, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-                
-                # Use image_to_data for tight bounding box (same as tag column)
-                cell_tsv = pytesseract.image_to_data(binary, config=cfg_psm7, output_type=pytesseract.Output.DICT)
-                cell_text_parts = []
-                min_x, min_y = 999999, 999999
-                max_x, max_y = 0, 0
-                has_words = False
-                for ci in range(len(cell_tsv['text'])):
-                    w = str(cell_tsv['text'][ci]).strip()
-                    if not w:
-                        continue
-                    has_words = True
-                    cell_text_parts.append(w)
-                    wx = int(cell_tsv['left'][ci])
-                    wy = int(cell_tsv['top'][ci])
-                    ww = int(cell_tsv['width'][ci])
-                    wh = int(cell_tsv['height'][ci])
-                    if wx < min_x: min_x = wx
-                    if wy < min_y: min_y = wy
-                    if wx + ww > max_x: max_x = wx + ww
-                    if wy + wh > max_y: max_y = wy + wh
-                
-                if has_words:
-                    text = ' '.join(cell_text_parts)
-                    tight_left = px0 + int(min_x / 2)
-                    tight_top = py0 + int(min_y / 2)
-                    tight_width = int((max_x - min_x) / 2)
-                    tight_height = int((max_y - min_y) / 2)
-                else:
-                    text = pytesseract.image_to_string(binary, config=cfg_psm6).strip()
-                    tight_left = int(left * scale)
-                    tight_top = int(top * scale)
-                    tight_width = int((right - left) * scale)
-                    tight_height = int((bottom - top) * scale)
-                
-                tight_left = max(0, tight_left)
-                tight_top = max(0, tight_top)
-                tight_width = max(10, tight_width)
-                tight_height = max(10, tight_height)
-                
-                if not text or len(text) < 5:
-                    continue
-                
-                # Check for cable pattern
-                text_upper = text.upper().strip()
-                cable_match = re.search(r'NC-\d{1,2}-\d{1,2}-\d{1,2}-[A-Z]-\d{1,2}-[A-Z]{1,3}', text_upper)
-                if cable_match:
-                    cable_text = cable_match.group(0)
-                    ocr_data['text'].append(cable_text)
-                    ocr_data['left'].append(tight_left)
-                    ocr_data['top'].append(tight_top)
-                    ocr_data['width'].append(tight_width)
-                    ocr_data['height'].append(tight_height)
-                    ocr_data['conf'].append(90)
-                    ocr_data['block_num'].append(2)
-                    ocr_data['par_num'].append(1)
-                    ocr_data['line_num'].append(row_idx)
-                    ocr_data['word_num'].append(1)
-                    cables_found += 1
-                    cells_processed += 1
-        
-        # ── Step 4: Also do a full-page pass for JB/MC/Cable fallback ─
-        # The cell-based approach may miss JB/MC (which are in the header,
-        # not in data cells). We do a full-page pass at 300 AND 400 DPI
-        # to catch JB/MC that the 300 DPI pass misses.
-        jb_re = re.compile(r'^[A-Z]{2,5}-\d{2,5}[A-Z]?$', re.IGNORECASE)
-        mc_re = re.compile(r'^' + re.escape(_mc_prefix) + r'-?[A-Z]{2,5}-?\d{2,5}[A-Z]?$', re.IGNORECASE)
-        full_cable_re = re.compile(
-            r'^' + re.escape(_mc_prefix) + r'-\d{1,2}-\d{1,2}-\d{1,2}-[A-Z]-\d{1,2}-[A-Z]{1,3}$',
-            re.IGNORECASE
-        )
-        
-        seen_jb_tokens = set()
-        seen_mc_tokens = set()
-        seen_cable_tokens = set()
-        
-        for extra_dpi in [300]:  # OPTIMIZATION: dropped 400 DPI (marginal accuracy gain, 1.78x slower)
-            extra_scale = extra_dpi / 72
-            extra_pix = page.get_pixmap(matrix=fitz.Matrix(extra_scale, extra_scale), colorspace=_CS_GRAY)
-            extra_img = np.frombuffer(extra_pix.samples, dtype=np.uint8).reshape(extra_pix.height, extra_pix.width, extra_pix.n)
-            if extra_pix.n == 3:
-                extra_img = cv2.cvtColor(extra_img, cv2.COLOR_RGB2BGR)
-            else:
-                extra_img = cv2.cvtColor(extra_img, cv2.COLOR_RGBA2BGR)
-            
-            gray_extra = cv2.cvtColor(extra_img, cv2.COLOR_BGR2GRAY)
-            gray_extra = cv2.GaussianBlur(gray_extra, (3, 3), 0)
-            _, binary_extra = cv2.threshold(gray_extra, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            extra_data = pytesseract.image_to_data(binary_extra, config=r'--oem 1 --psm 6 -l eng', output_type=pytesseract.Output.DICT)
-            
-            # Normalize coordinates to 300 DPI base
-            coord_scale = BASE_DPI / extra_dpi
-            
-            for i in range(len(extra_data['text'])):
-                text = str(extra_data['text'][i]).strip().upper()
-                if not text or len(text) < 4:
-                    continue
-                
-                # Add MC tokens (NC-*)
-                if mc_re.match(text) and not full_cable_re.match(text):
-                    if text not in seen_mc_tokens:
-                        seen_mc_tokens.add(text)
-                        ocr_data['text'].append(text)
-                        ocr_data['left'].append(int(int(extra_data['left'][i]) * coord_scale))
-                        ocr_data['top'].append(int(int(extra_data['top'][i]) * coord_scale))
-                        ocr_data['width'].append(int(int(extra_data['width'][i]) * coord_scale))
-                        ocr_data['height'].append(int(int(extra_data['height'][i]) * coord_scale))
-                        ocr_data['conf'].append(int(extra_data['conf'][i]) if extra_data['conf'][i] != '-1' else 80)
-                        ocr_data['block_num'].append(3)
-                        ocr_data['par_num'].append(1)
-                        ocr_data['line_num'].append(0)
-                        ocr_data['word_num'].append(1)
-                
-                # Add JB tokens (matching jb_examples prefix, not hardcoded "JSF")
-                _jb_prefix = str(getattr(self, 'jb_examples', None) or '').strip().upper()
-                if jb_re.match(text) and _jb_prefix and any(text.startswith(p) for p in _jb_prefix.split(',') if p):
-                    if text not in seen_jb_tokens:
-                        seen_jb_tokens.add(text)
-                        ocr_data['text'].append(text)
-                        ocr_data['left'].append(int(int(extra_data['left'][i]) * coord_scale))
-                        ocr_data['top'].append(int(int(extra_data['top'][i]) * coord_scale))
-                        ocr_data['width'].append(int(int(extra_data['width'][i]) * coord_scale))
-                        ocr_data['height'].append(int(int(extra_data['height'][i]) * coord_scale))
-                        ocr_data['conf'].append(int(extra_data['conf'][i]) if extra_data['conf'][i] != '-1' else 80)
-                        ocr_data['block_num'].append(3)
-                        ocr_data['par_num'].append(1)
-                        ocr_data['line_num'].append(0)
-                        ocr_data['word_num'].append(1)
-                
-                # Add Cable tokens that weren't caught by cell-based
-                if full_cable_re.match(text):
-                    if text not in seen_cable_tokens:
-                        seen_cable_tokens.add(text)
-                        ocr_data['text'].append(text)
-                        ocr_data['left'].append(int(int(extra_data['left'][i]) * coord_scale))
-                        ocr_data['top'].append(int(int(extra_data['top'][i]) * coord_scale))
-                        ocr_data['width'].append(int(int(extra_data['width'][i]) * coord_scale))
-                        ocr_data['height'].append(int(int(extra_data['height'][i]) * coord_scale))
-                        ocr_data['conf'].append(int(extra_data['conf'][i]) if extra_data['conf'][i] != '-1' else 80)
-                        ocr_data['block_num'].append(3)
-                        ocr_data['par_num'].append(1)
-                        ocr_data['line_num'].append(0)
-                        ocr_data['word_num'].append(1)
-        
-        logger.info(
-            "_extract_from_image_table_multipass: page %d — %d cells processed, %d tags, %d spares, %d cables",
-            page_num + 1, cells_processed, tags_found, spares_found, cables_found
-        )
-        logger.info(
-            "_extract_from_image_table_multipass: page %d — %d total OCR tokens (cell + full-page)",
-            page_num + 1, len(ocr_data['text'])
-        )
-        
-        # ── Step 5: Apply OCR corrections and extract ─────────────────
-        corrected_ocr_data = self._apply_table_ocr_corrections(ocr_data, page_num)
-        
-        return self._extract_from_ocr_data(corrected_ocr_data, pdf_type)
-
-    def _apply_table_ocr_corrections(self, ocr_data, page_num):r_data(corrected_ocr_data, pdf_type)
-
-    def _apply_table_ocr_corrections(self, ocr_data, page_num):
-        """
-        Apply OCR error corrections specifically for table-mode PDFs.
-
-        Three transformations:
-        1. MC TOKEN MERGING:
-           OCR often splits "NC-JSF-5125" into two tokens: "NC" and "JSF-5125"
-           (or "NCJSF" without dash). We scan for these patterns and merge them
-           back into a single "NC-JSF-XXXX" token.
-
-        2. CHARACTER CORRECTION using IO List:
-           Common OCR errors on CID-broken PDFs:
-             - U ↔ V (UV-5021 → UY-5021)
-             - 5 ↔ S (FUY-S407 → FUY-5407)
-             - 0 ↔ 5 (JSF-012S → JSF-512S)
-             - 7 ↔ 1 (JSF-5725 → JSF-5125)
-           We use the IO List as ground truth: if an OCR token is fuzzy-similar
-           to an IO List tag (sim ≥ 0.85), we replace it with the IO List form.
-
-        3. CABLE/MC SEPARATION:
-           - Tokens matching NC-X-X-X-X-X-XXX (5+ dashes) → cable
-           - Tokens matching NC-LETTERS-DIGITS (1-2 dashes) → MC
-           Any token that's a cable is removed from MC candidates.
-
-        Args:
-            ocr_data: OCR data dict (text, left, top, width, height, conf, ...)
-            page_num: 0-indexed page number (for logging).
-
-        Returns:
-            Corrected ocr_data dict with the same structure.
-        """
-        if not ocr_data or not ocr_data.get('text'):
-            return ocr_data
-
-        n_tokens = len(ocr_data['text'])
-        if n_tokens == 0:
-            return ocr_data
-
-        # Make a mutable copy
-        new_text = list(ocr_data['text'])
-        new_left = list(ocr_data.get('left', [0] * n_tokens))
-        new_top = list(ocr_data.get('top', [0] * n_tokens))
-        new_width = list(ocr_data.get('width', [0] * n_tokens))
-        new_height = list(ocr_data.get('height', [0] * n_tokens))
-        new_conf = list(ocr_data.get('conf', [0] * n_tokens))
-
-        # ── Get IO List tags for character correction ──────────────────
-        io_list_tags = set()
-        if hasattr(self, 'io_list_tags') and self.io_list_tags:
-            io_list_tags = set(str(t).upper().strip() for t in self.io_list_tags)
-        elif hasattr(self, 'excel_df') and hasattr(self, 'excel_tag_column'):
-            if self.excel_df is not None and not self.excel_df.empty:
-                tag_col = self.excel_tag_column
-                io_list_tags = set(str(t).strip().upper() for t in self.excel_df[tag_col] if pd.notna(t))
-
-        try:
-            import Levenshtein as _lev
-            _lev_available = True
-        except ImportError:
-            _lev_available = False
-
-        # ── STEP 1: MC Token Merging ───────────────────────────────────
-        # Look for patterns like:
-        #   token[i] = "NC" or "NCJ" or "NCJSF"  (no dash)
-        #   token[i+1] = "JSF-XXXX" or "XXX-XXXX"
-        # and merge them into "NC-JSF-XXXX"
-        mc_examples = str(getattr(self, 'mc_examples', None) or '').strip().upper()
-        jb_examples = str(getattr(self, 'jb_examples', None) or '').strip().upper()
-
-        # Build a list of (index, action) for merges
-        merges = []  # list of (i, i+1, merged_text)
-        used_indices = set()
-
-        for i in range(n_tokens - 1):
-            if i in used_indices:
-                continue
-            t1 = str(new_text[i]).strip().upper()
-            t2 = str(new_text[i + 1]).strip().upper()
-
-            if not t1 or not t2:
-                continue
-
-            # Pattern 1: "NC" + "JSF-XXXX" → "NC-JSF-XXXX"
-            if t1 == 'NC' and len(t2) >= 5:
-                # Check if t2 looks like a JB identifier (e.g. JSF-5125)
-                if re.match(r'^[A-Z]{2,5}-\d{2,5}[A-Z]?$', t2):
-                    merged = f"NC-{t2}"
-                    merges.append((i, i + 1, merged))
-                    used_indices.add(i)
-                    used_indices.add(i + 1)
-                    continue
-
-            # Pattern 2: "NCJSF" (no dash) + nothing — already merged by OCR
-            # We'll handle this in Step 2 (character correction)
-
-            # Pattern 3: "NC" + "JSF" + separate digits — too complex, skip
-
-        # Apply merges: replace token[i] with merged, mark token[i+1] for removal
-        indices_to_remove = set()
-        for i, j, merged_text in merges:
-            new_text[i] = merged_text
-            # Extend the bounding box to cover both tokens
-            new_left[i] = min(int(new_left[i]), int(new_left[j]))
-            new_top[i] = min(int(new_top[i]), int(new_top[j]))
-            new_width[i] = max(int(new_left[i]) + int(new_width[i]),
-                              int(new_left[j]) + int(new_width[j])) - int(new_left[i])
-            new_height[i] = max(int(new_height[i]), int(new_height[j]))
-            new_conf[i] = max(int(new_conf[i]), int(new_conf[j]))
-            indices_to_remove.add(j)
-
-        if merges:
-            logger.info(
-                "_apply_table_ocr_corrections: page %d — merged %d split MC tokens",
-                page_num + 1, len(merges)
-            )
-
-        # ── STEP 2: Character Correction using IO List ─────────────────
-        # For each token that looks like a tag/JB/MC, try to find a close
-        # match in the IO List. If found (sim ≥ 0.85), replace with IO List form.
-        corrections_applied = 0
-
-        # Common character confusions to try as substitutions
-        CHAR_CONFUSIONS = [
-            ('V', 'Y'),  # UV-5021 → UY-5021
-            ('S', '5'),  # FUY-S407 → FUY-5407
-            ('5', 'S'),  # JSF-576S → JSF-576S (already correct, but for safety)
-            ('0', '5'),  # JSF-012S → JSF-512S
-            ('5', '0'),  # reverse
-            ('1', '7'),  # JSF-5725 → JSF-5125
-            ('7', '1'),  # reverse
-            ('O', '0'),  # O → 0
-            ('0', 'O'),  # reverse (rare)
-        ]
-
-        for i in range(n_tokens):
-            if i in indices_to_remove:
-                continue
-            t = str(new_text[i]).strip().upper()
-            if not t or len(t) < 4:
-                continue
-
-            # Only correct tokens that look like tags/JBs/MCs
-            looks_like_tag = bool(re.match(r'^[A-Z]{1,5}-\d{3,4}[A-Z]?$', t))
-            looks_like_jb = bool(re.match(r'^[A-Z]{2,5}-\d{2,5}[A-Z]?$', t))
-            looks_like_mc = bool(re.match(r'^NC-?[A-Z]{2,5}-?\d{2,5}[A-Z]?$', t))
-
-            if not (looks_like_tag or looks_like_jb or looks_like_mc):
-                continue
-
-            # Skip if already exact match in IO List
-            if t in io_list_tags:
-                continue
-
-            # Try character substitutions
-            best_match = None
-            best_score = 0.0
-            best_match_source = None  # 'io_list', 'jb_ref', or 'mc_ref'
-
-            # ── Build reference set based on token type ──────────────────
-            # For JB-like tokens: use known JBs (from header) + IO List tags
-            # For MC-like tokens: use known MCs (from header) + IO List tags
-            # For tag-like tokens: use IO List tags
-            #
-            # IMPORTANT: We also add IO List tags to JB/MC reference sets
-            # because the header extraction may produce incorrect JB/MC
-            # (e.g. JSF-5776S instead of JSF-576S). By including IO List
-            # tags, we give the correction algorithm more options to find
-            # the correct form.
-            reference_set = set()
-            if looks_like_mc:
-                # MC token — use known MCs from header
-                known_mcs = getattr(self, '_table_known_mcs', set())
-                reference_set = set(str(m).upper() for m in known_mcs)
-                # Also add IO List tags (in case MC has similar pattern)
-                reference_set |= io_list_tags
-            elif looks_like_jb:
-                # JB token — use known JBs from header
-                known_jbs = getattr(self, '_table_known_jbs', set())
-                reference_set = set(str(j).upper() for j in known_jbs)
-                # Also add IO List tags (in case a tag looks like a JB)
-                reference_set |= io_list_tags
-            else:
-                # Regular tag — use IO List tags
-                reference_set = io_list_tags
-
-            if _lev_available and reference_set:
-                # ── Pattern-based suffix correction (no reference needed) ─
-                # If a JB/MC token ends with '5' and matches the JB pattern
-                # (letters-digits-optional letter), the trailing '5' is very
-                # likely an OCR error for 'S' (these characters look similar).
-                # We apply this correction WITHOUT requiring a reference match,
-                # because the reference set may also contain errors.
-                if (looks_like_jb or looks_like_mc) and len(t) >= 5:
-                    if t[-1] == '5':
-                        parts = t.split('-')
-                        # For JB: parts = ['JSF', '5765'] (2 parts)
-                        # For MC: parts = ['NC', 'JSF', '5765'] (3 parts)
-                        # In both cases, the last part is the digits
-                        if len(parts) >= 2:
-                            digits = parts[-1]
-                            # Generic check: if the digit part has 3+ digits
-                            # and ends with '5', it's likely an OCR error for 'S'.
-                            # We don't hardcode "4 digits" because different
-                            # projects may have 3-digit or 5-digit JB numbers.
-                            # The pattern [A-Z]{2,5}-\d{2,5}[A-Z]? means the
-                            # JB can have 2-5 digits. If we have 3+ digits
-                            # ending with 5, converting to S is reasonable.
-                            if len(digits) >= 3 and digits[-1] == '5':
-                                # Convert last 5 to S
-                                prefix = '-'.join(parts[:-1])
-                                corrected = f"{prefix}-{digits[:-1]}S"
-                                new_text[i] = corrected
-                                corrections_applied += 1
-                                logger.info(
-                                    "_apply_table_ocr_corrections: suffix-corrected '%s' → '%s' (5→S, pattern-based)",
-                                    t, corrected
-                                )
-                                continue
-
-                # First try direct fuzzy match (no substitution)
-                for ref_tag in reference_set:
-                    score = _lev.ratio(t, str(ref_tag).upper())
-                    if score > best_score:
-                        best_score = score
-                        best_match = ref_tag
-                        best_match_source = 'direct'
-
-                # If direct match is good enough, use it
-                if best_score >= 0.92:
-                    new_text[i] = best_match
-                    corrections_applied += 1
-                    logger.debug(
-                        "_apply_table_ocr_corrections: corrected '%s' → '%s' (sim=%.2f, direct)",
-                        t, best_match, best_score
-                    )
-                    continue
-
-                # Try SINGLE character substitutions
-                for old_ch, new_ch in CHAR_CONFUSIONS:
-                    positions = [j for j, c in enumerate(t) if c == old_ch]
-                    if not positions:
-                        continue
-                    for pos in positions:
-                        candidate = t[:pos] + new_ch + t[pos + 1:]
-                        for ref_tag in reference_set:
-                            score = _lev.ratio(candidate, str(ref_tag).upper())
-                            if score > best_score:
-                                best_score = score
-                                best_match = ref_tag
-                                best_match_source = 'substitution-1'
-
-                # If single substitution is good enough, use it
-                if best_match and best_score >= 0.92:
-                    new_text[i] = best_match
-                    corrections_applied += 1
-                    logger.debug(
-                        "_apply_table_ocr_corrections: corrected '%s' → '%s' (sim=%.2f, %s)",
-                        t, best_match, best_score, best_match_source
-                    )
-                    continue
-
-                # Try DOUBLE character substitutions (for cases like JSF-5725 → JSF-512S
-                # which needs both 7→1 and 5→S)
-                if best_score < 0.92:
-                    for old_ch1, new_ch1 in CHAR_CONFUSIONS:
-                        positions1 = [j for j, c in enumerate(t) if c == old_ch1]
-                        if not positions1:
-                            continue
-                        for pos1 in positions1:
-                            candidate1 = t[:pos1] + new_ch1 + t[pos1 + 1:]
-                            for old_ch2, new_ch2 in CHAR_CONFUSIONS:
-                                positions2 = [j for j, c in enumerate(candidate1) if c == old_ch2]
-                                if not positions2:
-                                    continue
-                                for pos2 in positions2:
-                                    if pos2 == pos1:
-                                        continue
-                                    candidate2 = candidate1[:pos2] + new_ch2 + candidate1[pos2 + 1:]
-                                    for ref_tag in reference_set:
-                                        score = _lev.ratio(candidate2, str(ref_tag).upper())
-                                        if score > best_score:
-                                            best_score = score
-                                            best_match = ref_tag
-                                            best_match_source = 'substitution-2'
-
-                # If double substitution brought us close enough, use it
-                if best_match and best_score >= 0.92:
-                    new_text[i] = best_match
-                    corrections_applied += 1
-                    logger.debug(
-                        "_apply_table_ocr_corrections: corrected '%s' → '%s' (sim=%.2f, %s)",
-                        t, best_match, best_score, best_match_source
-                    )
-
-        if corrections_applied:
-            logger.info(
-                "_apply_table_ocr_corrections: page %d — applied %d character corrections",
-                page_num + 1, corrections_applied
-            )
-
-        # ── STEP 3: Build final ocr_data ───────────────────────────────
-        # Remove merged-away tokens
-        final_indices = [i for i in range(n_tokens) if i not in indices_to_remove]
-
-        corrected = {
-            'text': [new_text[i] for i in final_indices],
-            'left': [new_left[i] for i in final_indices],
-            'top': [new_top[i] for i in final_indices],
-            'width': [new_width[i] for i in final_indices],
-            'height': [new_height[i] for i in final_indices],
-            'conf': [new_conf[i] for i in final_indices],
-            'block_num': [ocr_data.get('block_num', [0] * n_tokens)[i] for i in final_indices],
-            'par_num': [ocr_data.get('par_num', [0] * n_tokens)[i] for i in final_indices],
-            'line_num': [ocr_data.get('line_num', [0] * n_tokens)[i] for i in final_indices],
-            'word_num': [ocr_data.get('word_num', [0] * n_tokens)[i] for i in final_indices],
-        }
-
-        logger.info(
-            "_apply_table_ocr_corrections: page %d — %d tokens after corrections (was %d)",
-            page_num + 1, len(final_indices), n_tokens
-        )
-
-        return corrected
-
-    def _extract_from_ocr_data(self, ocr_data, pdf_type: str,
-                                coord_source: str = 'ocr',
-                                dpi_factor: float = 300 / 72):
+    def _extract_from_ocr_data(self, ocr_data, pdf_type: str):
         # Ensure pdf_type is canonical to keep thresholds/heuristics consistent
         _l = str(pdf_type or '').lower()
         if 'table' in _l:
@@ -2638,16 +1619,6 @@ class TagJBExtractor:
             pdf_type = 'diagrams'
 
         dominant_prefix = self._detect_dominant_prefix_in_page(ocr_data, ['UZSO', 'UZSC'])
-        # ✅ [COORD FIX] هلپر داخلی برای ساخت bbox که منبع مختصات را هم ثبت می‌کند
-        def _bbox(i):
-            return {
-                'x': int(ocr_data['left'][i]),
-                'y': int(ocr_data['top'][i]),
-                'width': int(ocr_data['width'][i]),
-                'height': int(ocr_data['height'][i]),
-                'coord_source': coord_source,   # 'ocr' یا 'digital'
-                'dpi_factor': dpi_factor,       # ضریب تبدیل پوینت→پیکسل (فقط برای digital کاربرد دارد)
-            }
 
         if dominant_prefix:
             logger.info(f"🎯 Page context: This page primarily contains {dominant_prefix} tags")
@@ -2713,45 +1684,13 @@ class TagJBExtractor:
         # ============================================================
         logger.info("Phase 0: Extracting ALL OCR tags...")
         
-        # ── TABLE-MODE JB/MC pattern ─────────────────────────────────────
-        # Pre-compile a JB fragment pattern for table mode. This catches
-        # tokens like "JSF-5765" that are JB identifiers split from their
-        # "NC-" prefix by OCR.
-        _table_jb_re = re.compile(r'^[A-Z]{2,5}-\d{2,5}[A-Z]?$', re.IGNORECASE) if pdf_type == 'table' else None
-        _table_mc_re = re.compile(r'^NC-?[A-Z]{0,5}-?\d{2,5}[A-Z]?$', re.IGNORECASE) if pdf_type == 'table' else None
-        # ────────────────────────────────────────────────────────────────────
-        
         for i, word in enumerate(ocr_data['text']):
             word_clean = self._normalize_ocr_tag_candidate(word)
-            # ── TABLE-MODE cleanup ─────────────────────────────────────────────
-            # Table cell borders are often misread by OCR as leading/trailing
-            # punctuation like "[UY-5021" or "UY-5021]". Strip these so that
-            # GENERAL_TAG_PATTERN can match.
-            if pdf_type == 'table':
-                word_clean = word_clean.strip('[](){}|<>\'"')
-            # ────────────────────────────────────────────────────────────────────
             if not word_clean or len(word_clean) < 4:
                 continue
             
-            # ── TABLE-MODE: Aggressive JB/MC filtering ──────────────────────
-            # In table mode, also skip tokens that:
-            #   - Start with "NC" (MC identifier, even if OCR mangled the dash)
-            #   - Match the JB pattern AND start with jb_examples prefix
-            #     (e.g. "JSF-5765" when jb_examples="JS")
-            # This prevents MC/JB fragments from leaking into all_ocr_tags.
-            if pdf_type == 'table':
-                _w_upper = word_clean.upper()
-                # Catch any token starting with NC (MC identifier)
-                if _w_upper.startswith('NC'):
-                    continue
-                # Catch JB fragments that match the JB pattern
-                if _table_jb_re and _table_jb_re.match(word_clean):
-                    if self.jb_examples and any(_w_upper.startswith(p) for p in str(self.jb_examples).upper().split(',') if p):
-                        continue
-            # ────────────────────────────────────────────────────────────────────
-            
             if (
-                (self.jb_examples and any(word_clean.startswith(p) for p in str(self.jb_examples).upper().split(',') if p)) or
+                (self.jb_examples and word_clean.startswith(self.jb_examples)) or
                 self._is_prefixed_identifier(word_clean, self.mc_examples, require_digit=False) or
                 spare_pattern.search(word_clean) or
                 self._is_non_tag_pattern(word_clean) 
@@ -2764,7 +1703,12 @@ class TagJBExtractor:
                 all_ocr_tags.add(word_clean)
                 ocr_candidate_scores[word_clean] = max(ocr_candidate_scores.get(word_clean, 0.0), pattern_score)
                 if word_clean not in ocr_tag_positions:
-                    ocr_tag_positions[word_clean] = _bbox(i)
+                    ocr_tag_positions[word_clean] = {
+                        'y': int(ocr_data['top'][i]),
+                        'x': int(ocr_data['left'][i]),
+                        'width': int(ocr_data['width'][i]),
+                        'height': int(ocr_data['height'][i]),
+                    }
                 logger.debug(f"Found OCR tag: {word_clean}")
         
         logger.info(f"Phase 0 complete: {len(all_ocr_tags)} OCR tags")
@@ -2795,26 +1739,27 @@ class TagJBExtractor:
                         bbox = None
                         for i, word in enumerate(ocr_data['text']):
                             if word.strip().upper() == ocr_tag:
-                                bbox = _bbox(i)
+                                bbox = {
+                                    'x': int(ocr_data['left'][i]),
+                                    'y': int(ocr_data['top'][i]),
+                                    'width': int(ocr_data['width'][i]),
+                                    'height': int(ocr_data['height'][i])
+                                }
                                 tags_with_positions.append({
                                     'tag': best_match,
                                     'y': ocr_data['top'][i],
                                     'x': ocr_data['left'][i],
                                     'width': ocr_data['width'][i],
                                     'height': ocr_data['height'][i],
-                                    'ocr_text': ocr_tag,
-                                    'coord_source': coord_source,
-                                    'dpi_factor': dpi_factor
+                                    'ocr_text': ocr_tag
                                 })
-                                break           
+                                break
                         
                         tag_match_info[best_match] = {
                             'match_type': 'exact',
                             'score': best_score,
                             'ocr_text': ocr_tag,
-                            'bbox': bbox or {},
-                            'coord_source': coord_source,
-                            'dpi_factor': dpi_factor
+                            'bbox': bbox or {}
                         }
                         
                         processed_tag_texts.add(ocr_tag)
@@ -2902,27 +1847,28 @@ class TagJBExtractor:
                     bbox = None
                     for i, word in enumerate(ocr_data['text']):
                         if word.strip().upper() == ocr_tag:
-                            bbox = _bbox(i)
+                            bbox = {
+                                'x': int(ocr_data['left'][i]),
+                                'y': int(ocr_data['top'][i]),
+                                'width': int(ocr_data['width'][i]),
+                                'height': int(ocr_data['height'][i])
+                            }
                             tags_with_positions.append({
                                 'tag': best_match,
                                 'y': ocr_data['top'][i],
                                 'x': ocr_data['left'][i],
                                 'width': ocr_data['width'][i],
                                 'height': ocr_data['height'][i],
-                                'ocr_text': ocr_tag,
-                                'coord_source': coord_source,
-                                'dpi_factor': dpi_factor
+                                'ocr_text': ocr_tag
                             })
                             break
-                
+                    
                     tag_match_info[best_match] = {
                         'match_type': 'similar',
                         'score': best_score,
                         'ocr_text': ocr_tag,
                         'reason': self._get_similarity_reason(ocr_tag, best_match),
-                        'bbox': bbox or {},
-                        'coord_source': coord_source,
-                        'dpi_factor': dpi_factor
+                        'bbox': bbox or {}
                     }
                     
                     processed_tag_texts.add(ocr_tag)
@@ -2952,9 +1898,7 @@ class TagJBExtractor:
                     'x': candidate_pos.get('x', 0),
                     'width': candidate_pos.get('width', 0),
                     'height': candidate_pos.get('height', 0),
-                    'ocr_text': ocr_tag,
-                    'coord_source': coord_source,
-                    'dpi_factor': dpi_factor
+                    'ocr_text': ocr_tag
                 })
             tag_match_info[candidate_key] = {
                 'match_type': 'unmatched_candidate',
@@ -2962,9 +1906,7 @@ class TagJBExtractor:
                 'ocr_text': ocr_tag,
                 'display_text': ocr_tag,
                 'reason': 'IO-pattern-like tag not found in IO List',
-                'bbox': candidate_pos if candidate_pos else {},
-                'coord_source': coord_source,
-                'dpi_factor': dpi_factor
+                'bbox': candidate_pos if candidate_pos else {}
             }
             unmatched_pattern_count += 1
 
@@ -3005,9 +1947,7 @@ class TagJBExtractor:
                         'y': curr_y,
                         'x': curr_x,
                         'width': ocr_data['width'][i],
-                        'height': ocr_data['height'][i],
-                        'coord_source': coord_source,
-                        'dpi_factor': dpi_factor
+                        'height': ocr_data['height'][i]
                     })
                     
                     spare_id = f"{self.spare_examples}_{spare_found_count}"
@@ -3016,9 +1956,12 @@ class TagJBExtractor:
                         'match_type': 'spare',
                         'score': 1.0,
                         'ocr_text': word_clean,
-                        'bbox': _bbox(i),
-                        'coord_source': coord_source,
-                        'dpi_factor': dpi_factor
+                        'bbox': {
+                            'x': int(curr_x),
+                            'y': int(curr_y),
+                            'width': int(ocr_data['width'][i]),
+                            'height': int(ocr_data['height'][i])
+                        }
                     }
                     
                     logger.info(f"✅ SPARE FOUND: {word_clean} → ID: {spare_id} x={curr_x} y={curr_y}")
@@ -3041,24 +1984,25 @@ class TagJBExtractor:
                     'match_type': 'mc',
                     'score': 1.0,
                     'ocr_text': word_clean,
-                    'bbox': _bbox(i),
-                    'coord_source': coord_source,
-                    'dpi_factor': dpi_factor
+                    'bbox': {
+                        'x': x,
+                        'y': y,
+                        'width': int(ocr_data['width'][i]),
+                        'height': int(ocr_data['height'][i])
+                    }
                 }
                 logger.info(f"MC: {mc_token}")
                 continue
             
             # JB
-            if any(word_clean.startswith(p) for p in str(self.jb_examples).upper().split(',') if p):
+            if word_clean.startswith(self.jb_examples):
                 x, y = int(ocr_data['left'][i]), int(ocr_data['top'][i])
                 jb_positions.append({
                     'jb': word_clean,
                     'x': x,
                     'y': y,
                     'width': int(ocr_data['width'][i]),
-                    'height': int(ocr_data['height'][i]),
-                    'coord_source': coord_source,
-                    'dpi_factor': dpi_factor
+                    'height': int(ocr_data['height'][i])
                 })
                 jb_identifiers.add(word_clean)
                 tag_match_info[word_clean] = {
@@ -3102,7 +2046,6 @@ class TagJBExtractor:
                         continue
 
                     word_x, word_y = ocr_data['left'][j], ocr_data['top'][j]
-                    word_w, word_h = ocr_data['width'][j], ocr_data['height'][j]
                     distance_y = abs(word_y - mc_y)
                     x_offset = int(word_x) - int(mc_x)
 
@@ -3112,9 +2055,7 @@ class TagJBExtractor:
                             'idx': j,
                             'text': token,
                             'x': int(word_x),
-                            'y': int(word_y),
-                            'w': int(word_w),
-                            'h': int(word_h)
+                            'y': int(word_y)
                         })
 
                 if not nearby_entries:
@@ -3123,7 +2064,7 @@ class TagJBExtractor:
                 candidate_hits = []
                 seen_hits = set()
 
-                def _collect_cable_matches(source_text, source_x, source_y, source_w=0, source_h=0):
+                def _collect_cable_matches(source_text, source_x, source_y):
                     normalized_text = re.sub(r'\s+', ' ', str(source_text).upper()).strip()
                     if not normalized_text:
                         return
@@ -3152,16 +2093,12 @@ class TagJBExtractor:
                             candidate_hits.append({
                                 'cable_desc': cable_desc,
                                 'source_text': normalized_text,
-                                'source_x': int(source_x),
-                                'source_y': int(source_y),
-                                'source_w': int(source_w),
-                                'source_h': int(source_h),
                                 'distance': distance_score
                             })
 
                 # کاندید مستقیم از خود توکن (مثل FRT-12PX0.75MM2)
                 for entry in nearby_entries:
-                    _collect_cable_matches(entry['text'], entry['x'], entry['y'], entry.get('w', 0), entry.get('h', 0))
+                    _collect_cable_matches(entry['text'], entry['x'], entry['y'])
 
                 # کاندید ترکیبی از دو توکن هم‌ردیف (مثل "12" + "PAIR")
                 row_tolerance = same_row_tolerance
@@ -3180,11 +2117,8 @@ class TagJBExtractor:
 
                         center_x = int((left['x'] + right['x']) / 2)
                         center_y = int((left['y'] + right['y']) / 2)
-                        # Merged width = from left edge of left token to right edge of right token
-                        merged_w = int(right['x'] + right.get('w', 0) - left['x'])
-                        merged_h = max(left.get('h', 0), right.get('h', 0))
-                        _collect_cable_matches(f"{left['text']} {right['text']}", center_x, center_y, merged_w, merged_h)
-                        _collect_cable_matches(f"{left['text']}{right['text']}", center_x, center_y, merged_w, merged_h)
+                        _collect_cable_matches(f"{left['text']} {right['text']}", center_x, center_y)
+                        _collect_cable_matches(f"{left['text']}{right['text']}", center_x, center_y)
 
                 if candidate_hits:
                     best_hit = min(candidate_hits, key=lambda item: (item['distance'], len(item['source_text'])))
@@ -3208,18 +2142,9 @@ class TagJBExtractor:
 
             best_desc = best_hit['cable_desc']
             best_text = self.clean_cable_description(best_hit['source_text'], mc_identifiers)
-            # Use the ACTUAL source token position and size, not the MC position
-            x = int(best_hit.get('source_x', mc_x))
-            y = int(best_hit.get('source_y', mc_y))
-            # Use actual source width/height if available, otherwise estimate
-            src_w = int(best_hit.get('source_w', 0))
-            src_h = int(best_hit.get('source_h', 0))
-            # If source_w is 0 (not available), use a reasonable default based on text length
-            if src_w <= 0:
-                src_w = max(60, len(best_text) * 12)  # ~12px per char at 300 DPI
-            if src_h <= 0:
-                src_h = 24  # default text height
-            logger.info(f"Cable matched near MC '{mc_text}': code='{best_desc}', raw='{best_text}', bbox=({x},{y}) {src_w}x{src_h}")
+            x = int(best_hit.get('source_x', mc_x)) if isinstance(best_hit.get('source_x', None), int) else int(mc_x)
+            y = int(best_hit.get('source_y', mc_y)) if isinstance(best_hit.get('source_y', None), int) else int(mc_y)
+            logger.info(f"Cable matched near MC '{mc_text}': code='{best_desc}', raw='{best_text}'")
 
             if best_desc not in cable_descriptions:
                 cable_descriptions.append(best_desc)
@@ -3232,15 +2157,13 @@ class TagJBExtractor:
                 'display_text': best_desc,
                 'x': x,
                 'y': y,
-                'width': src_w,
-                'height': src_h,
+                'width': 120,
+                'height': 24,
                 'bbox': {
                     'x': x,
                     'y': y,
-                    'width': src_w,
-                    'height': src_h,
-                    'coord_source': coord_source,
-                    'dpi_factor': dpi_factor
+                    'width': 120,
+                    'height': 24
                 }
             })
             tag_match_info[f"CABLE::{best_desc}::{len(cable_positions)}"] = {
@@ -3251,13 +2174,9 @@ class TagJBExtractor:
                 'bbox': {
                     'x': x,
                     'y': y,
-                    'width': src_w,
-                    'height': src_h,
-                    'coord_source': coord_source,
-                    'dpi_factor': dpi_factor
-                },
-                'coord_source': coord_source,
-                'dpi_factor': dpi_factor
+                    'width': 120,
+                    'height': 24
+                }
             }
         
         # ============================================================
@@ -3340,66 +2259,6 @@ class TagJBExtractor:
         if hasattr(self, 'all_spares'):
             self.all_spares = spare_identifiers
 
-        # ── TABLE-MODE cable fallback ─────────────────────────────────────
-        # Phase 4 above relies on MC token positions to locate cables. In
-        # table-mode PDFs with CID-broken fonts, MC tokens are often missed
-        # by the main OCR pass (they're recovered later by the header
-        # enhancer). This fallback scans ALL OCR tokens for cable patterns
-        # directly, ensuring cables like "NC-0-1-2-C-3-BL" are captured.
-        # IMPORTANT: We also store the bbox in tag_match_info so that
-        # draw_bounding_boxes can draw a tight box around the actual text.
-        if pdf_type == 'table':
-            _mc_prefix_fb = self._get_mc_prefix()
-            cable_re_fb = re.compile(
-                r'\b' + re.escape(_mc_prefix_fb) + r'-\d{1,2}-\d{1,2}-\d{1,2}-[A-Z]-\d{1,2}-[A-Z]{1,3}\b',
-                re.IGNORECASE
-            )
-            for idx, word in enumerate(ocr_data['text']):
-                text = str(word).strip()
-                if not text:
-                    continue
-                m = cable_re_fb.search(text)
-                if m:
-                    cable_match = m.group(0).upper()
-                    if cable_match not in cable_descriptions:
-                        cable_descriptions.append(cable_match)
-                        raw_cable_descriptions.append(cable_match)
-                        logger.info(f"TABLE cable fallback: found cable '{cable_match}'")
-                    
-                    # Store bbox in tag_match_info (even if already in cable_descriptions,
-                    # so draw_bounding_boxes has the exact position)
-                    # Use the OCR token's bounding box — this is the EXACT pixel
-                    # position of the text, so the box will be tight around it.
-                    cable_x = int(ocr_data['left'][idx]) if idx < len(ocr_data['left']) else 0
-                    cable_y = int(ocr_data['top'][idx]) if idx < len(ocr_data['top']) else 0
-                    cable_w = int(ocr_data['width'][idx]) if idx < len(ocr_data['width']) else 0
-                    cable_h = int(ocr_data['height'][idx]) if idx < len(ocr_data['height']) else 0
-                    
-                    # Only store if we have valid coordinates
-                    if cable_w > 0 and cable_h > 0:
-                        cable_key = f"CABLE::{cable_match}::{idx}"
-                        if cable_key not in tag_match_info:
-                            tag_match_info[cable_key] = {
-                                'match_type': 'cable',
-                                'score': 1.0,
-                                'ocr_text': text,
-                                'display_text': cable_match,
-                                'bbox': {
-                                    'x': cable_x,
-                                    'y': cable_y,
-                                    'width': cable_w,
-                                    'height': cable_h,
-                                    'coord_source': coord_source,
-                                    'dpi_factor': dpi_factor
-                                },
-                                'coord_source': coord_source,
-                                'dpi_factor': dpi_factor
-                            }
-                            logger.debug(
-                                f"TABLE cable fallback: stored bbox for '{cable_match}' at ({cable_x},{cable_y}) {cable_w}x{cable_h}"
-                            )
-        # ────────────────────────────────────────────────────────────────────
-
         return (
             tags,
             jb_identifiers,
@@ -3412,7 +2271,7 @@ class TagJBExtractor:
             all_ocr_tags,
         )
 
-    def extract_from_text_page(self, page, dpi_factor: float = 300 / 72) -> 'Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str], Dict[str, Dict], Set[str]]':
+    def extract_from_text_page(self, page) -> 'Tuple[Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str], Dict[str, Dict], Set[str]]':
         words = page.get_text("words")
         page_dict = page.get_text("dict")
         blocks = page_dict.get("blocks", []) if isinstance(page_dict, dict) else []
@@ -3425,8 +2284,12 @@ class TagJBExtractor:
         )
         sample_texts = [str(w[4]).strip() for w in words if str(w[4]).strip()][:20] if words else []
         logger.info(
-            "extract_from_text_page: digital stats blocks=%d, words=%d, lines=%d, tables=%d, dpi_factor=%.4f, sample_texts=%s",
-            num_blocks, num_words, num_lines, tables_detected, dpi_factor, sample_texts
+            "extract_from_text_page: digital stats blocks=%d, words=%d, lines=%d, tables=%d, sample_texts=%s",
+            num_blocks,
+            num_words,
+            num_lines,
+            tables_detected,
+            sample_texts
         )
         if not words:
             logger.info("extract_from_text_page: no words extracted from digital PDF page")
@@ -3451,16 +2314,7 @@ class TagJBExtractor:
             ocr_data["width"].append(int(x1 - x0))
             ocr_data["height"].append(int(y1 - y0))
             ocr_data["conf"].append(95)
-
-        # ✅ ذخیره dpi_factor برای استفاده در draw_bounding_boxes
-        self._digital_dpi_factor = dpi_factor
-
-        return self._extract_from_ocr_data(
-            ocr_data,
-            pdf_type,
-            coord_source='digital',   # ✅ مهم: می‌گه این مختصات واحدشون "پوینت PDF" است نه پیکسل
-            dpi_factor=dpi_factor      # ✅ مهم: ضریب تبدیل پوینت به پیکسل
-    )
+        return self._extract_from_ocr_data(ocr_data, pdf_type)
     def get_similarity_reports(self) -> 'List[Dict[str, Any]]':
         """
         دریافت گزارشات کامل شباهت بین تگ‌های شناسایی شده و تگ‌های مرجع
@@ -3491,25 +2345,24 @@ class TagJBExtractor:
             gray = image.copy()
  
         if pdf_type == 'table':
-            # ── TABLE preprocessing branch (REVISED for CID-broken PDFs) ─────
-            # Rationale: many table PDFs (e.g. PDFium-generated ones) ship with
-            # Identity-H encoded fonts that have NO ToUnicode CMap. Direct text
-            # extraction returns (cid:XX) garbage, so we MUST rely on OCR.
-            # The previous CLAHE+median+Otsu combo was destroying small cell text.
-            # Empirically, the simplest pipeline works best:
-            #   1. No upscaling (image is already at 300 DPI from process_pdf)
-            #   2. Light Gaussian blur (removes JPEG artefacts without smearing)
-            #   3. Otsu global threshold (clean black-on-white table cells)
-            logger.info("preprocess_image: using TABLE preprocessing path (revised)")
-
-            # Light Gaussian blur — removes PDFium JPEG artefacts without
-            # smearing the small text inside table cells
-            gray = cv2.GaussianBlur(gray, (3, 3), 0)
-
-            # Otsu global threshold — works well for the globally-consistent
-            # black-on-white contrast of printed tables
+            # ── TABLE preprocessing branch ───────────────────────────────────
+            logger.info("preprocess_image: using TABLE preprocessing path")
+ 
+            # No upscale — table text is typically large; upscaling wastes
+            # memory and can blur cell borders
+ 
+            # CLAHE for contrast (same params as diagram path)
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            gray = clahe.apply(gray)
+ 
+            # Median blur only — removes salt-and-pepper noise without
+            # smearing the straight cell-boundary lines
+            gray = cv2.medianBlur(gray, 3)
+ 
+            # Otsu global threshold — works well when background/foreground
+            # contrast is globally consistent (typical in printed tables)
             _, gray = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-
+ 
             # No morphological operations — avoids fusing adjacent cell lines
             return gray
             # ─────────────────────────────────────────────────────────────────
@@ -3857,9 +2710,9 @@ class TagJBExtractor:
 
             # Multiple OCR passes with different configurations
             ocr_configs = [
-                r'--oem 1 --psm 6 -l eng', 
-                r'--oem 1 --psm 11 -l eng',  
-                r'--oem 1 --psm 12 -l eng' 
+                r'--oem 3 --psm 6', 
+                r'--oem 3 --psm 11',  
+                r'--oem 3 --psm 12' 
             ]
             
             for config in ocr_configs:
@@ -3890,1149 +2743,6 @@ class TagJBExtractor:
         return new_tags
 
 
-    def _extract_header_references_only(self, page, page_num):
-        """
-        Extract JB/MC identifiers from the table header ONLY (no body).
-
-        This is called BEFORE _extract_from_image_table_multipass so that
-        self._table_known_jbs and self._table_known_mcs are populated
-        before _apply_table_ocr_corrections runs. This way, character
-        corrections can use the header-extracted JB/MC as ground truth.
-
-        Strategy:
-        1. Use pdfplumber to find the header row (between 1st and 4th H lines)
-        2. Render the header at 900 DPI
-        3. OCR with PSM 6 and PSM 11 (no whitelist)
-        4. Extract JB/MC identifiers using semantic label-based parsing
-        5. Store in self._table_known_jbs / self._table_known_mcs
-
-        Args:
-            page: fitz.Page object
-            page_num: 0-indexed page number (for logging)
-        """
-        try:
-            import pdfplumber
-        except ImportError:
-            logger.warning("_extract_header_references_only: pdfplumber not available, skipping")
-            return
-
-        try:
-            doc = page.parent
-            if doc is None:
-                return
-
-            page_index = page.number if hasattr(page, 'number') else 0
-            pdf_path = None
-            try:
-                pdf_path = doc.name
-            except Exception:
-                pdf_path = None
-
-            if not pdf_path or not os.path.exists(pdf_path):
-                return
-
-            with pdfplumber.open(pdf_path) as pp_doc:
-                if page_index >= len(pp_doc.pages):
-                    return
-                pp_page = pp_doc.pages[page_index]
-                rects = pp_page.rects or []
-
-            h_lines = [r for r in rects if r['width'] > 100 and r['height'] < 3]
-            v_lines = [r for r in rects if r['height'] > 100 and r['width'] < 3]
-            if not h_lines or not v_lines:
-                return
-
-            h_lines.sort(key=lambda r: r['top'])
-            v_lines.sort(key=lambda r: r['x0'])
-
-            table_left = min(r['x0'] for r in v_lines)
-            table_right = max(r['x0'] for r in v_lines)
-            header_top = h_lines[0]['top']
-            header_bottom = h_lines[min(3, len(h_lines) - 1)]['top']
-
-            pad = 6.0
-            header_top -= pad
-            header_bottom += pad
-            table_left -= pad
-            table_right += pad
-
-            page_w = page.rect.width
-            page_h = page.rect.height
-            header_top = max(0.0, header_top)
-            header_bottom = min(page_h, header_bottom)
-            table_left = max(0.0, table_left)
-            table_right = min(page_w, table_right)
-
-            clip_rect = fitz.Rect(table_left, header_top, table_right, header_bottom)
-            header_dpi_matrix = fitz.Matrix(900 / 72, 900 / 72)
-
-            try:
-                pix = page.get_pixmap(matrix=header_dpi_matrix, clip=clip_rect)
-            except Exception:
-                return
-
-            header_img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
-            if pix.n == 3:
-                header_img = cv2.cvtColor(header_img, cv2.COLOR_RGB2BGR)
-            else:
-                header_img = cv2.cvtColor(header_img, cv2.COLOR_RGBA2BGR)
-
-            gray_h = cv2.cvtColor(header_img, cv2.COLOR_BGR2GRAY)
-            gray_h = cv2.GaussianBlur(gray_h, (3, 3), 0)
-            _, binary_h = cv2.threshold(gray_h, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-
-            cfg_psm6 = r'--oem 1 --psm 6 -l eng'
-            cfg_psm11 = r'--oem 1 --psm 11 -l eng'
-
-            text_psm6 = pytesseract.image_to_string(binary_h, config=cfg_psm6)
-            text_psm11 = pytesseract.image_to_string(binary_h, config=cfg_psm11)
-            combined_header_text = (text_psm6 or '') + '\n' + (text_psm11 or '')
-
-            # ── Normalize OCR errors in header text ─────────────────────
-            def _normalize_ocr_id(s):
-                s = str(s).upper().strip()
-                s = s.strip(' \t,;:()[].')
-                # Replace "/" between digits with "7"
-                s = re.sub(r'(\d)/(\d)', r'\g<1>7\g<2>', s)
-                s = re.sub(r'\s+', '', s)
-                return s
-
-            # ── SEMANTIC JB extraction ──────────────────────────────────
-            new_jbs = set()
-            jb_label_pat = re.compile(
-                r'JB\s*No\.?\s*[:.]?\s*(.+?)(?:MC\s*No\.?\s*[:.]?|Multi\s*Cable\s*No\.?\s*[:.]?|\]|$)',
-                re.IGNORECASE | re.DOTALL
-            )
-            for m in jb_label_pat.finditer(combined_header_text):
-                raw = m.group(1).strip()
-                token_pat = re.compile(r'[A-Z]{2,5}\s*-?\s*[\d/]{2,5}[A-Z0-9]{0,3}', re.IGNORECASE)
-                for tm in token_pat.finditer(raw):
-                    candidate = _normalize_ocr_id(tm.group(0))
-                    if len(candidate) >= 4:
-                        new_jbs.add(candidate)
-
-            # ── SEMANTIC MC extraction ──────────────────────────────────
-            new_mcs = set()
-            mc_label_pat = re.compile(
-                r'(?:MC\s*No\.?\s*[:.]?|Multi\s*Cable\s*No\.?\s*[:.]?)\s*(.+?)(?:\(|$)',
-                re.IGNORECASE | re.DOTALL
-            )
-            for m in mc_label_pat.finditer(combined_header_text):
-                raw = m.group(1).strip()
-                token_pat = re.compile(
-                    r'NC-?[A-Z]{0,5}-?[\d/]{2,5}(?:[A-Z0-9-]{0,15})?',
-                    re.IGNORECASE
-                )
-                for tm in token_pat.finditer(raw):
-                    candidate = _normalize_ocr_id(tm.group(0))
-                    if len(candidate) >= 4:
-                        new_mcs.add(candidate)
-
-            # ── FALLBACK: permissive regex on whole header text ─────────
-            if not new_jbs:
-                jb_pat = re.compile(r'J?[A-Z]{2,5}\s*-?[\d/]{2,5}[A-Z0-9]{0,3}', re.IGNORECASE)
-                for m in jb_pat.finditer(combined_header_text):
-                    candidate = _normalize_ocr_id(m.group(0))
-                    if len(candidate) >= 4:
-                        new_jbs.add(candidate)
-
-            if not new_mcs:
-                mc_pat = re.compile(r'NC-?[A-Z]{0,5}\s*-?[\d/]{2,5}[A-Z0-9-]{0,15}', re.IGNORECASE)
-                for m in mc_pat.finditer(combined_header_text):
-                    candidate = _normalize_ocr_id(m.group(0))
-                    if len(candidate) >= 4:
-                        new_mcs.add(candidate)
-
-            # Filter noise
-            def _is_plausible_id(s):
-                s = str(s).upper().strip()
-                if len(s) < 4:
-                    return False
-                if not any(c.isalpha() for c in s):
-                    return False
-                return True
-
-            new_jbs = {j.upper() for j in new_jbs if _is_plausible_id(j)}
-            new_mcs = {m.upper() for m in new_mcs if _is_plausible_id(m)}
-
-            label_blacklist = {'JB', 'JBNO', 'MC', 'MCNO', 'NO'}
-            new_jbs = {j for j in new_jbs if j not in label_blacklist}
-            new_mcs = {m for m in new_mcs if m not in label_blacklist}
-
-            # ── Store as references ─────────────────────────────────────
-            # Filter to only valid JB/MC identifiers (must match JB/MC pattern)
-            jb_re = re.compile(r'^[A-Z]{2,5}-\d{2,5}[A-Z]?$', re.IGNORECASE)
-            mc_re = re.compile(r'^NC-?[A-Z]{2,5}-?\d{2,5}[A-Z]?$', re.IGNORECASE)
-
-            valid_jbs = {j for j in new_jbs if jb_re.match(j)}
-            valid_mcs = {m for m in new_mcs if mc_re.match(m)}
-
-            # If no valid JBs found on this page, use JB preservation
-            # (reuse JB from previous page)
-            if not valid_jbs:
-                last_jb = getattr(self, '_table_last_valid_jb', None)
-                if last_jb:
-                    valid_jbs = {last_jb}
-                    logger.info(
-                        "_extract_header_references_only: page %d — no valid JB in header, reusing '%s' from previous page",
-                        page_num + 1, last_jb
-                    )
-            else:
-                # Store the best JB for subsequent pages
-                best_jb = max(valid_jbs, key=len)
-                self._table_last_valid_jb = best_jb
-                logger.info(
-                    "_extract_header_references_only: page %d — stored JB '%s' for subsequent pages",
-                    page_num + 1, best_jb
-                )
-
-            # If no valid MCs found on this page, use MC preservation
-            if not valid_mcs:
-                last_mc = getattr(self, '_table_last_valid_mc', None)
-                if last_mc:
-                    valid_mcs = {last_mc}
-                    logger.info(
-                        "_extract_header_references_only: page %d — no valid MC in header, reusing '%s' from previous page",
-                        page_num + 1, last_mc
-                    )
-            else:
-                # Store the best MC for subsequent pages
-                best_mc = max(valid_mcs, key=len)
-                self._table_last_valid_mc = best_mc
-                logger.info(
-                    "_extract_header_references_only: page %d — stored MC '%s' for subsequent pages",
-                    page_num + 1, best_mc
-                )
-
-            # Also try to derive MC from JB and vice versa
-            # (if we have JB="JSF-576S", derive MC="NC-JSF-576S")
-            if valid_jbs and not valid_mcs:
-                for jb in valid_jbs:
-                    derived_mc = f"NC-{jb}"
-                    if mc_re.match(derived_mc):
-                        valid_mcs.add(derived_mc)
-                        logger.info(
-                            "_extract_header_references_only: page %d — derived MC '%s' from JB '%s'",
-                            page_num + 1, derived_mc, jb
-                        )
-                        break
-            elif valid_mcs and not valid_jbs:
-                for mc in valid_mcs:
-                    # Strip "NC-" prefix to get JB
-                    if mc.upper().startswith('NC-'):
-                        derived_jb = mc[3:]
-                        if jb_re.match(derived_jb):
-                            valid_jbs.add(derived_jb)
-                            logger.info(
-                                "_extract_header_references_only: page %d — derived JB '%s' from MC '%s'",
-                                page_num + 1, derived_jb, mc
-                            )
-                            break
-
-            # ── Cross-validate JB and MC references ─────────────────────
-            # If JB="JSF-5776S" (extra digit) and MC="NC-JSF-576" (missing S),
-            # we can infer the correct form by comparing them.
-            # The JB suffix after "JSF-" should match the MC suffix after "NC-JSF-".
-            try:
-                import Levenshtein as _lev_cross
-                if valid_jbs and valid_mcs:
-                    corrected_jbs = set()
-                    corrected_mcs = set()
-                    for jb in valid_jbs:
-                        # Find the best matching MC
-                        best_mc = None
-                        best_mc_score = 0.0
-                        for mc in valid_mcs:
-                            # Compare JB suffix with MC suffix (strip NC- prefix)
-                            mc_suffix = mc.upper()
-                            if mc_suffix.startswith('NC-'):
-                                mc_suffix = mc_suffix[3:]
-                            score = _lev_cross.ratio(jb.upper(), mc_suffix)
-                            if score > best_mc_score:
-                                best_mc_score = score
-                                best_mc = mc_suffix
-
-                        # If JB and MC suffix are similar but not identical,
-                        # try to find the correct form by character correction
-                        if best_mc and best_mc_score >= 0.80 and best_mc != jb.upper():
-                            # Try to correct JB using MC suffix as reference
-                            corrected_jb, jb_score = self._correct_token_against_reference(
-                                jb, {best_mc}, threshold=0.92
-                            )
-                            if jb_score >= 0.92 and corrected_jb != jb:
-                                logger.info(
-                                    "_extract_header_references_only: cross-validated JB '%s' → '%s' (using MC suffix '%s', sim=%.2f)",
-                                    jb, corrected_jb, best_mc, jb_score
-                                )
-                                corrected_jbs.add(corrected_jb)
-                            else:
-                                corrected_jbs.add(jb)
-                        else:
-                            corrected_jbs.add(jb)
-
-                    for mc in valid_mcs:
-                        mc_suffix = mc.upper()
-                        if mc_suffix.startswith('NC-'):
-                            mc_suffix = mc_suffix[3:]
-                        # Find the best matching JB
-                        best_jb = None
-                        best_jb_score = 0.0
-                        for jb in valid_jbs:
-                            score = _lev_cross.ratio(mc_suffix, jb.upper())
-                            if score > best_jb_score:
-                                best_jb_score = score
-                                best_jb = jb
-
-                        if best_jb and best_jb_score >= 0.80 and best_jb.upper() != mc_suffix:
-                            corrected_mc_suffix, mc_score = self._correct_token_against_reference(
-                                mc_suffix, {best_jb.upper()}, threshold=0.92
-                            )
-                            if mc_score >= 0.92 and corrected_mc_suffix != mc_suffix:
-                                corrected_mc = f"NC-{corrected_mc_suffix}"
-                                logger.info(
-                                    "_extract_header_references_only: cross-validated MC '%s' → '%s' (using JB '%s', sim=%.2f)",
-                                    mc, corrected_mc, best_jb, mc_score
-                                )
-                                corrected_mcs.add(corrected_mc)
-                            else:
-                                corrected_mcs.add(mc)
-                        else:
-                            corrected_mcs.add(mc)
-
-                    valid_jbs = corrected_jbs if corrected_jbs else valid_jbs
-                    valid_mcs = corrected_mcs if corrected_mcs else valid_mcs
-            except ImportError:
-                pass
-
-            if valid_jbs:
-                if not hasattr(self, '_table_known_jbs'):
-                    self._table_known_jbs = set()
-                self._table_known_jbs.update(valid_jbs)
-                logger.info(
-                    "_extract_header_references_only: page %d — extracted %d JB references: %s",
-                    page_num + 1, len(valid_jbs), sorted(valid_jbs)
-                )
-            if valid_mcs:
-                if not hasattr(self, '_table_known_mcs'):
-                    self._table_known_mcs = set()
-                self._table_known_mcs.update(valid_mcs)
-                logger.info(
-                    "_extract_header_references_only: page %d — extracted %d MC references: %s",
-                    page_num + 1, len(valid_mcs), sorted(valid_mcs)
-                )
-
-        except Exception as exc:
-            logger.warning("_extract_header_references_only: failed (%s)", exc)
-
-    def _correct_token_against_reference(self, token, reference_set, threshold=0.92):
-        """
-        Try to correct a token using character substitutions against a reference set.
-        Returns (corrected_token, best_score).
-        """
-        try:
-            import Levenshtein as _lev
-        except ImportError:
-            return token, 0.0
-
-        t = str(token).upper().strip()
-        if t in reference_set:
-            return t, 1.0
-
-        best_match = None
-        best_score = 0.0
-
-        # Direct match
-        for ref in reference_set:
-            score = _lev.ratio(t, str(ref).upper())
-            if score > best_score:
-                best_score = score
-                best_match = ref
-
-        if best_score >= threshold:
-            return best_match, best_score
-
-        # Character confusions
-        CHAR_CONFUSIONS = [
-            ('V', 'Y'), ('S', '5'), ('5', 'S'),
-            ('0', '5'), ('5', '0'),
-            ('1', '7'), ('7', '1'),
-            ('O', '0'), ('0', 'O'),
-        ]
-
-        # Single substitution
-        for old_ch, new_ch in CHAR_CONFUSIONS:
-            positions = [i for i, c in enumerate(t) if c == old_ch]
-            for pos in positions:
-                candidate = t[:pos] + new_ch + t[pos+1:]
-                for ref in reference_set:
-                    score = _lev.ratio(candidate, str(ref).upper())
-                    if score > best_score:
-                        best_score = score
-                        best_match = ref
-
-        if best_match and best_score >= threshold:
-            return best_match, best_score
-
-        # Double substitution
-        for old_ch1, new_ch1 in CHAR_CONFUSIONS:
-            positions1 = [i for i, c in enumerate(t) if c == old_ch1]
-            for pos1 in positions1:
-                candidate1 = t[:pos1] + new_ch1 + t[pos1+1:]
-                for old_ch2, new_ch2 in CHAR_CONFUSIONS:
-                    positions2 = [i for i, c in enumerate(candidate1) if c == old_ch2]
-                    for pos2 in positions2:
-                        if pos2 == pos1:
-                            continue
-                        candidate2 = candidate1[:pos2] + new_ch2 + candidate1[pos2+1:]
-                        for ref in reference_set:
-                            score = _lev.ratio(candidate2, str(ref).upper())
-                            if score > best_score:
-                                best_score = score
-                                best_match = ref
-
-        if best_match and best_score >= threshold:
-            return best_match, best_score
-
-        return token, best_score
-
-    def _enhance_table_with_header_ocr(self, page, image, extract_result):
-        """
-        Table-mode enhancer: re-OCRs the table header row at 600 DPI to recover
-        JB / MC identifiers that the full-page 300 DPI pass garbles.
-
-        Why this is needed:
-        - Many table PDFs (PDFium-generated) ship with Identity-H encoded fonts
-          and NO ToUnicode CMap. Direct text extraction returns (cid:XX) tokens.
-        - The full-page 300 DPI OCR pass recovers tags, cables and SPARE rows
-          well, but the JB / MC header row contains smaller text that gets
-          mangled (e.g. "JSF-576S" might come out as "JSF-5/6S" or "JSF-5765").
-        - Re-rendering ONLY the header strip at 600 DPI and OCR'ing it with
-          PSM 11 (sparse text) gives a much cleaner read of the JB/MC numbers.
-
-        Args:
-            page: fitz.Page object (used to render the header at 600 DPI).
-            image: full-page image array (reserved for future cell-based use).
-            extract_result: 9-tuple returned by extract_from_image.
-
-        Returns:
-            9-tuple with potentially augmented jb_identifiers, mc_identifiers
-            and all_ocr_tags. Other fields are left untouched.
-        """
-        # Defensive unpacking — caller may pass anything
-        if not isinstance(extract_result, tuple) or len(extract_result) != 9:
-            logger.warning("_enhance_table_with_header_ocr: malformed extract_result, returning as-is")
-            return extract_result
-
-        (tags, jb_identifiers, mc_identifiers, cable_descriptions,
-         spare_identifiers, tag_to_number, raw_cable_descriptions,
-         tag_match_info, all_ocr_tags) = extract_result
-
-        # Convert sets to mutable copies
-        jb_identifiers = set(jb_identifiers) if jb_identifiers else set()
-        mc_identifiers = set(mc_identifiers) if mc_identifiers else set()
-        all_ocr_tags = set(all_ocr_tags) if all_ocr_tags else set()
-        cable_descriptions = list(cable_descriptions) if cable_descriptions else []
-        raw_cable_descriptions = list(raw_cable_descriptions) if raw_cable_descriptions else []
-
-        try:
-            import pdfplumber  # local import — keeps the module optional
-        except ImportError:
-            logger.warning("_enhance_table_with_header_ocr: pdfplumber not available, skipping enhancement")
-            return (tags, jb_identifiers, mc_identifiers, cable_descriptions,
-                    spare_identifiers, tag_to_number, raw_cable_descriptions,
-                    tag_match_info, all_ocr_tags)
-
-        try:
-            doc = page.parent
-            if doc is None:
-                logger.warning("_enhance_table_with_header_ocr: page has no parent doc, skipping")
-                return (tags, jb_identifiers, mc_identifiers, cable_descriptions,
-                        spare_identifiers, tag_to_number, raw_cable_descriptions,
-                        tag_match_info, all_ocr_tags)
-
-            page_index = page.number if hasattr(page, 'number') else 0
-
-            pdf_path = None
-            try:
-                pdf_path = doc.name
-            except Exception:
-                pdf_path = None
-
-            if not pdf_path or not os.path.exists(pdf_path):
-                logger.warning("_enhance_table_with_header_ocr: cannot resolve PDF path from fitz.Doc, skipping")
-                return (tags, jb_identifiers, mc_identifiers, cable_descriptions,
-                        spare_identifiers, tag_to_number, raw_cable_descriptions,
-                        tag_match_info, all_ocr_tags)
-
-            with pdfplumber.open(pdf_path) as pp_doc:
-                if page_index >= len(pp_doc.pages):
-                    logger.warning("_enhance_table_with_header_ocr: page_index out of range for pdfplumber, skipping")
-                    return (tags, jb_identifiers, mc_identifiers, cable_descriptions,
-                            spare_identifiers, tag_to_number, raw_cable_descriptions,
-                            tag_match_info, all_ocr_tags)
-                pp_page = pp_doc.pages[page_index]
-                rects = pp_page.rects or []
-
-            # Identify candidate header rows by analyzing the rectangle geometry.
-            h_lines = [r for r in rects if r['width'] > 100 and r['height'] < 3]
-            v_lines = [r for r in rects if r['height'] > 100 and r['width'] < 3]
-            if not h_lines or not v_lines:
-                logger.info("_enhance_table_with_header_ocr: no table lines detected, skipping header OCR")
-                return (tags, jb_identifiers, mc_identifiers, cable_descriptions,
-                        spare_identifiers, tag_to_number, raw_cable_descriptions,
-                        tag_match_info, all_ocr_tags)
-
-            h_lines.sort(key=lambda r: r['top'])
-            v_lines.sort(key=lambda r: r['x0'])
-
-            table_left = min(r['x0'] for r in v_lines)
-            table_right = max(r['x0'] for r in v_lines)
-
-            # Use the strip between the 1st and 4th horizontal lines as the
-            # header region. This captures "JB No.:" + "MC No.:" + column headers.
-            header_top = h_lines[0]['top']
-            header_bottom = h_lines[min(3, len(h_lines) - 1)]['top']
-
-            # Padding to avoid clipping text that hugs the line
-            pad = 6.0
-            header_top -= pad
-            header_bottom += pad
-            table_left -= pad
-            table_right += pad
-
-            # Clamp to page bounds
-            page_w = page.rect.width
-            page_h = page.rect.height
-            header_top = max(0.0, header_top)
-            header_bottom = min(page_h, header_bottom)
-            table_left = max(0.0, table_left)
-            table_right = min(page_w, table_right)
-
-            logger.info(
-                "_enhance_table_with_header_ocr: header region (pts) top=%.1f bottom=%.1f left=%.1f right=%.1f",
-                header_top, header_bottom, table_left, table_right
-            )
-
-            # Render the header region at 900 DPI for maximum OCR accuracy
-            # on the small JB/MC header text. 600 DPI was OK but still
-            # produced character errors (J→C, 7→/, S→5). 900 DPI gives
-            # Tesseract enough pixel density to read these reliably.
-            clip_rect = fitz.Rect(table_left, header_top, table_right, header_bottom)
-            header_dpi_matrix = fitz.Matrix(900 / 72, 900 / 72)
-            try:
-                pix = page.get_pixmap(matrix=header_dpi_matrix, clip=clip_rect)
-            except Exception as render_err:
-                logger.warning(
-                    "_enhance_table_with_header_ocr: header render failed (%s), skipping",
-                    render_err
-                )
-                return (tags, jb_identifiers, mc_identifiers, cable_descriptions,
-                        spare_identifiers, tag_to_number, raw_cable_descriptions,
-                        tag_match_info, all_ocr_tags)
-
-            header_img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
-            if pix.n == 3:
-                header_img = cv2.cvtColor(header_img, cv2.COLOR_RGB2BGR)
-            else:
-                header_img = cv2.cvtColor(header_img, cv2.COLOR_RGBA2BGR)
-
-            # Preprocess the high-DPI header (same simple pipeline as table branch)
-            gray_h = cv2.cvtColor(header_img, cv2.COLOR_BGR2GRAY)
-            gray_h = cv2.GaussianBlur(gray_h, (3, 3), 0)
-            _, binary_h = cv2.threshold(gray_h, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-
-            # OCR with multiple PSMs and combine (NO whitelist — see extract_from_image)
-            cfg_psm6 = r'--oem 1 --psm 6 -l eng'
-            cfg_psm11 = r'--oem 1 --psm 11 -l eng'
-
-            text_psm6 = pytesseract.image_to_string(binary_h, config=cfg_psm6)
-            text_psm11 = pytesseract.image_to_string(binary_h, config=cfg_psm11)
-            combined_header_text = (text_psm6 or '') + '\n' + (text_psm11 or '')
-
-            logger.info("_enhance_table_with_header_ocr: header PSM6=%r", text_psm6[:300])
-            logger.info("_enhance_table_with_header_ocr: header PSM11=%r", text_psm11[:300])
-
-            # Extract JB / MC / cable candidates from the header text.
-            # Strategy: use SEMANTIC label-based extraction first (find text
-            # between "JB No.:" and "MC No.:" labels), then fall back to
-            # permissive regex.
-            #
-            # Why permissive? OCR on small CID-broken table text returns
-            # errors like:
-            #   - "JSF-576S" → "CSF -5/65"   (J→C, 7→/, S→5)
-            #   - "NC-JSF-576S" → "NC-JSF-5/6"  (7→/, trailing S dropped)
-            # We accept these and let the downstream similarity matcher
-            # reconcile them with the IO list.
-
-            def _normalize_ocr_id(s):
-                """Fix common OCR errors in extracted identifiers."""
-                s = str(s).strip().upper()
-                # Remove leading/trailing punctuation
-                s = s.strip(' \t,;:()[].')
-                # Replace "/" between digits with "7" (OCR error: 7 → /)
-                s = re.sub(r'(\d)/(\d)', r'\g<1>7\g<2>', s)
-                # Remove internal spaces
-                s = re.sub(r'\s+', '', s)
-                return s
-
-            # ── SEMANTIC JB extraction: text between "JB No.:" and "MC No.:" ──
-            new_jbs = set()
-            jb_label_pat = re.compile(
-                r'JB\s*No\.?\s*[:.]?\s*(.+?)(?:MC\s*No\.?\s*[:.]?|Multi\s*Cable\s*No\.?\s*[:.]?|\]|$)',
-                re.IGNORECASE | re.DOTALL
-            )
-            for m in jb_label_pat.finditer(combined_header_text):
-                raw = m.group(1).strip()
-                # Extract the first JB-like token from this slice
-                token_pat = re.compile(r'[A-Z]{2,5}\s*-?\s*[\d/]{2,5}[A-Z0-9]{0,3}', re.IGNORECASE)
-                for tm in token_pat.finditer(raw):
-                    candidate = _normalize_ocr_id(tm.group(0))
-                    if len(candidate) >= 4:
-                        new_jbs.add(candidate)
-
-            # ── SEMANTIC MC extraction: text between "MC No.:" and "(" or end ──
-            new_mcs = set()
-            mc_label_pat = re.compile(
-                r'(?:MC\s*No\.?\s*[:.]?|Multi\s*Cable\s*No\.?\s*[:.]?)\s*(.+?)(?:\(|$)',
-                re.IGNORECASE | re.DOTALL
-            )
-            for m in mc_label_pat.finditer(combined_header_text):
-                raw = m.group(1).strip()
-                # Extract MC-like tokens (NC-XXX-XXX or NC-0-1-2-C-3-BL)
-                token_pat = re.compile(
-                    r'NC-?[A-Z]{0,5}-?[\d/]{2,5}(?:[A-Z0-9-]{0,15})?',
-                    re.IGNORECASE
-                )
-                for tm in token_pat.finditer(raw):
-                    candidate = _normalize_ocr_id(tm.group(0))
-                    if len(candidate) >= 4:
-                        new_mcs.add(candidate)
-
-            # ── FALLBACK: permissive regex on the whole header text ──
-            # Only add candidates not already found by semantic extraction.
-            # NOTE: no \b word boundary — underscores before "JSF" (e.g. "____JSF")
-            # count as word chars and would block \b from matching.
-            if not new_jbs:
-                jb_pat = re.compile(r'J?[A-Z]{2,5}\s*-?[\d/]{2,5}[A-Z0-9]{0,3}', re.IGNORECASE)
-                for m in jb_pat.finditer(combined_header_text):
-                    candidate = _normalize_ocr_id(m.group(0))
-                    if len(candidate) >= 4:
-                        new_jbs.add(candidate)
-
-            if not new_mcs:
-                mc_pat = re.compile(r'NC-?[A-Z]{0,5}\s*-?[\d/]{2,5}[A-Z0-9-]{0,15}', re.IGNORECASE)
-                for m in mc_pat.finditer(combined_header_text):
-                    candidate = _normalize_ocr_id(m.group(0))
-                    if len(candidate) >= 4:
-                        new_mcs.add(candidate)
-
-            # ── CABLE extraction: NC-X-X-X-X-X-XXX pattern ──
-            new_cables = set()
-            cable_pat = re.compile(
-                r'\bNC-\d{1,2}-\d{1,2}-\d{1,2}-[A-Z]-\d{1,2}-[A-Z]{1,3}\b',
-                re.IGNORECASE
-            )
-            for m in cable_pat.finditer(combined_header_text):
-                candidate = _normalize_ocr_id(m.group(0))
-                if len(candidate) >= 8:
-                    new_cables.add(candidate)
-
-            # Filter out obvious false positives
-            def _is_plausible_id(s):
-                s = str(s).upper().strip()
-                if len(s) < 4:
-                    return False
-                if not any(c.isalpha() for c in s):
-                    return False
-                return True
-
-            new_jbs = {j.upper() for j in new_jbs if _is_plausible_id(j)}
-            new_mcs = {m.upper() for m in new_mcs if _is_plausible_id(m)}
-            new_cables = {c.upper() for c in new_cables if _is_plausible_id(c)}
-
-            # Strip tokens that are clearly the JB / MC label itself
-            label_blacklist = {'JB', 'JBNO', 'MC', 'MCNO', 'NO'}
-            new_jbs = {j for j in new_jbs if j not in label_blacklist}
-            new_mcs = {m for m in new_mcs if m not in label_blacklist}
-
-            logger.info(
-                "_enhance_table_with_header_ocr: header OCR added %d JB candidates, %d MC candidates, %d cable candidates",
-                len(new_jbs), len(new_mcs), len(new_cables)
-            )
-            if new_jbs:
-                logger.info("   header JBs: %s", sorted(new_jbs))
-            if new_mcs:
-                logger.info("   header MCs: %s", sorted(new_mcs))
-            if new_cables:
-                logger.info("   header cables: %s", sorted(new_cables))
-
-            # Merge into the result sets
-            jb_identifiers.update(new_jbs)
-            mc_identifiers.update(new_mcs)
-            all_ocr_tags.update(new_jbs)
-            all_ocr_tags.update(new_mcs)
-            all_ocr_tags.update(new_cables)
-
-            # ── Store JB/MC as reference for character correction ───────
-            # These are extracted from the header (which is the most reliable
-            # source for JB/MC identifiers). We'll use them in
-            # _apply_table_ocr_corrections to fix OCR errors in the body.
-            if new_jbs:
-                if not hasattr(self, '_table_known_jbs'):
-                    self._table_known_jbs = set()
-                self._table_known_jbs.update(new_jbs)
-                logger.info("_enhance_table: stored %d JB references (total: %d)",
-                           len(new_jbs), len(self._table_known_jbs))
-            if new_mcs:
-                if not hasattr(self, '_table_known_mcs'):
-                    self._table_known_mcs = set()
-                self._table_known_mcs.update(new_mcs)
-                logger.info("_enhance_table: stored %d MC references (total: %d)",
-                           len(new_mcs), len(self._table_known_mcs))
-
-            if new_cables:
-                for c in sorted(new_cables):
-                    if c not in cable_descriptions:
-                        cable_descriptions.append(c)
-                        raw_cable_descriptions.append(c)
-
-        except Exception as exc:
-            logger.warning("_enhance_table_with_header_ocr: enhancement failed (%s); returning original result", exc)
-
-        # ── TABLE-MODE POST-PROCESSING ───────────────────────────────────
-        # This is the critical cleanup step that fixes the issues reported
-        # by the user:
-        #   1. MC identifiers (NC-XXX-XXX) were leaking into tags
-        #   2. Cable codes (NC-X-X-X-X-X-XXX) were treated as MC
-        #   3. JB identifiers were sometimes noise (TZ17, LZ009, etc.)
-        #   4. JB was only detected on one page (not preserved)
-        #   5. Tags found in OCR were not matching against IO List
-        try:
-            (tags, jb_identifiers, mc_identifiers, cable_descriptions,
-             spare_identifiers, tag_to_number, raw_cable_descriptions,
-             tag_match_info, all_ocr_tags) = self._post_process_table_extractions(
-                tags, jb_identifiers, mc_identifiers, cable_descriptions,
-                spare_identifiers, tag_to_number, raw_cable_descriptions,
-                tag_match_info, all_ocr_tags
-            )
-        except Exception as pp_err:
-            logger.warning("_enhance_table_with_header_ocr: post-processing failed (%s)", pp_err)
-        # ────────────────────────────────────────────────────────────────────
-
-        return (tags, jb_identifiers, mc_identifiers, cable_descriptions,
-                spare_identifiers, tag_to_number, raw_cable_descriptions,
-                tag_match_info, all_ocr_tags)
-
-    def _post_process_table_extractions(
-        self, tags, jb_identifiers, mc_identifiers, cable_descriptions,
-        spare_identifiers, tag_to_number, raw_cable_descriptions,
-        tag_match_info, all_ocr_tags
-    ):
-        """
-        Table-mode post-processor: cleans up the extraction results to fix
-        the issues reported in production:
-
-        1. MC vs Tag separation:
-           Any token starting with 'NC' (or 'NCJ'/'NCS' after hyphen stripping)
-           is treated as MC or Cable, NOT a tag.
-
-        2. Cable vs MC separation:
-           - Cable code pattern: NC-X-X-X-X-X-XXX (X = digit, last = letters)  (e.g. NC-0-1-2-C-3-BL)
-           - MC identifier pattern: NC-LETTERS-DIGITS (e.g. NC-JSF-576S)  (e.g. NC-JSF-576S)
-           Tokens matching the cable pattern go to cable_descriptions.
-           Tokens matching the MC pattern go to mc_identifiers.
-
-        3. JB cleanup:
-           - Remove obvious noise (tokens < 5 chars, tokens without digits,
-             tokens that are clearly OCR artefacts like 'JBNO:', 'TZ17',
-             'LZ009', 'OULV1274').
-           - Keep only tokens matching the JB identifier pattern
-             (e.g. JSF-576S, JSF-513S).
-           - PRESERVE the last valid JB across pages: if the current page
-             has no valid JB after cleanup, reuse the JB from the previous
-             page (stored in self._table_last_valid_jb).
-
-        4. Tag cleanup:
-           - Remove any token from tags/all_ocr_tags that looks like a JB
-             (starts with JSF or matches the jb_examples prefix).
-           - Remove any token starting with NC (these are MC/cable).
-
-        5. SPARE count normalization:
-           - In table-mode, count SPARE occurrences in the OCR data and
-             ensure the spare_identifiers list contains one entry per
-             actual SPARE row.
-
-        6. Tag matching fallback (table-mode only):
-           - If IO List tags are available, do a fuzzy match (threshold 0.85)
-             between all_ocr_tags and IO List tags.
-           - Any OCR tag that fuzzy-matches an IO List tag is added to the
-             final tags set with its IO List form (corrected OCR errors).
-        """
-        import re as _re
-
-        # Make mutable copies
-        tags = set(tags) if tags else set()
-        jb_identifiers = set(jb_identifiers) if jb_identifiers else set()
-        mc_identifiers = set(mc_identifiers) if mc_identifiers else set()
-        all_ocr_tags = set(all_ocr_tags) if all_ocr_tags else set()
-        cable_descriptions = list(cable_descriptions) if cable_descriptions else []
-        raw_cable_descriptions = list(raw_cable_descriptions) if raw_cable_descriptions else []
-        spare_identifiers = list(spare_identifiers) if spare_identifiers else []
-
-        # ── Patterns ────────────────────────────────────────────────────
-        # Cable: NC-X-X-X-X-X-XXX (X = digit, last = letters)
-        cable_re = _re.compile(r'^NC-\d{1,2}-\d{1,2}-\d{1,2}-[A-Z]-\d{1,2}-[A-Z]{1,3}$', _re.IGNORECASE)
-        # MC: NC-LETTERS-DIGITS (e.g. NC-JSF-576S, NC-JSF-5135)
-        mc_re = _re.compile(r'^NC-?[A-Z]{2,5}-?\d{2,5}[A-Z]?$', _re.IGNORECASE)
-        # JB identifier: 2-5 letters, dash, 2-5 digits, optional letter (e.g. JSF-576S)
-        jb_re = _re.compile(r'^[A-Z]{2,5}-\d{2,5}[A-Z]?$', _re.IGNORECASE)
-        # Tag: similar to JB but with at least one letter prefix that is NOT JSF/NC
-        # (e.g. UY-5021, FUY-5041)
-        # IO List tag: starts with letters, dash, 3-4 digits, optional letter
-        iolist_tag_re = _re.compile(r'^[A-Z]{1,5}-\d{3,4}[A-Z]?$', _re.IGNORECASE)
-        # Noise patterns
-        noise_re = _re.compile(r'^(JBNO|JBNO:|TZ\d+|LZ\d+|OULV\d+|MCNO|MCNO:)$', _re.IGNORECASE)
-
-        # ── Step 1: Separate MC and Cable from all_ocr_tags ─────────────
-        # Any token starting with NC is either an MC or a Cable, NOT a tag.
-        nc_tokens_from_tags = set()
-        clean_ocr_tags = set()
-        for tok in all_ocr_tags:
-            t = str(tok).upper().strip()
-            if t.startswith('NC'):
-                nc_tokens_from_tags.add(tok)
-            elif t.startswith('NCJSF') or t.startswith('NC-JSF'):
-                nc_tokens_from_tags.add(tok)
-            else:
-                clean_ocr_tags.add(tok)
-        all_ocr_tags = clean_ocr_tags
-
-        # Now distribute nc_tokens to cable_descriptions or mc_identifiers
-        for tok in nc_tokens_from_tags:
-            t = str(tok).upper().strip()
-            # Try cable pattern first (more specific)
-            # Normalize: ensure NC-X-X-X-X-X-XXX form
-            t_normalized = t
-            if t.startswith('NC') and not t.startswith('NC-'):
-                # Insert dash after NC
-                t_normalized = 'NC-' + t[2:]
-            if cable_re.match(t_normalized):
-                if t_normalized not in cable_descriptions:
-                    cable_descriptions.append(t_normalized)
-                    raw_cable_descriptions.append(t_normalized)
-                # Remove from mc_identifiers if present
-                mc_identifiers.discard(tok)
-                mc_identifiers.discard(t)
-                mc_identifiers.discard(t_normalized)
-            elif mc_re.match(t_normalized):
-                mc_identifiers.add(t_normalized)
-                # Remove from cable_descriptions if present
-                if t_normalized in cable_descriptions:
-                    cable_descriptions.remove(t_normalized)
-                    if t_normalized in raw_cable_descriptions:
-                        raw_cable_descriptions.remove(t_normalized)
-
-        # ── Step 2: Clean up cable_descriptions (remove anything that's actually MC) ──
-        clean_cables = []
-        for c in cable_descriptions:
-            t = str(c).upper().strip()
-            if cable_re.match(t):
-                clean_cables.append(c)
-            elif mc_re.match(t):
-                # This is actually an MC, not a cable
-                mc_identifiers.add(t)
-            # else: keep it as cable anyway (might be a different format)
-        cable_descriptions = clean_cables if clean_cables else cable_descriptions
-
-        # ── Step 2b: Clean up mc_identifiers (move cable-pattern tokens to cables) ──
-        # Some MC identifiers may actually be cable codes (NC-X-X-X-X-X-XXX).
-        # Move them to cable_descriptions.
-        clean_mcs = set()
-        for m in mc_identifiers:
-            t = str(m).upper().strip()
-            if cable_re.match(t):
-                # This is a cable, not an MC — move it
-                if t not in cable_descriptions:
-                    cable_descriptions.append(t)
-                    raw_cable_descriptions.append(t)
-                logger.info(f"_post_process: moved cable-pattern token from MC to cables: {t}")
-            else:
-                clean_mcs.add(m)
-        mc_identifiers = clean_mcs
-
-        # ── Step 3: Clean up JB identifiers ────────────────────────────
-        clean_jbs = set()
-        for j in jb_identifiers:
-            t = str(j).upper().strip().strip(':').strip('.')
-            # Skip noise
-            if noise_re.match(t):
-                continue
-            # Skip if too short or no digits
-            if len(t) < 5 or not any(c.isdigit() for c in t):
-                continue
-            # Keep if matches JB pattern
-            if jb_re.match(t):
-                clean_jbs.add(t)
-            # Also keep tokens that match the user-configured jb_examples prefix
-            elif self.jb_examples and any(t.startswith(p) for p in str(self.jb_examples).upper().split(',') if p):
-                if any(c.isdigit() for c in t):
-                    clean_jbs.add(t)
-
-        # ── Step 3b: DERIVE JB from MC identifier ─────────────────────
-        # In table-mode PDFs, the header contains "JB No.: JSF-576S" and
-        # "MC No.: NC-JSF-576S". If we have an MC like NC-JSF-576S but no
-        # JB, we can derive JB = JSF-576S by stripping the "NC-" prefix.
-        if not clean_jbs and mc_identifiers:
-            for mc in mc_identifiers:
-                m = _re.match(r'^NC-([A-Z]{2,5}-?\d{2,5}[A-Z]?)$', str(mc).upper().strip())
-                if m:
-                    derived_jb = m.group(1)
-                    if jb_re.match(derived_jb):
-                        clean_jbs.add(derived_jb)
-                        logger.info(f"_post_process: derived JB '{derived_jb}' from MC '{mc}'")
-                        break  # Use the first valid derivation
-
-        jb_identifiers = clean_jbs
-
-        # ── Step 4: JB Preservation across pages ───────────────────────
-        # If current page has no valid JB after cleanup, use the last valid JB.
-        if not jb_identifiers:
-            last_jb = getattr(self, '_table_last_valid_jb', None)
-            if last_jb:
-                jb_identifiers = {last_jb}
-                logger.info(f"_post_process: reused JB from previous page: {last_jb}")
-        else:
-            # Deduplicate: if multiple JB candidates, keep only the longest one
-            # (it's the most complete identifier — e.g. JSF-5776S over JSF-57).
-            # Also remove tokens that are strict prefixes of other tokens.
-            jb_list = sorted(jb_identifiers, key=len, reverse=True)
-            kept_jbs = []
-            for jb in jb_list:
-                is_prefix_of_another = any(
-                    jb != other and other.startswith(jb)
-                    for other in jb_list
-                )
-                if not is_prefix_of_another:
-                    kept_jbs.append(jb)
-            # If everything was filtered as a prefix, keep the longest
-            if not kept_jbs:
-                kept_jbs = [jb_list[0]]
-            jb_identifiers = set(kept_jbs[:1])  # Keep only the single best JB per page
-
-            # Store the best valid JB (longest one) for use by subsequent pages
-            self._table_last_valid_jb = max(jb_identifiers, key=len)
-            logger.info(f"_post_process: stored JB for subsequent pages: {self._table_last_valid_jb}")
-
-        # ── Step 4b: Remove JB OCR-variants from all_ocr_tags ──────────
-        # OCR may read "JSF-5135" as "USF-5135" (J→U error). If we already
-        # have the correct JB identifier, remove the OCR variant from
-        # all_ocr_tags so it doesn't get classified as a tag.
-        if jb_identifiers:
-            try:
-                import Levenshtein as _lev
-                jbs_to_check = list(jb_identifiers)
-                tags_to_remove = set()
-                for ocr_tag in list(all_ocr_tags):
-                    ocr_upper = str(ocr_tag).upper().strip()
-                    # Skip if it starts with NC (already handled)
-                    if ocr_upper.startswith('NC'):
-                        continue
-                    # Check similarity to each JB identifier
-                    for jb_id in jbs_to_check:
-                        jb_upper = str(jb_id).upper().strip()
-                        sim = _lev.ratio(ocr_upper, jb_upper)
-                        if sim >= 0.85:
-                            tags_to_remove.add(ocr_tag)
-                            logger.info(
-                                "_post_process: removing OCR variant '%s' from tags (similar to JB '%s', sim=%.2f)",
-                                ocr_tag, jb_id, sim
-                            )
-                            break
-                if tags_to_remove:
-                    all_ocr_tags -= tags_to_remove
-                    tags -= tags_to_remove
-            except ImportError:
-                pass
-
-        # ── Step 5: Clean up tags (remove JB-like and NC-like tokens) ──
-        # Tokens that look like JB (match jb_examples prefix + JB pattern) are
-        # moved to a temporary set; we'll merge and deduplicate them with the
-        # existing jb_identifiers AFTER this step.
-        jb_candidates_from_tags = set()
-        clean_tags = set()
-        for t in tags:
-            s = str(t).upper().strip()
-            # Skip if starts with NC (MC/cable, not tag)
-            if s.startswith('NC'):
-                continue
-            # Skip if matches JB pattern AND starts with jb_examples prefix
-            if self.jb_examples and any(s.startswith(p) for p in str(self.jb_examples).upper().split(',') if p):
-                if jb_re.match(s):
-                    # This is a JB, not a tag — collect for merging below
-                    jb_candidates_from_tags.add(s)
-                    continue
-            # Skip noise
-            if noise_re.match(s):
-                continue
-            clean_tags.add(t)
-        tags = clean_tags
-
-        # Also clean all_ocr_tags (remove JB-like tokens)
-        clean_ocr_tags = set()
-        for t in all_ocr_tags:
-            s = str(t).upper().strip()
-            if s.startswith('NC'):
-                continue
-            if self.jb_examples and any(s.startswith(p) for p in str(self.jb_examples).upper().split(',') if p):
-                if jb_re.match(s):
-                    jb_candidates_from_tags.add(s)
-                    continue
-            if noise_re.match(s):
-                continue
-            clean_ocr_tags.add(t)
-        all_ocr_tags = clean_ocr_tags
-
-        # Merge any JB candidates found in tags/ocr_tags back into jb_identifiers,
-        # then re-run the deduplication + preservation logic from Step 4.
-        if jb_candidates_from_tags:
-            jb_identifiers.update(jb_candidates_from_tags)
-            # Re-derive best JB with deduplication
-            jb_list = sorted(jb_identifiers, key=len, reverse=True)
-            kept_jbs = []
-            for jb in jb_list:
-                is_prefix_of_another = any(
-                    jb != other and other.startswith(jb)
-                    for other in jb_list
-                )
-                if not is_prefix_of_another:
-                    kept_jbs.append(jb)
-            if not kept_jbs:
-                kept_jbs = [jb_list[0]]
-            jb_identifiers = set(kept_jbs[:1])
-            if jb_identifiers:
-                self._table_last_valid_jb = max(jb_identifiers, key=len)
-                logger.info(f"_post_process: re-stored JB after tag cleanup: {self._table_last_valid_jb}")
-
-        # ── Step 6: Tag matching fallback ──────────────────────────────
-        # If IO List tags are available, do a fuzzy match between all_ocr_tags
-        # and IO List tags. This catches OCR variants like UY-5021 / UV-5021.
-        io_list_tags = set()
-        if hasattr(self, 'io_list_tags') and self.io_list_tags:
-            io_list_tags = set(str(t).upper().strip() for t in self.io_list_tags)
-        elif hasattr(self, 'excel_df') and hasattr(self, 'excel_tag_column'):
-            if self.excel_df is not None and not self.excel_df.empty:
-                tag_col = self.excel_tag_column
-                io_list_tags = set(str(t).strip().upper() for t in self.excel_df[tag_col] if pd.notna(t))
-
-        if io_list_tags:
-            try:
-                import Levenshtein as _lev
-            except ImportError:
-                _lev = None
-
-            matched_pairs = []
-            for ocr_tag in list(all_ocr_tags):
-                ocr_upper = str(ocr_tag).upper().strip()
-                # Try exact match first
-                if ocr_upper in io_list_tags:
-                    if ocr_upper not in tags:
-                        tags.add(ocr_upper)
-                        matched_pairs.append((ocr_tag, ocr_upper, 1.0))
-                    continue
-                # Fuzzy match
-                if _lev:
-                    best_io = None
-                    best_score = 0.0
-                    for io_tag in io_list_tags:
-                        score = _lev.ratio(ocr_upper, str(io_tag).upper())
-                        if score > best_score:
-                            best_score = score
-                            best_io = io_tag
-                    # Threshold 0.85 — catches OCR errors like UY→UV (sim=0.88)
-                    if best_io and best_score >= 0.85:
-                        if best_io not in tags:
-                            tags.add(best_io)
-                            matched_pairs.append((ocr_tag, best_io, best_score))
-
-            if matched_pairs:
-                logger.info(
-                    "_post_process: tag matching fallback recovered %d tags: %s",
-                    len(matched_pairs),
-                    [(o, i, round(s, 2)) for o, i, s in matched_pairs]
-                )
-
-        # ── Step 6b: Remove unmatched JB-like tokens from all_ocr_tags ──
-        # After tag matching, any token in all_ocr_tags that:
-        #   1. Matches the JB pattern AND starts with jb_examples prefix
-        #      (e.g. JSF-XXXX — these are JB identifiers, not tags)
-        #   2. Was NOT matched to any IO List tag (not in `tags`)
-        #   3. Is NOT similar to any IO List tag
-        # ...is likely a JB OCR variant and should be removed.
-        # IMPORTANT: We ONLY remove tokens that start with the jb_examples
-        # prefix (e.g. "JS"). Tokens like "FUY-5239" that don't start with
-        # the JB prefix are NOT removed, even if they match the JB pattern,
-        # because they could be real tags that aren't in the IO List.
-        _jb_prefix = str(getattr(self, 'jb_examples', None) or '').strip().upper()
-        if io_list_tags and _jb_prefix:
-            final_tags_upper = set(str(t).upper() for t in tags)
-            tags_to_remove_final = set()
-            for ocr_tag in list(all_ocr_tags):
-                ocr_upper = str(ocr_tag).upper().strip()
-                # Skip if it's a matched tag
-                if ocr_upper in final_tags_upper:
-                    continue
-                # Skip if it's an exact IO List tag
-                if ocr_upper in io_list_tags:
-                    continue
-                # Only check tokens that start with JB prefix (e.g. JS, JB)
-                # This prevents removing real tags like FUY-5239
-                if not any(ocr_upper.startswith(p) for p in _jb_prefix.split(',') if p):
-                    continue
-                # Check if it matches JB pattern (letters-digits)
-                if jb_re.match(ocr_upper):
-                    # Check if it's similar to any IO List tag (might be a real tag)
-                    is_real_tag = False
-                    try:
-                        import Levenshtein as _lev
-                        for io_tag in io_list_tags:
-                            if _lev.ratio(ocr_upper, str(io_tag).upper()) >= 0.80:
-                                is_real_tag = True
-                                break
-                    except ImportError:
-                        pass
-                    if not is_real_tag:
-                        tags_to_remove_final.add(ocr_tag)
-                        logger.info(
-                            "_post_process: removing unmatched JB-like token '%s' from all_ocr_tags",
-                            ocr_tag
-                        )
-            if tags_to_remove_final:
-                all_ocr_tags -= tags_to_remove_final
-
-        # ── Step 7: SPARE count normalization ──────────────────────────
-        # Count distinct SPARE entries (handle both 'SPARE' and '|SPARE')
-        clean_spares = []
-        seen_spare_indices = set()
-        for i, s in enumerate(spare_identifiers):
-            s_str = str(s).upper().strip()
-            if 'SPARE' in s_str:
-                # Use a canonical form
-                canonical = f"SPARE_{len(clean_spares) + 1}"
-                clean_spares.append(canonical)
-        # If we found any spares, replace the list
-        if clean_spares:
-            spare_identifiers = clean_spares
-
-        logger.info(
-            "_post_process: final counts — tags=%d, jbs=%d, mcs=%d, cables=%d, spares=%d, ocr_tags=%d",
-            len(tags), len(jb_identifiers), len(mc_identifiers),
-            len(cable_descriptions), len(spare_identifiers), len(all_ocr_tags)
-        )
-
-        return (tags, jb_identifiers, mc_identifiers, cable_descriptions,
-                spare_identifiers, tag_to_number, raw_cable_descriptions,
-                tag_match_info, all_ocr_tags)
-
     def process_pdf_page(self, page_info: 'Tuple[fitz.Page, str, int]') -> 'Tuple[int, Set[str], Set[str], Set[str], List[str], List[str], Dict[str, int], List[str], Dict[str, Dict], Set[str]]':        
         """
         ✅ بازنویسی: پردازش یک صفحه PDF با شماره‌گذاری بر اساس موقعیت
@@ -5051,12 +2761,7 @@ class TagJBExtractor:
                 pdf_type = 'diagrams'
 
             if pdf_type == 'table':
-                # REVISED: was 150/72, now 300/72.
-                # 150 DPI was too low for the small text inside table cells of
-                # CID-broken PDFium PDFs — OCR was returning garbage for JB
-                # numbers, MC numbers and cable codes. 300 DPI gives ~2x the
-                # pixel density and recovers these tokens reliably.
-                dpi_factor = 300 / 72
+                dpi_factor = 150 / 72
                 logger.info(f"process_pdf_page {page_num + 1}: TABLE mode — dpi_factor={dpi_factor:.3f}")
             else:
                 dpi_factor = 300 / 72  # original diagram value, unchanged
@@ -5065,19 +2770,16 @@ class TagJBExtractor:
             extraction_mode = 'ocr'
             pdf_nature = getattr(self, '_current_pdf_nature', 'scanned')
             if pdf_nature == 'digital':
-                logger.info(
-                    f"process_pdf_page {page_num + 1}: DIGITAL page text extraction "
-                    f"(dpi_factor={dpi_factor:.4f})"
-                )
+                logger.info(f"process_pdf_page {page_num + 1}: DIGITAL page text extraction")
                 extraction_mode = 'digital'
-                result = self.extract_from_text_page(page, dpi_factor=dpi_factor)
+                result = self.extract_from_text_page(page)
                 if not result or not isinstance(result, tuple) or len(result) != 9:
                     logger.warning(
                         "extract_from_text_page returned unexpected result for page %s, falling back to OCR",
                         page_num + 1
                     )
                     image_path = os.path.join(temp_dir, f"page_{page_num + 1}.png")
-                    pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor), colorspace=_CS_GRAY)
+                    pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor))
                     pix.save(image_path)
                     image = cv2.imread(image_path)
                     if image is None:
@@ -5087,30 +2789,13 @@ class TagJBExtractor:
                     extraction_mode = 'ocr'
             else:
                 image_path = os.path.join(temp_dir, f"page_{page_num + 1}.png")
-                pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor), colorspace=_CS_GRAY)
+                pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor))
                 pix.save(image_path)
                 image = cv2.imread(image_path)
                 if image is None:
                     logger.error(f"Failed to load image for page {page_num + 1}")
                     return page_num + 1, set(), set(), set(), [], [], {}, [], {}, set()
-                # TABLE-MODE: use multi-pass extraction (S13 strategy) for
-                # maximum recall. Diagram-mode keeps the original single-pass.
-                if pdf_type == 'table':
-                    # ── FIRST: Extract header references (JB/MC) ──────────
-                    # This populates self._table_known_jbs and self._table_known_mcs
-                    # so that _apply_table_ocr_corrections can use them to fix
-                    # OCR errors in the body (e.g. JSF-5765 → JSF-576S).
-                    try:
-                        self._extract_header_references_only(page, page_num)
-                    except Exception as hdr_err:
-                        logger.warning(
-                            "process_pdf_page %d: header reference extraction failed: %s",
-                            page_num + 1, hdr_err
-                        )
-                    logger.info(f"process_pdf_page {page_num + 1}: TABLE mode — using multi-pass OCR (S13)")
-                    result = self._extract_from_image_table_multipass(page, temp_dir, page_num)
-                else:
-                    result = self.extract_from_image(image)
+                result = self.extract_from_image(image)
                 extraction_mode = 'ocr'
 
             logger.debug(f"Page {page_num + 1} - raw result: {result} (len={len(result)})")
@@ -5141,7 +2826,7 @@ class TagJBExtractor:
                 try:
                     if 'image' not in locals():
                         image_path = os.path.join(temp_dir, f"page_{page_num + 1}.png")
-                        pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor), colorspace=_CS_GRAY)
+                        pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor))
                         pix.save(image_path)
                         image = cv2.imread(image_path)
                         if image is None:
@@ -5158,70 +2843,11 @@ class TagJBExtractor:
                 except Exception as fb_err:
                     logger.warning(f"OCR fallback failed: {fb_err}; keeping digital result")
 
-            logger.info(f"\u2705 Page {page_num + 1}: {len(tags)} tags numbered by position")
-
-            # ── TABLE-MODE ENHANCEMENT ──────────────────────────────────────────
-            # For table PDFs with CID-broken fonts, the full-page 300 DPI OCR
-            # pass MAY miss the JB / MC header row. In that case, re-OCR ONLY
-            # the header strip at 900 DPI and merge the recovered identifiers.
-            #
-            # IMPORTANT: We only call the header enhancer if the full-page OCR
-            # pass did NOT find any JB identifiers. This avoids polluting the
-            # results with high-DPI OCR variants (e.g. JSF-5776S instead of
-            # JSF-5765) that conflict with the more accurate full-page results.
-            if pdf_type == 'table' and not jb_identifiers and not mc_identifiers:
-                try:
-                    enhanced = self._enhance_table_with_header_ocr(page, image, result)
-                    if isinstance(enhanced, tuple) and len(enhanced) == 9:
-                        result = enhanced
-                        (tags, jb_identifiers, mc_identifiers, cable_descriptions,
-                         spare_identifiers, tag_to_number, raw_cable_descriptions,
-                         tag_match_info, all_ocr_tags) = result
-                        logger.info(
-                            "\u2705 Page %d table-mode header enhancement: JBs=%d, MCs=%d, cables=%d",
-                            page_num + 1, len(jb_identifiers), len(mc_identifiers), len(cable_descriptions)
-                        )
-                except Exception as enh_err:
-                    logger.warning("Table-mode header enhancement failed for page %d: %s", page_num + 1, enh_err)
-            # ─────────────────────────────────────────────────────────────────────
-
-            # ── TABLE-MODE POST-PROCESSING (always run for table PDFs) ────────
-            # This is the critical cleanup step that fixes the issues reported
-            # in production:
-            #   1. MC identifiers (NC-XXX-XXX) were leaking into tags
-            #   2. Cable codes (NC-X-X-X-X-X-XXX) were treated as MC
-            #   3. JB identifiers were sometimes noise (TZ17, LZ009, etc.)
-            #   4. JB was only detected on one page (not preserved)
-            #   5. Tags found in OCR were not matching against IO List
-            # We run this ALWAYS for table PDFs, regardless of whether the
-            # header enhancer ran.
-            if pdf_type == 'table':
-                try:
-                    pp_result = self._post_process_table_extractions(
-                        tags, jb_identifiers, mc_identifiers, cable_descriptions,
-                        spare_identifiers, tag_to_number, raw_cable_descriptions,
-                        tag_match_info, all_ocr_tags
-                    )
-                    if isinstance(pp_result, tuple) and len(pp_result) == 9:
-                        (tags, jb_identifiers, mc_identifiers, cable_descriptions,
-                         spare_identifiers, tag_to_number, raw_cable_descriptions,
-                         tag_match_info, all_ocr_tags) = pp_result
-                        # Update result tuple
-                        result = (tags, jb_identifiers, mc_identifiers, cable_descriptions,
-                                  spare_identifiers, tag_to_number, raw_cable_descriptions,
-                                  tag_match_info, all_ocr_tags)
-                        logger.info(
-                            "\u2705 Page %d table-mode post-process: tags=%d, JBs=%d, MCs=%d, cables=%d, spares=%d",
-                            page_num + 1, len(tags), len(jb_identifiers), len(mc_identifiers),
-                            len(cable_descriptions), len(spare_identifiers)
-                        )
-                except Exception as pp_err:
-                    logger.warning("Table-mode post-process failed for page %d: %s", page_num + 1, pp_err)
-            # ─────────────────────────────────────────────────────────────────────
+            logger.info(f"✅ Page {page_num + 1}: {len(tags)} tags numbered by position")
 
         # ✅ Return 10 values
-            return (page_num + 1, tags, jb_identifiers, mc_identifiers,
-                    cable_descriptions, spare_identifiers, tag_to_number,
+            return (page_num + 1, tags, jb_identifiers, mc_identifiers, 
+                    cable_descriptions, spare_identifiers, tag_to_number, 
                     raw_cable_descriptions, tag_match_info, all_ocr_tags)
                
         except Exception as e:
@@ -5362,9 +2988,9 @@ class TagJBExtractor:
  
                     # ── CHANGE 5 (process_pdf loop): same DPI branch as process_pdf_page
                     # Diagram path: UNCHANGED ✓  (300/72)
-                    # Table path: REVISED from 150/72 to 300/72 (see process_pdf_page)
+                    # Table path: 150/72
                     if self._current_pdf_type == 'table':
-                        dpi_factor = 300 / 72
+                        dpi_factor = 150 / 72
                     else:
                         dpi_factor = 300 / 72
  
@@ -5390,12 +3016,9 @@ class TagJBExtractor:
                             tables_detected,
                             sample_texts
                         )
-                        logger.info(
-                            f"process_pdf page {page_num + 1}: DIGITAL mode — attempting "
-                            f"text-based extraction first (dpi_factor={dpi_factor:.4f})"
-                        )
+                        logger.info(f"process_pdf page {page_num + 1}: DIGITAL mode — attempting text-based extraction first")
                         try:
-                            extract_result = self.extract_from_text_page(page, dpi_factor=dpi_factor)
+                            extract_result = self.extract_from_text_page(page)
                         except Exception as text_err:
                             logger.warning(
                                 "Digital text extraction failed for page %s: %s — falling back to OCR",
@@ -5452,7 +3075,7 @@ class TagJBExtractor:
                             extract_result = None
  
                     if extract_result is None:
-                        pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor), colorspace=_CS_GRAY)
+                        pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor))
                         image_path = os.path.join(temp_dir, f"page_{page_num + 1}.png")
                         pix.save(image_path)
                         
@@ -5460,65 +3083,10 @@ class TagJBExtractor:
                         if image is None:
                             logger.error(f"Failed to load image for page {page_num + 1}")
                             continue
-
-                        # TABLE-MODE: use multi-pass extraction (S13 strategy)
-                        if self._current_pdf_type == 'table':
-                            # ── FIRST: Extract header references (JB/MC) ──────
-                            # Populates self._table_known_jbs / _table_known_mcs
-                            # so _apply_table_ocr_corrections can fix OCR errors.
-                            try:
-                                self._extract_header_references_only(page, page_num)
-                            except Exception as hdr_err:
-                                logger.warning(
-                                    "process_pdf page %d: header reference extraction failed: %s",
-                                    page_num + 1, hdr_err
-                                )
-                            logger.info(f"process_pdf page {page_num + 1}: TABLE mode — using multi-pass OCR (S13)")
-                            extract_result = self._extract_from_image_table_multipass(page, temp_dir, page_num)
-                        else:
-                            extract_result = self.extract_from_image(image)
-
-                    # ── TABLE-MODE ENHANCEMENT (process_pdf path) ──────────────────
-                    # Only run header enhancement if the full-page OCR pass
-                    # returned no JB or MC identifiers (see process_pdf_page
-                    # for the rationale).
-                    if self._current_pdf_type == 'table':
-                        try:
-                            # Check if full-page OCR found any JB/MC
-                            _has_jb = (
-                                isinstance(extract_result, tuple) and len(extract_result) >= 9
-                                and extract_result[1]  # jb_identifiers
-                            )
-                            _has_mc = (
-                                isinstance(extract_result, tuple) and len(extract_result) >= 9
-                                and extract_result[2]  # mc_identifiers
-                            )
-                            if not _has_jb and not _has_mc:
-                                enhanced = self._enhance_table_with_header_ocr(page, image, extract_result)
-                                if isinstance(enhanced, tuple) and len(enhanced) == 9:
-                                    extract_result = enhanced
-                                    logger.info("   \u2705 Table-mode header enhancement applied to page %d", page_num + 1)
-                        except Exception as enh_err:
-                            logger.warning("Table-mode header enhancement failed for page %d: %s", page_num + 1, enh_err)
-                        # ── TABLE-MODE POST-PROCESSING (always run for table PDFs) ──
-                        try:
-                            if isinstance(extract_result, tuple) and len(extract_result) == 9:
-                                (_t, _j, _m, _c, _s, _tn, _rc, _tm, _o) = extract_result
-                                pp_result = self._post_process_table_extractions(
-                                    _t, _j, _m, _c, _s, _tn, _rc, _tm, _o
-                                )
-                                if isinstance(pp_result, tuple) and len(pp_result) == 9:
-                                    extract_result = pp_result
-                                    logger.info(
-                                        "   \u2705 Table-mode post-process page %d: tags=%d, JBs=%d, MCs=%d, cables=%d",
-                                        page_num + 1, len(pp_result[0]), len(pp_result[1]),
-                                        len(pp_result[2]), len(pp_result[3])
-                                    )
-                        except Exception as pp_err:
-                            logger.warning("Table-mode post-process failed for page %d: %s", page_num + 1, pp_err)
-                    # ────────────────────────────────────────────────────────────────
-
-                    logger.info(f"   \U0001f4ca extract_result length: {len(extract_result)}")
+                        
+                        extract_result = self.extract_from_image(image)
+ 
+                    logger.info(f"   📊 extract_result length: {len(extract_result)}")
                     if len(extract_result) >= 9:
                         logger.info(f"   📊 all_ocr_tags at index 8: {extract_result[8]}")
                     
@@ -5534,21 +3102,8 @@ class TagJBExtractor:
                     
                     results[page_num + 1] = extract_result
                     
-                    # ── MEMORY CLEANUP AFTER EACH PAGE ──
-                    # For 400+ page PDFs, memory accumulates from:
-                    # - cv2 image buffers (not garbage collected immediately)
-                    # - pdfplumber page objects
-                    # - Tesseract subprocess overhead
-                    # Force cleanup to prevent OOM/SIGKILL
-                    del extract_result
-                    if 'image' in dir():
-                        del image
-                    gc.collect()
-                    
                 except Exception as e:
                     logger.error(f"Error processing page {page_num + 1}: {e}")
-                    # Still cleanup on error
-                    gc.collect()
                     continue
             
             return results
@@ -5696,13 +3251,12 @@ class TagJBExtractor:
             tag_match_info = {}
         
         # اطمینان از تنظیم الگوها
-        # Do NOT default to 'JB'/'MC'/'SPARE' — leave as None if not set by user
-        if not hasattr(self, 'jb_examples'):
-            self.jb_examples = None
-        if not hasattr(self, 'mc_examples'):
-            self.mc_examples = None
-        if not hasattr(self, 'spare_examples'):
-            self.spare_examples = None
+        if not hasattr(self, 'jb_examples') or self.jb_examples is None:
+            self.jb_examples = "JB"
+        if not hasattr(self, 'mc_examples') or self.mc_examples is None:
+            self.mc_examples = "MC"
+        if not hasattr(self, 'spare_examples') or self.spare_examples is None:
+            self.spare_examples = "SPARE"
 
         raw_mc_count = len(mc_identifiers) if mc_identifiers else 0
         selected_mc = self._select_best_mc_identifier(mc_identifiers, jb_identifiers)
@@ -5720,10 +3274,8 @@ class TagJBExtractor:
         if len(image.shape) == 2:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
 
-        # OCR config — NO whitelist (same fix as table mode)
-        # The old whitelist was causing tags to be missed because Tesseract
-        # couldn't recognize certain characters.
-        custom_config = r'--oem 1 --psm 11 -l eng'
+        # OCR config
+        custom_config = r'--oem 3 --psm 11 -c tessedit_char_whiteList=ABCDEFGHIJKLMNOPQRSTUVWXYZsparetcoilpr0123456789-.'
         ocr_data = pytesseract.image_to_data(image, config=custom_config, output_type=pytesseract.Output.DICT)
 
         # جمع‌آوری تمام موارد با موقعیت‌ها
@@ -5731,46 +3283,16 @@ class TagJBExtractor:
         processed_regions = set()
 
         def bbox_to_region(bbox):
-            """
-            ✅ [COORD FIX] تبدیل bbox به مختصات پیکسلی روی تصویر رستر شده.
-            اگر bbox از استخراج دیجیتال (PDF point space) آمده باشد،
-            مختصات را با dpi_factor ضرب می‌کنیم تا به پیکسل تبدیل شوند.
-            اگر از OCR آمده باشد (که از قبل پیکسل است)، بدون تغییر برمی‌گردد.
-            """
             if not bbox:
                 return None
             try:
-                source = bbox.get('coord_source', 'ocr')
-                factor = bbox.get('dpi_factor', 300 / 72)
-
-                x = int(bbox.get('x', 0))
-                y = int(bbox.get('y', 0))
-                w = int(bbox.get('width', 0))
-                h = int(bbox.get('height', 0))
-
-                if source == 'digital':
-                    raw = (x, y, w, h)
-                    # Scale from PDF points to pixels using the ACTUAL rendering DPI
-                    # (not the extraction DPI, which may differ for large PDFs)
-                    render_dpi = getattr(self, '_current_render_dpi', 300)
-                    scale = render_dpi / 72.0  # PDF points → render pixels
-                    x = int(x * scale)
-                    y = int(y * scale)
-                    w = max(1, int(w * scale))
-                    h = max(1, int(h * scale))
-                    logger.debug(
-                        "bbox_to_region: DIGITAL→PIXEL  render_dpi=%d  scale=%.4f  raw=%s  pixel=(%d,%d,%d,%d)",
-                        render_dpi, scale, raw, x, y, w, h
-                    )
-                else:
-                    logger.debug(
-                        "bbox_to_region: OCR (already pixel)  pixel=(%d,%d,%d,%d)",
-                        x, y, w, h
-                    )
-
-                return (x, y, w, h)
-            except Exception as e:
-                logger.error(f"bbox_to_region: error resolving bbox {bbox}: {e}")
+                return (
+                    int(bbox.get('x', 0)),
+                    int(bbox.get('y', 0)),
+                    int(bbox.get('width', 0)),
+                    int(bbox.get('height', 0)),
+                )
+            except Exception:
                 return None
         
         # ============================================================
@@ -5780,34 +3302,8 @@ class TagJBExtractor:
         exact_found_count = 0
         
         for tag in tags:
-            # ── FALLBACK: If tag is not in tag_match_info but IS in all_ocr_tags,
-            # try to find it via OCR data directly. This happens when tags were
-            # matched via fuzzy matching in the post-processor (which doesn't
-            # populate tag_match_info with bbox for every tag).
             if tag not in tag_match_info:
-                tag_upper = tag.upper()
-                found_via_ocr = False
-                for i, text in enumerate(ocr_data['text']):
-                    text_clean = text.strip().upper()
-                    if text_clean == tag_upper:
-                        region_key = (ocr_data['left'][i], ocr_data['top'][i],
-                                    ocr_data['width'][i], ocr_data['height'][i])
-                        if region_key not in processed_regions:
-                            all_found_items.append({
-                                'type': 'tag',
-                                'text': tag,
-                                'position': region_key,
-                                'match_type': 'exact',
-                                'score': 1.0,
-                                'y_position': ocr_data['top'][i]
-                            })
-                            processed_regions.add(region_key)
-                            exact_found_count += 1
-                            found_via_ocr = True
-                            break
-                if found_via_ocr:
-                    continue
-                logger.warning(f"Tag '{tag}' not in tag_match_info and not found in OCR data")
+                logger.warning(f"Tag '{tag}' not in tag_match_info")
                 continue
             
             info = tag_match_info[tag]
@@ -6092,7 +3588,6 @@ class TagJBExtractor:
         # ============================================================
         logger.info("Phase 6: Collecting cable descriptions...")
         cable_found_count = 0
-        _mc_prefix = self._get_mc_prefix()
         
         for cable_desc in cable_descriptions:
             cable_bbox = None
@@ -6111,136 +3606,13 @@ class TagJBExtractor:
                 cable_found_count += 1
                 continue
 
-            # ── UNIVERSAL FIX: Search for the cable code in OCR tokens ──
-            # This works for BOTH diagram and table mode. The cable code
-            # (e.g. NC-0-1-2-C-3-BL) may be stored as a single OCR token
-            # or split across multiple tokens. We try:
-            #   1. Exact match (full cable code = single token)
-            #   2. Substring match (cable code is part of a token)
-            #   3. Multi-token match (cable code spans multiple adjacent tokens)
-            # The bounding box is drawn using the EXACT OCR token coordinates,
-            # so it's tight around the text — not on the MC row.
-            cable_desc_upper = cable_desc.upper().strip()
-            found = False
-            
-            # 1. Exact match of the full cable code
-            for i, text in enumerate(ocr_data['text']):
-                text_clean = text.strip().upper()
-                if text_clean == cable_desc_upper:
-                    region_key = (ocr_data['left'][i], ocr_data['top'][i],
-                                ocr_data['width'][i], ocr_data['height'][i])
-                    if region_key not in processed_regions:
-                        all_found_items.append({
-                            'type': 'cable',
-                            'text': cable_desc,
-                            'position': region_key,
-                            'y_position': ocr_data['top'][i]
-                        })
-                        processed_regions.add(region_key)
-                        cable_found_count += 1
-                        found = True
-                        break
-            
-            if found:
-                continue
-            
-            # 2. Substring match (cable code is part of a larger token)
-            for i, text in enumerate(ocr_data['text']):
-                text_clean = text.strip().upper()
-                if cable_desc_upper in text_clean and len(text_clean) < len(cable_desc_upper) + 10:
-                    region_key = (ocr_data['left'][i], ocr_data['top'][i],
-                                ocr_data['width'][i], ocr_data['height'][i])
-                    if region_key not in processed_regions:
-                        all_found_items.append({
-                            'type': 'cable',
-                            'text': cable_desc,
-                            'position': region_key,
-                            'y_position': ocr_data['top'][i]
-                        })
-                        processed_regions.add(region_key)
-                        cable_found_count += 1
-                        found = True
-                        break
-            
-            if found:
-                continue
-            
-            # 3. Multi-token match: cable code is split across adjacent tokens
-            # e.g. "NC-0-1-2" + "-" + "C-3-BL" → combine and check
-            # We look for consecutive tokens on the same line that together
-            # form the cable code.
-            cable_parts = cable_desc_upper.split('-')
-            if len(cable_parts) >= 4:
-                # Try to find the first part and then check if subsequent
-                # tokens on the same line complete the cable code
+            cable_parts = cable_desc.split()
+            if len(cable_parts) >= 1:
+                number_part = cable_parts[0]
+                
                 for i, text in enumerate(ocr_data['text']):
                     text_clean = text.strip().upper()
-                    # Skip MC tokens
-                    if any(text_clean.startswith(p + '-') for p in _mc_prefix.split(',') if p):
-                        continue
-                    
-                    # Check if this token starts the cable code
-                    if not cable_desc_upper.startswith(text_clean):
-                        # Maybe this token contains the start of the cable code
-                        if cable_desc_upper.split('-')[0] in text_clean:
-                            pass  # potential start
-                        else:
-                            continue
-                    
-                    # Look at the next few tokens on the same line
-                    combined = text_clean
-                    min_x = int(ocr_data['left'][i])
-                    min_y = int(ocr_data['top'][i])
-                    max_x = int(ocr_data['left'][i]) + int(ocr_data['width'][i])
-                    max_y = int(ocr_data['top'][i]) + int(ocr_data['height'][i])
-                    y_ref = int(ocr_data['top'][i])
-                    
-                    for j in range(i + 1, min(i + 8, len(ocr_data['text']))):
-                        next_text = str(ocr_data['text'][j]).strip().upper()
-                        if not next_text:
-                            continue
-                        next_y = int(ocr_data['top'][j])
-                        # Must be on same line (within 10px)
-                        if abs(next_y - y_ref) > 10:
-                            break
-                        
-                        combined += next_text
-                        nx = int(ocr_data['left'][j])
-                        nw = int(ocr_data['width'][j])
-                        max_x = max(max_x, nx + nw)
-                        max_y = max(max_y, int(ocr_data['top'][j]) + int(ocr_data['height'][j]))
-                        
-                        # Check if combined text now contains the cable code
-                        if cable_desc_upper in combined:
-                            # Found it! Create a merged bounding box
-                            region_key = (min_x, min_y, max_x - min_x, max_y - min_y)
-                            if region_key not in processed_regions:
-                                all_found_items.append({
-                                    'type': 'cable',
-                                    'text': cable_desc,
-                                    'position': region_key,
-                                    'y_position': min_y
-                                })
-                                processed_regions.add(region_key)
-                                cable_found_count += 1
-                                found = True
-                            break
-                    
-                    if found:
-                        break
-            
-            if found:
-                continue
-            
-            # 4. Last resort: search for distinctive middle part
-            # (skip MC tokens to avoid drawing on MC row)
-            if len(cable_parts) >= 5:
-                search_pattern = '-'.join(cable_parts[2:5])
-                for i, text in enumerate(ocr_data['text']):
-                    text_clean = text.strip().upper()
-                    if any(text_clean.startswith(p + '-') for p in _mc_prefix.split(',') if p):
-                        continue
-                    if search_pattern in text_clean:
+                    if number_part in text_clean:
                         region_key = (ocr_data['left'][i], ocr_data['top'][i],
                                     ocr_data['width'][i], ocr_data['height'][i])
                         if region_key not in processed_regions:
@@ -6252,7 +3624,6 @@ class TagJBExtractor:
                             })
                             processed_regions.add(region_key)
                             cable_found_count += 1
-                            found = True
                             break
         
         logger.info(f"Phase 6: Found {cable_found_count} cables")
@@ -6446,8 +3817,6 @@ class TagJBExtractor:
             
             # استفاده از DPI پایین‌تر برای حافظه بهتر در PDF های چند صفحه‌ای
             dpi_factor = 200/72 if total_pages > 10 else 300/72
-            # Store the rendering DPI for coordinate scaling in draw_bounding_boxes
-            render_dpi = 200 if total_pages > 10 else 300
             
             with tempfile.TemporaryDirectory() as temp_dir:
                 for page_num in range(total_pages):
@@ -6455,7 +3824,7 @@ class TagJBExtractor:
                         logger.info(f"Annotating page {page_num + 1}/{total_pages}")
                         
                         page = pdf_document[page_num]
-                        pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor), colorspace=_CS_GRAY)
+                        pix = page.get_pixmap(matrix=fitz.Matrix(dpi_factor, dpi_factor))
                         
                         image_path = os.path.join(temp_dir, f"page_{page_num + 1}.png")
                         pix.save(image_path)
@@ -6490,9 +3859,6 @@ class TagJBExtractor:
                             tag_match_info, all_ocr_tags) = result
 
                         selected_mc = self._select_best_mc_identifier(mc_identifiers, jb_identifiers)
-                        
-                        # Set the rendering DPI for coordinate scaling in draw_bounding_boxes
-                        self._current_render_dpi = render_dpi
                         
                         # رسم bounding boxes
                         try:
@@ -7769,7 +5135,7 @@ class TagJBExtractor:
                         
                         # پردازش SPARE ها
                         for spare_idx, spare in enumerate(spare_identifiers):
-                            spare_id = f"{getattr(self, 'spare_examples', None)}_{spare_idx + 1}"
+                            spare_id = f"{getattr(self, 'spare_examples', 'SPARE')}_{spare_idx + 1}"
                             spare_number = tag_to_number.get(spare_id, page_tag_to_number.get(spare_id, ''))
                             
                             if not spare_number:
@@ -7992,7 +5358,7 @@ class TagJBExtractor:
             # پردازش SPAREs
             # ============================================================
             for spare_idx, spare in enumerate(spare_identifiers):
-                spare_id = f"{getattr(self, 'spare_examples', None)}_{spare_idx + 1}"
+                spare_id = f"{getattr(self, 'spare_examples', 'SPARE')}_{spare_idx + 1}"
  
                 # ── روش ۱: مستقیم از page_tag_to_number ─────────────────
                 spare_number = page_tag_to_number.get(spare_id)
@@ -8004,7 +5370,7 @@ class TagJBExtractor:
                 # ── روش ۳: اگر spare_id با SPARE_ شروع می‌شود،
                 #           بررسی کن آیا کلید مشابهی وجود دارد ──────────
                 if not spare_number:
-                    spare_prefix_key = getattr(self, 'spare_examples', None).strip().upper()
+                    spare_prefix_key = getattr(self, 'spare_examples', 'SPARE').strip().upper()
                     for k, v in page_tag_to_number.items():
                         if str(k).upper().startswith(spare_prefix_key + '_'):
                             # بررسی index
@@ -8119,123 +5485,17 @@ class TagJBExtractor:
 
             # ====== محاسبه unmatched فقط از OCR ======
             ocr_upper = set(str(tag).strip().upper() for tag in all_ocr_tags if tag and str(tag).strip())
-            
-            # ── FUZZY MATCHING: OCR tags → IO List tags ─────────────────
-            # The previous code only did EXACT matching (ocr_upper - io_tags_upper).
-            # This failed for OCR errors like UV-5021 (should be UY-5021).
-            # We now do fuzzy matching with character substitutions.
-            try:
-                import Levenshtein as _lev_fuzzy
-                _fuzzy_available = True
-            except ImportError:
-                _fuzzy_available = False
-            
-            # Character confusions for OCR error correction
-            _CHAR_CONFUSIONS = [
-                ('V', 'Y'), ('Y', 'V'),
-                ('S', '5'), ('5', 'S'),
-                ('0', '5'), ('5', '0'),
-                ('1', '7'), ('7', '1'),
-                ('O', '0'), ('0', 'O'),
-                ('B', '8'), ('8', 'B'),
-                ('G', '6'), ('6', 'G'),
-                ('Z', '2'), ('2', 'Z'),
-                ('I', '1'), ('1', 'I'),
-                ('D', '0'), ('0', 'D'),
-            ]
-            
-            # Build OCR→IO List mapping using fuzzy matching
-            ocr_to_io_map = {}  # ocr_tag_upper → io_tag_upper
-            matched_io_tags = set()
-            
-            if _fuzzy_available:
-                for ocr_tag in ocr_upper:
-                    # Skip NC* tokens (MC/cable, not tags)
-                    if ocr_tag.startswith('NC'):
-                        continue
-                    
-                    # 1. Try exact match
-                    if ocr_tag in io_tags_upper:
-                        ocr_to_io_map[ocr_tag] = ocr_tag
-                        matched_io_tags.add(ocr_tag)
-                        continue
-                    
-                    # 2. Try fuzzy match (sim >= 0.85)
-                    best_io = None
-                    best_score = 0.0
-                    for io_tag in io_tags_upper:
-                        score = _lev_fuzzy.ratio(ocr_tag, io_tag)
-                        if score > best_score:
-                            best_score = score
-                            best_io = io_tag
-                    
-                    if best_io and best_score >= 0.92:
-                        ocr_to_io_map[ocr_tag] = best_io
-                        matched_io_tags.add(best_io)
-                        logger.info(f"   FUZZY MATCH: '{ocr_tag}' → '{best_io}' (sim={best_score:.2f})")
-                        continue
-                    
-                    # 3. Try character substitutions
-                    if best_score < 0.92:
-                        for old_ch, new_ch in _CHAR_CONFUSIONS:
-                            positions = [j for j, c in enumerate(ocr_tag) if c == old_ch]
-                            for pos in positions:
-                                candidate = ocr_tag[:pos] + new_ch + ocr_tag[pos+1:]
-                                for io_tag in io_tags_upper:
-                                    score = _lev_fuzzy.ratio(candidate, io_tag)
-                                    if score > best_score:
-                                        best_score = score
-                                        best_io = io_tag
-                        
-                        if best_io and best_score >= 0.92:
-                            ocr_to_io_map[ocr_tag] = best_io
-                            matched_io_tags.add(best_io)
-                            logger.info(f"   CHAR-CORRECTED MATCH: '{ocr_tag}' → '{best_io}' (sim={best_score:.2f})")
-                            continue
-                    
-                    # 4. Try double character substitutions
-                    if best_score < 0.92:
-                        for old_ch1, new_ch1 in _CHAR_CONFUSIONS:
-                            pos1_list = [j for j, c in enumerate(ocr_tag) if c == old_ch1]
-                            for pos1 in pos1_list:
-                                cand1 = ocr_tag[:pos1] + new_ch1 + ocr_tag[pos1+1:]
-                                for old_ch2, new_ch2 in _CHAR_CONFUSIONS:
-                                    pos2_list = [j for j, c in enumerate(cand1) if c == old_ch2]
-                                    for pos2 in pos2_list:
-                                        if pos2 == pos1:
-                                            continue
-                                        cand2 = cand1[:pos2] + new_ch2 + cand1[pos2+1:]
-                                        for io_tag in io_tags_upper:
-                                            score = _lev_fuzzy.ratio(cand2, io_tag)
-                                            if score > best_score:
-                                                best_score = score
-                                                best_io = io_tag
-                        
-                        if best_io and best_score >= 0.92:
-                            ocr_to_io_map[ocr_tag] = best_io
-                            matched_io_tags.add(best_io)
-                            logger.info(f"   DOUBLE-CORRECTED MATCH: '{ocr_tag}' → '{best_io}' (sim={best_score:.2f})")
-                            continue
-                
-                logger.info(f"Fuzzy matching: {len(ocr_to_io_map)} OCR tags matched to IO List")
-            else:
-                # Fallback to exact matching
-                for ocr_tag in ocr_upper:
-                    if ocr_tag in io_tags_upper:
-                        ocr_to_io_map[ocr_tag] = ocr_tag
-                        matched_io_tags.add(ocr_tag)
-            
-            # Unmatched OCR tags = OCR tags that didn't match any IO List tag
-            unmatched_pdf_tags_upper = set(ocr_upper) - set(ocr_to_io_map.keys())
-            # Also remove NC* tokens from unmatched (they're MC/cable, not tags)
-            unmatched_pdf_tags_upper = {t for t in unmatched_pdf_tags_upper if not t.startswith('NC')}
-            
-            # Unmatched IO tags = IO List tags that no OCR tag matched
-            unmatched_io_tags_upper = io_tags_upper - matched_io_tags
+            unmatched_pdf_tags_upper = ocr_upper - io_tags_upper
             
             logger.info(f"Unmatched OCR tags count: {len(unmatched_pdf_tags_upper)}")
-            sample_unmatched = list(unmatched_pdf_tags_upper)[:10]
+            
+            # نمایش نمونه‌ای از تگ‌های unmatched
+            sample_unmatched = list(unmatched_pdf_tags_upper)[:10] if len(unmatched_pdf_tags_upper) > 10 else list(unmatched_pdf_tags_upper)
             logger.info(f"Sample unmatched OCR tags: {sample_unmatched}")
+            
+            # محاسبه تگ‌های IO List که در OCR نیستند
+            unmatched_io_tags_upper = io_tags_upper - ocr_upper
+            
             logger.info(f"Unmatched IO List tags count: {len(unmatched_io_tags_upper)}")
 
             # ====== ایجاد final DataFrame ======
@@ -8245,71 +5505,18 @@ class TagJBExtractor:
                 if col not in final_df.columns:
                     final_df[col] = None
 
-            # پر کردن matched rows از intermediate + fuzzy-matched OCR tags
+            # پر کردن matched rows از intermediate
             intermediate_df_indexed = intermediate_df.copy()
             intermediate_df_indexed['_TAG_UPPER_HELPER_'] = intermediate_df_indexed[intermediate_tag_col].apply(lambda x: str(x).strip().upper() if pd.notna(x) else "")
-            
-            # Build a comprehensive mapping: IO List tag → intermediate row
-            # Use BOTH exact matching AND fuzzy OCR→IO mapping
             pdf_to_io_map = intermediate_tags_upper.intersection(io_tags_upper)
-            
-            # Also add fuzzy-matched OCR tags to the mapping
-            # For each OCR→IO fuzzy match, try to find the corresponding intermediate row
-            for ocr_tag_upper, io_tag_upper in ocr_to_io_map.items():
-                if ocr_tag_upper != io_tag_upper:
-                    # OCR tag was fuzzy-corrected to IO tag
-                    # Try to find the OCR tag in intermediate
-                    if ocr_tag_upper in intermediate_tags_upper:
-                        pdf_to_io_map.add(ocr_tag_upper)
-                    # Also try the corrected IO tag
-                    if io_tag_upper not in pdf_to_io_map:
-                        pdf_to_io_map.add(io_tag_upper)
-            
             for idx, row in final_df.iterrows():
                 io_tag = str(row[io_list_tag_col]).strip().upper() if pd.notna(row[io_list_tag_col]) else ""
-                if not io_tag:
-                    continue
-                
-                # 1. Try exact match in intermediate
                 if io_tag in pdf_to_io_map:
                     match_row = intermediate_df_indexed[intermediate_df_indexed['_TAG_UPPER_HELPER_'] == io_tag]
                     if not match_row.empty:
                         src_row = match_row.iloc[0]
                         for col in intermediate_columns_to_add:
                             final_df.at[idx, col] = src_row.get(col, None)
-                        continue
-                
-                # 2. Try fuzzy-matched OCR tags
-                # Check if any OCR tag was fuzzy-matched to this IO tag
-                matched_ocr_tags = [ocr for ocr, io in ocr_to_io_map.items() if io == io_tag]
-                for ocr_tag in matched_ocr_tags:
-                    if ocr_tag in intermediate_tags_upper:
-                        match_row = intermediate_df_indexed[intermediate_df_indexed['_TAG_UPPER_HELPER_'] == ocr_tag]
-                        if not match_row.empty:
-                            src_row = match_row.iloc[0]
-                            for col in intermediate_columns_to_add:
-                                final_df.at[idx, col] = src_row.get(col, None)
-                            # Also set the Tag No to the IO List form (corrected)
-                            break
-                    else:
-                        # OCR tag was found but not in intermediate (Phase 1/2 failed)
-                        # Fill with basic info from OCR
-                        for col in intermediate_columns_to_add:
-                            if col == 'Type':
-                                final_df.at[idx, col] = 'Tag'
-                            elif col == 'Tag_Number_Status':
-                                final_df.at[idx, col] = 'Matched (Fuzzy OCR)'
-                        break
-                
-                # 3. If still no match but IO tag is in matched_io_tags (fuzzy matched)
-                if io_tag in matched_io_tags:
-                    # The tag WAS matched via fuzzy OCR, but we don't have intermediate data
-                    # Set basic info
-                    for col in intermediate_columns_to_add:
-                        if col == 'Type' and pd.isna(final_df.at[idx, col]):
-                            final_df.at[idx, col] = 'Tag'
-                        elif col == 'Tag_Number_Status' and pd.isna(final_df.at[idx, col]):
-                            final_df.at[idx, col] = 'Matched (Fuzzy OCR)'
 
             # ستون تعداد SPARE موجود در هر JB (برای نمایش UI و استفاده در IO Assignment)
             spare_count_col = "JB_SPARE_COUNT"
