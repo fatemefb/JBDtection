@@ -63,7 +63,6 @@
         </aside>
 
         <main class="home-main io-main">
-        <header class="io-header">
             <div class="header-row">
                 <div class="header-stack">
                     <span id="brand-kicker" class="header-kicker">ماژول JBDetection</span>
@@ -91,11 +90,83 @@
                     </div>
                 </div>
             </div>
-        </header>
         
-        <div class="dashboard">
-                
-                <section class="upload-section panel">
+            <div class="dashboard">
+
+                            <section class="upload-section panel">
+                                <div class="platform-switcher-bar" id="platformSwitcherBar">
+                                    <span class="bar-label" id="platform-label">PLATFORM</span>
+                                    <div class="mode-toggle">
+                                        <button type="button" class="mode-btn active" data-mode="honeywell">Honeywell</button>
+                                        <button type="button" class="mode-btn" data-mode="siemens">Siemens</button>
+                                    </div>
+                                    <div class="mode-description" id="modeDescription">
+                                        JB/MC extraction with OCR, classifier, and pattern matching — full pipeline
+                                    </div>
+                                    <span class="status-pill" id="modeStatusPill">READY</span>
+                                </div>
+
+                                <div class="siemens-form-card" id="siemensFormCard">
+                                    <h3><i class="fas fa-industry"></i> <span id="siemens-mode-title">Siemens Mode — Tag Matching</span></h3>
+                                    <div class="subtitle" id="siemens-mode-subtitle">
+                                        فقط تگ‌های IO List در PDF دیجیتال جستجو می‌شوند و برای هر تطابق یک کادر رنگی دور آن کشیده می‌شود.
+                                        بدون OCR، بدون تشخیص JB/MC، بدون فیلتر صفحه. مناسب برای PDF‌های دیجیتال SAMA logic diagram.
+                                    </div>
+
+                                    <div class="pattern-group">
+                                        <label for="siemensProjectName" id="siemens-project-label">نام پروژه:</label>
+                                        <input type="text" id="siemensProjectName" placeholder="مثلا: Siemens_Logic_Project_001">
+                                    </div>
+
+                                    <div class="upload-container">
+                                        <div class="upload-box">
+                                            <h3 id="siemens-pdf-title">فایل‌های PDF (دیجیتال)</h3>
+                                            <input type="file" id="siemensPdfFiles" accept=".pdf" multiple>
+                                            <label for="siemensPdfFiles">
+                                                <span class="icon"><i class="fas fa-file-pdf"></i></span>
+                                                <span id="siemens-select-pdf">انتخاب فایل‌های PDF</span>
+                                            </label>
+                                            <div id="siemensPdfList" class="file-list"></div>
+                                        </div>
+                                        <div class="upload-box">
+                                            <h3 id="siemens-excel-title">فایل Excel (IO List)</h3>
+                                            <input type="file" id="siemensExcelFile" accept=".xlsx,.xls">
+                                            <label for="siemensExcelFile">
+                                                <span class="icon"><i class="fas fa-file-excel"></i></span>
+                                                <span id="siemens-select-excel">انتخاب فایل Excel</span>
+                                            </label>
+                                            <div id="siemensExcelName" class="file-list"></div>
+                                        </div>
+                                    </div>
+                                    <p class="hint" id="siemens-multi-hint">می‌توانید چند فایل PDF را همزمان آپلود کنید (Ctrl+Click برای انتخاب چندتایی)</p>
+
+                                    <div class="process-section">
+                                        <button type="button" class="process-btn" id="siemensSubmitBtn">
+                                            <i class="fas fa-play"></i> <span id="siemensSubmitText">شروع پردازش</span>
+                                        </button>
+                                        <p class="hint" id="siemens-time-hint">زمان تقریبی: ۱-۵ ثانیه به ازای هر ۱۰۰ صفحه PDF دیجیتال</p>
+                                    </div>
+                                </div>
+
+                                <div class="siemens-result" id="siemensResult">
+                                    <h3>📊 <span id="siemens-result-title">نتیجه‌ی پردازش Siemens</span></h3>
+                                    <div class="kpi-grid" id="siemensKpiGrid"></div>
+
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px;">
+                                        <div>
+                                            <h4 style="color: var(--success); margin: 0 0 8px 0; font-size: 13px;">✅ <span id="siemens-matched-label">تگ‌های پیدا شده</span> (<span id="siemensMatchedCount">0</span>)</h4>
+                                            <div class="tag-list tag-list-matched" id="siemensMatchedList">—</div>
+                                        </div>
+                                        <div>
+                                            <h4 style="color: var(--danger); margin: 0 0 8px 0; font-size: 13px;">❌ <span id="siemens-unmatched-label">تگ‌های پیدا نشده</span> (<span id="siemensUnmatchedCount">0</span>)</h4>
+                                            <div class="tag-list tag-list-unmatched" id="siemensUnmatchedList">—</div>
+                                        </div>
+                                    </div>
+
+                                    <div class="download-row" id="siemensDownloadRow"></div>
+                                </div>
+
+                    <div id="honeywellFormWrapper">
                     <h2 id="upload-title"><i class="fas fa-file-upload"></i> بارگذاری فایل‌ها</h2>
                     <form id="processForm" method="post" action="/process" enctype="multipart/form-data">
                         <!-- بخش اطلاعات پروژه -->
@@ -320,6 +391,7 @@
                             </button>
                         </div>
                     </form>
+                </div>
                 </section>
                 <section class="diagram-preview-section panel">
                     <h2 id="preview-title-2"><i class="fas fa-image"></i> پیش‌نمایش دیاگرام‌های آپلود شده</h2>
@@ -724,7 +796,21 @@
                 'wire-pattern-dlast':' رنگ دلخواه شما',
                 'wire-pattern-hands':'قانون دستی',
                 'wire-pattern-dhands':'وارد کردن الگوی سفارشی',
-                
+                'siemens-mode-title': 'حالت Siemens — تطابق تگ',
+                'siemens-mode-subtitle': 'فقط تگ‌های IO List در PDF دیجیتال جستجو می‌شوند و برای هر تطابق یک کادر رنگی دور آن کشیده می‌شود. بدون OCR، بدون تشخیص JB/MC، بدون فیلتر صفحه. مناسب برای PDF‌های دیجیتال SAMA logic diagram.',
+                'siemens-project-label': 'نام پروژه:',
+                'siemens-pdf-title': 'فایل‌های PDF (دیجیتال)',
+                'siemens-select-pdf': 'انتخاب فایل‌های PDF',
+                'siemens-excel-title': 'فایل Excel (IO List)',
+                'siemens-select-excel': 'انتخاب فایل Excel',
+                'siemens-multi-hint': 'می‌توانید چند فایل PDF را همزمان آپلود کنید (Ctrl+Click برای انتخاب چندتایی)',
+                'siemens-time-hint': 'زمان تقریبی: ۱-۵ ثانیه به ازای هر ۱۰۰ صفحه PDF دیجیتال',
+                'platform-label': 'پلتفرم',
+                'honeywell-mode-desc': 'استخراج JB/MC با OCR، طبقه‌بندی و تطابق الگو — پایپ‌لاین کامل',
+                'siemens-mode-desc': 'تطابق تگ در لایه متنی PDF دیجیتال — بدون OCR، بدون JB/MC، سبک',
+                'siemens-result-title': 'نتیجه‌ی پردازش Siemens',
+                'siemens-matched-label': 'تگ‌های پیدا شده',
+                'siemens-unmatched-label': 'تگ‌های پیدا نشده',
             },
             'en': {
                 'title': 'JBDetection Module',
@@ -851,6 +937,21 @@
                 'wire-pattern-dlast':' custom color',
                 'wire-pattern-hands':'Custom Rule',
                 'wire-pattern-dhands':'Enter custom pattern',
+                'siemens-mode-title': 'Siemens Mode — Tag Matching',
+                'siemens-mode-subtitle': 'Only IO List tags are searched in the digital PDF text layer, with a colored box drawn around each match. No OCR, no JB/MC detection, no page filtering. Suitable for digital SAMA logic diagram PDFs.',
+                'siemens-project-label': 'Project Name:',
+                'siemens-pdf-title': 'Digital PDF Files',
+                'siemens-select-pdf': 'Select PDF Files',
+                'siemens-excel-title': 'Excel File (IO List)',
+                'siemens-select-excel': 'Select Excel File',
+                'siemens-multi-hint': 'You can upload multiple PDF files at once (Ctrl+Click for multi-select)',
+                'siemens-time-hint': 'Approx. time: 1–5 seconds per 100 digital PDF pages',
+                'platform-label': 'PLATFORM',
+                'honeywell-mode-desc': 'JB/MC extraction with OCR, classifier, and pattern matching — full pipeline',
+                'siemens-mode-desc': 'Tag-only matching in digital PDF text layer — no OCR, no JB/MC, lightweight',
+                'siemens-result-title': 'Siemens Processing Result',
+                'siemens-matched-label': 'Matched tags',
+                'siemens-unmatched-label': 'Unmatched tags',
             },
         };
 
@@ -3234,6 +3335,276 @@
         if (downloadLatestBtn) {
             downloadLatestBtn.addEventListener('click', downloadLatestBundleForActiveRun);
         }
+        
+        const PlatformSwitcher = {
+            currentMode: 'honeywell',
+
+            init() {
+                // Bind mode toggle buttons
+                document.querySelectorAll('.platform-switcher-bar .mode-btn').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        this.setMode(btn.dataset.mode);
+                    });
+                });
+
+                // Bind Siemens form submit
+                const submitBtn = document.getElementById('siemensSubmitBtn');
+                if (submitBtn) {
+                    submitBtn.addEventListener('click', () => this.submitSiemensForm());
+                }
+
+                // Check Siemens module availability on page load
+                this.checkSiemensAvailability();
+
+                console.log('[PlatformSwitcher] initialized, mode =', this.currentMode);
+            },
+
+            setMode(mode) {
+                if (mode === this.currentMode) return;
+                this.currentMode = mode;
+                console.log('[PlatformSwitcher] switching to mode:', mode);
+
+                // Update button active states
+                document.querySelectorAll('.platform-switcher-bar .mode-btn').forEach(btn => {
+                    btn.classList.toggle('active', btn.dataset.mode === mode);
+                });
+
+                // Update description text
+                const descEl = document.getElementById('modeDescription');
+                if (descEl) {
+                    descEl.textContent = mode === 'honeywell'
+                        ? 'JB/MC extraction with OCR, classifier, and pattern matching — full pipeline'
+                        : 'Tag-only matching in digital PDF text layer — no OCR, no JB/MC, lightweight';
+                }
+
+                // Show/hide Siemens form
+                const siemensForm = document.getElementById('siemensFormCard');
+                if (siemensForm) {
+                    siemensForm.classList.toggle('active', mode === 'siemens');
+                }
+
+                // Show/hide Honeywell form. The Honeywell form is whatever was
+                // already on the page BEFORE this switcher. We try a few common
+                // selectors to find it without making hard assumptions.
+                this._toggleHoneywellForm(mode === 'honeywell');
+            },
+            _toggleHoneywellForm(visible) {
+                const wrapper = document.getElementById('honeywellFormWrapper');
+                if (wrapper) {
+                    wrapper.style.display = visible ? '' : 'none';
+                } else {
+                    console.warn('[PlatformSwitcher] honeywellFormWrapper not found');
+                }
+            },
+
+            async checkSiemensAvailability() {
+                try {
+                    const resp = await fetch('/api/siemens/status', {credentials: 'same-origin'});
+                    if (!resp.ok) return;
+                    const data = await resp.json();
+                    const pill = document.getElementById('modeStatusPill');
+                    if (pill) {
+                        pill.classList.remove('is-na');
+                        if (data.available) {
+                            pill.textContent = 'SIEMENS READY';
+                        } else {
+                            pill.textContent = 'SIEMENS N/A';
+                            pill.classList.add('is-na');
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[PlatformSwitcher] could not check Siemens availability:', e);
+                }
+            },
+
+            async submitSiemensForm() {
+                const projectName = document.getElementById('siemensProjectName').value.trim();
+                const excelFile = document.getElementById('siemensExcelFile').files[0];
+                const pdfFiles = document.getElementById('siemensPdfFiles').files;
+
+                if (!projectName) {
+                    alert('نام پروژه الزامی است');
+                    return;
+                }
+                if (!excelFile) {
+                    alert('فایل Excel الزامی است');
+                    return;
+                }
+                if (!pdfFiles || pdfFiles.length === 0) {
+                    alert('حداقل یک فایل PDF الزامی است');
+                    return;
+                }
+
+                // Build form data
+                const formData = new FormData();
+                formData.append('project_name', projectName);
+                formData.append('excel_file', excelFile);
+                for (const pdf of pdfFiles) {
+                    formData.append('pdf_files', pdf);
+                }
+
+                // Update UI to "processing" state
+                const submitBtn = document.getElementById('siemensSubmitBtn');
+                const submitText = document.getElementById('siemensSubmitText');
+                const originalText = submitText.textContent;
+                submitBtn.disabled = true;
+                submitText.innerHTML = '<span class="spinner"></span> در حال پردازش...';
+
+                // Hide previous result if any
+                const resultPanel = document.getElementById('siemensResult');
+                resultPanel.classList.remove('active');
+
+                try {
+                    const resp = await fetch('/api/process/siemens', {
+                        method: 'POST',
+                        body: formData,
+                        credentials: 'same-origin',
+                    });
+                    const data = await resp.json();
+
+                    if (data.status === 'success') {
+                        this.renderSiemensResult(data.result);
+                    } else {
+                        alert('خطا: ' + (data.message || 'نامشخص'));
+                    }
+                } catch (err) {
+                    console.error('[PlatformSwitcher] Siemens submit failed:', err);
+                    alert('خطا در ارتباط با سرور: ' + err.message);
+                } finally {
+                    submitBtn.disabled = false;
+                    submitText.textContent = originalText;
+                }
+            },
+
+            renderSiemensResult(result) {
+                const panel = document.getElementById('siemensResult');
+                const kpiGrid = document.getElementById('siemensKpiGrid');
+                const matchedList = document.getElementById('siemensMatchedList');
+                const unmatchedList = document.getElementById('siemensUnmatchedList');
+                const matchedCount = document.getElementById('siemensMatchedCount');
+                const unmatchedCount = document.getElementById('siemensUnmatchedCount');
+                const downloadRow = document.getElementById('siemensDownloadRow');
+
+                // KPI cards
+                kpiGrid.innerHTML = `
+                    <div class="kpi-card">
+                        <div class="kpi-value">${result.total_io_tags}</div>
+                        <div class="kpi-label">کل تگ‌های IO List</div>
+                    </div>
+                    <div class="kpi-card" style="border-top-color: #27AE96;">
+                        <div class="kpi-value" style="color: #27AE96;">${result.matched_count}</div>
+                        <div class="kpi-label">تگ‌های پیدا شده</div>
+                    </div>
+                    <div class="kpi-card" style="border-top-color: #E74C3C;">
+                        <div class="kpi-value" style="color: #E74C3C;">${result.unmatched_count}</div>
+                        <div class="kpi-label">تگ‌های پیدا نشده</div>
+                    </div>
+                    <div class="kpi-card" style="border-top-color: #E67E22;">
+                        <div class="kpi-value" style="color: #E67E22;">${result.match_rate_pct}%</div>
+                        <div class="kpi-label">نرخ تطابق</div>
+                    </div>
+                `;
+
+                // Matched / unmatched lists
+                matchedCount.textContent = result.matched_count;
+                unmatchedCount.textContent = result.unmatched_count;
+                matchedList.textContent = (result.matched_tags && result.matched_tags.length)
+                    ? result.matched_tags.join(' · ')
+                    : '—';
+                unmatchedList.textContent = (result.unmatched_tags && result.unmatched_tags.length)
+                    ? result.unmatched_tags.join(' · ')
+                    : '—';
+
+                // Download links — use the dedicated /api/siemens/download/<relpath> endpoint.
+                // The backend returns absolute paths (e.g. /home/devio/JB-outputs/siemens_runs/proj_abc/...).
+                // We need to strip the siemens_runs base prefix to get the relative path.
+                downloadRow.innerHTML = '';
+
+                // Helper: convert absolute path to relative path under siemens_runs/
+                const toSiemensRelPath = (absPath) => {
+                    if (!absPath) return null;
+                    // Find 'siemens_runs/' in the path and take everything after it
+                    const marker = 'siemens_runs/';
+                    const idx = absPath.indexOf(marker);
+                    if (idx === -1) return null;
+                    return absPath.substring(idx + marker.length);
+                };
+
+                if (result.annotated_pdfs && result.annotated_pdfs.length) {
+                    for (const pdfPath of result.annotated_pdfs) {
+                        const filename = pdfPath.split('/').pop();
+                        const relPath = toSiemensRelPath(pdfPath);
+                        if (!relPath) continue;
+                        const a = document.createElement('a');
+                        a.className = 'download-link';
+                        a.href = '/api/siemens/download/' + relPath;
+                        a.innerHTML = `<i class="fas fa-file-pdf"></i> ${filename}`;
+                        a.target = '_blank';
+                        downloadRow.appendChild(a);
+                    }
+                }
+                if (result.report_excel) {
+                    const relPath = toSiemensRelPath(result.report_excel);
+                    if (relPath) {
+                        const a = document.createElement('a');
+                        a.className = 'download-link';
+                        a.style.background = '#27AE96';
+                        a.href = '/api/siemens/download/' + relPath;
+                        a.innerHTML = `<i class="fas fa-file-excel"></i> Match Report (Excel)`;
+                        a.target = '_blank';
+                        downloadRow.appendChild(a);
+                    }
+                }
+                // ZIP bundle
+                if (result.zip_bundle) {
+                    const relPath = toSiemensRelPath(result.zip_bundle);
+                    if (relPath) {
+                        const filename = result.zip_bundle.split('/').pop();
+                        const a = document.createElement('a');
+                        a.className = 'download-link';
+                        a.style.background = '#1A3A6E';
+                        a.href = '/api/siemens/download/' + relPath;
+                        a.innerHTML = `<i class="fas fa-file-archive"></i> ${filename}`;
+                        a.target = '_blank';
+                        downloadRow.appendChild(a);
+                    }
+                }
+
+                panel.classList.add('active');
+                panel.scrollIntoView({behavior: 'smooth', block: 'start'});
+            }
+        };
+
+        // Expose globally for debugging
+        window.PlatformSwitcher = PlatformSwitcher;
+
+        // Initialize on DOM ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => PlatformSwitcher.init());
+        } else {
+            PlatformSwitcher.init();
+        }
+        document.getElementById('siemensPdfFiles')?.addEventListener('change', (e) => {
+            const list = document.getElementById('siemensPdfList');
+            list.innerHTML = '';
+            Array.from(e.target.files).forEach(f => {
+                const item = document.createElement('div');
+                item.className = 'file-item';
+                item.innerHTML = `<i class="fas fa-file-pdf"></i> ${f.name}`;
+                list.appendChild(item);
+            });
+        });
+
+        document.getElementById('siemensExcelFile')?.addEventListener('change', (e) => {
+            const list = document.getElementById('siemensExcelName');
+            list.innerHTML = '';
+            if (e.target.files[0]) {
+                const item = document.createElement('div');
+                item.className = 'file-item';
+                item.innerHTML = `<i class="fas fa-file-excel"></i> ${e.target.files[0].name}`;
+                list.appendChild(item);
+            }
+        });
 
         // اضافه کردن CSS برای انیمیشن
         const style = document.createElement('style');

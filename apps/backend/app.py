@@ -1784,6 +1784,187 @@ OUTPUT_DIRS = {
     "v2": "/home/devio/JB-outputs"
 }
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SIEMENS MODE — lightweight tag-only matching for digital PDFs
+# ═══════════════════════════════════════════════════════════════════════════
+# This mode is intentionally separate from the Honeywell (JB/MC) pipeline.
+# It only takes an IO List + digital PDFs, finds tag matches in the PDF's
+# digital text layer, and draws bounding boxes. No OCR, no classifier, no
+# JB/MC patterns, no page filtering. See siemens_mode.py for full docs.
+try:
+    from siemens_mode import SiemensModeProcessor
+    _siemens_processor = None  # lazy singleton
+    def _get_siemens_processor():
+        global _siemens_processor
+        if _siemens_processor is None:
+            _siemens_processor = SiemensModeProcessor()
+        return _siemens_processor
+    logger.info("Siemens mode module loaded successfully")
+except Exception as _siemens_import_err:
+    logger.warning("Siemens mode module not available: %s", _siemens_import_err)
+    _get_siemens_processor = None
+
+
+@app.route('/api/process/siemens', methods=['POST'])
+def process_siemens_mode():
+    """
+    POST /api/process/siemens
+
+    Accepts multipart form data:
+      - pdf_files: one or more PDF files (digital PDFs only)
+      - excel_file: the IO List Excel file
+      - project_name: project name (used for organizing output directory)
+
+    Returns JSON:
+      {
+        "status": "success",
+        "result": { ... SiemensResult.to_dict() ... }
+      }
+    or:
+      { "status": "error", "message": "..." }
+    """
+    if 'username' not in session:
+        return jsonify({'status': 'error', 'message': 'لطفاً ابتدا وارد سیستم شوید'}), 401
+
+    if _get_siemens_processor is None:
+        return jsonify({
+            'status': 'error',
+            'message': 'سیستم Siemens mode در دسترس نیست — ماژول siemens_mode بارگذاری نشده'
+        }), 503
+
+    username = session.get('username')
+
+    try:
+        project_name = request.form.get('project_name', '').strip()
+        if not project_name:
+            return jsonify({'status': 'error', 'message': 'نام پروژه الزامی است'}), 400
+
+        pdf_files = request.files.getlist('pdf_files')
+        if not pdf_files or all(f.filename == '' for f in pdf_files):
+            return jsonify({'status': 'error', 'message': 'حداقل یک فایل PDF الزامی است'}), 400
+
+        excel_file = request.files.get('excel_file')
+        if not excel_file or excel_file.filename == '':
+            return jsonify({'status': 'error', 'message': 'فایل Excel الزامی است'}), 400
+
+        # Save uploaded files to temp locations
+        safe_project = re.sub(r'[^A-Za-z0-9_-]+', '_', project_name)[:50]
+        run_id = uuid.uuid4().hex[:8]
+        run_dir = os.path.join(BASE_OUTPUT_DIR, 'siemens_runs', f"{safe_project}_{run_id}")
+        os.makedirs(run_dir, exist_ok=True)
+
+        pdf_paths = []
+        for pdf in pdf_files:
+            fn = secure_filename(pdf.filename)
+            save_path = os.path.join(run_dir, fn)
+            pdf.save(save_path)
+            pdf_paths.append(save_path)
+
+        excel_filename = secure_filename(excel_file.filename)
+        excel_path = os.path.join(run_dir, excel_filename)
+        excel_file.save(excel_path)
+
+        output_pdf_dir = os.path.join(run_dir, 'annotated_pdfs')
+        output_excel_path = os.path.join(run_dir, f"siemens_match_report_{run_id}.xlsx")
+
+        logger.info(
+            "Siemens mode started: user=%s project=%s pdfs=%d excel=%s",
+            username, project_name, len(pdf_paths), excel_filename,
+            extra={'user': username}
+        )
+
+        # Run synchronously — for production you may want to push this to a
+        # background worker like the Honeywell mode does, but for digital
+        # PDFs (no OCR) it's typically very fast (1-5 seconds per 100 pages).
+        proc = _get_siemens_processor()
+        result = proc.process(
+            pdf_paths=pdf_paths,
+            excel_path=excel_path,
+            output_pdf_dir=output_pdf_dir,
+            output_excel_path=output_excel_path,
+            create_zip=True,
+            zip_path=os.path.join(run_dir, f"siemens_bundle_{run_id}.zip"),
+        )
+
+        result_dict = result.to_dict()
+        result_dict['run_dir'] = run_dir
+        result_dict['project_name'] = project_name
+        result_dict['username'] = username
+
+        logger.info(
+            "Siemens mode finished: project=%s matched=%d/%d (%.1f%%) duration=%.2fs",
+            project_name,
+            len(result.matched_tags),
+            result.total_io_tags,
+            (len(result.matched_tags) / result.total_io_tags * 100) if result.total_io_tags else 0,
+            result.duration_seconds,
+            extra={'user': username}
+        )
+
+        return jsonify({
+            'status': 'success',
+            'result': result_dict,
+        })
+
+    except Exception as exc:
+        logger.error("Siemens mode failed: %s", exc, exc_info=True)
+        return jsonify({
+            'status': 'error',
+            'message': f'خطا در پردازش: {exc}'
+        }), 500
+
+
+@app.route('/api/siemens/status', methods=['GET'])
+def siemens_mode_status():
+    """
+    GET /api/siemens/status — quick health check for the Siemens mode module.
+    Returns whether the module is loaded and ready to accept requests.
+    """
+    if 'username' not in session:
+        return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
+    return jsonify({
+        'status': 'success',
+        'available': _get_siemens_processor is not None,
+        'mode': 'siemens',
+        'description': 'Tag-only matching for digital PDFs — reuses DataAnalysisModule, no JB/MC patterns'
+    })
+
+
+@app.route('/api/siemens/download/<path:filename>', methods=['GET'])
+def siemens_download(filename):
+    """
+    Serve files from the Siemens mode output directory.
+    Unlike /download, this does NOT require the file to be registered in the
+    ExportArtifact DB table — it only checks the session.
+
+    The filename parameter is the path relative to BASE_OUTPUT_DIR/siemens_runs/.
+    For example: /api/siemens/download/myproject_abc123/annotated_pdfs/annotated_test.pdf
+    """
+    if 'username' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+    username = session.get('username')
+
+    try:
+        # Security: resolve the path and verify it's under siemens_runs
+        siemens_base = os.path.join(BASE_OUTPUT_DIR, 'siemens_runs')
+        full_path = os.path.normpath(os.path.join(siemens_base, filename))
+        # Prevent directory traversal
+        if not full_path.startswith(siemens_base):
+            return jsonify({'error': 'Access denied'}), 403
+
+        if not os.path.exists(full_path) or not os.path.isfile(full_path):
+            return jsonify({'error': f'File not found: {filename}'}), 404
+
+        directory = os.path.dirname(full_path)
+        basename = os.path.basename(full_path)
+        logger.info(f"Siemens download: user={username} file={basename}")
+        return send_from_directory(directory, basename, as_attachment=True)
+    except Exception as e:
+        logger.error(f"Siemens download error: {e}", extra={'user': username})
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/download', methods=['GET'])
 def download_file():
     """

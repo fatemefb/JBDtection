@@ -4327,3 +4327,153 @@ body.home-body.light .module-cube .mini-cabinet {
     background:white;
 
 }
+/* ── Platform Switcher Bar ── */
+.platform-switcher-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 20px;
+    background: linear-gradient(135deg, var(--bg-strong), var(--bg-card));
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    margin-bottom: 16px;
+    box-shadow: var(--shadow-soft);
+}
+.platform-switcher-bar .bar-label {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: var(--muted);
+    text-transform: uppercase;
+}
+.platform-switcher-bar .mode-toggle {
+    display: inline-flex;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    padding: 3px;
+    gap: 2px;
+}
+.platform-switcher-bar .mode-btn {
+    padding: 6px 16px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: var(--r-xs);
+    transition: all var(--dur) var(--ease);
+    font-family: var(--font);
+}
+.platform-switcher-bar .mode-btn:hover {
+    color: var(--text);
+    background: rgba(44,224,207,.08);
+}
+.platform-switcher-bar .mode-btn.active {
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #04101f;
+    box-shadow: var(--shadow-btn);
+}
+.platform-switcher-bar .mode-description {
+    flex: 1;
+    font-size: 11px;
+    color: var(--muted);
+    text-align: start;
+}
+.platform-switcher-bar .status-pill {
+    padding: 3px 10px;
+    border-radius: var(--r-pill);
+    background: rgba(44,209,152,.14);
+    color: var(--success);
+    font-size: 10px;
+    font-weight: 700;
+    border: 1px solid rgba(44,209,152,.35);
+}
+.platform-switcher-bar .status-pill.is-na {
+    background: rgba(246,84,106,.14);
+    color: var(--danger);
+    border-color: rgba(246,84,106,.35);
+}
+
+/* ── Siemens Mode Form ── */
+.siemens-form-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow-soft);
+    display: none;
+}
+.siemens-form-card.active { display: block; }
+.siemens-form-card h3 { margin: 0 0 8px 0; color: var(--text); font-size: 18px; font-weight: 700; }
+.siemens-form-card .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 20px; line-height: 1.6; }
+.siemens-form-card .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.siemens-form-card .form-field { display: flex; flex-direction: column; gap: 6px; }
+.siemens-form-card .form-field label { font-size: 12px; font-weight: 600; color: var(--text); }
+.siemens-form-card .form-field label .req { color: var(--danger); }
+.siemens-form-card .form-field input[type="file"] {
+    padding: 8px; border: 1px dashed var(--border); border-radius: var(--r-sm);
+    font-size: 12px; background: var(--bg-soft); color: var(--text);
+}
+.siemens-form-card .form-field input[type="text"] {
+    padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--r-sm);
+    font-size: 13px; background: var(--bg-soft); color: var(--text);
+}
+.siemens-form-card .form-field input:focus {
+    outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(44,224,207,.18);
+}
+.siemens-form-card .submit-row { display: flex; align-items: center; gap: 12px; margin-top: 20px; }
+.siemens-form-card .submit-btn {
+    padding: 10px 24px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #04101f; border: none; border-radius: var(--r-md);
+    font-size: 13px; font-weight: 700; cursor: pointer;
+    transition: all var(--dur) var(--ease); font-family: var(--font);
+}
+.siemens-form-card .submit-btn:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
+.siemens-form-card .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.siemens-form-card .form-hint { font-size: 11px; color: var(--muted); }
+
+/* ── Siemens Result Panel ── */
+.siemens-result {
+    display: none;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow-soft);
+}
+.siemens-result.active { display: block; }
+.siemens-result h3 { color: var(--text); margin: 0 0 12px 0; font-size: 16px; }
+.siemens-result .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+.siemens-result .kpi-card {
+    background: var(--bg-soft); border: 1px solid var(--border); border-top: 3px solid var(--accent);
+    padding: 14px; text-align: center; border-radius: var(--r-sm);
+}
+.siemens-result .kpi-value { font-size: 24px; font-weight: 900; color: var(--text); line-height: 1; font-family: var(--mono); }
+.siemens-result .kpi-label { font-size: 11px; color: var(--muted); margin-top: 6px; }
+.siemens-result .download-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.siemens-result .download-link {
+    padding: 8px 16px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    color: #04101f; text-decoration: none; border-radius: var(--r-md);
+    font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px;
+    transition: all var(--dur) var(--ease);
+}
+.siemens-result .download-link:hover { filter: brightness(1.06); transform: translateY(-1px); }
+.siemens-result .tag-list {
+    max-height: 200px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--r-sm);
+    padding: 8px; background: var(--bg-soft); font-family: var(--mono); font-size: 11px; color: var(--text);
+}
+.siemens-result .tag-list-matched { color: var(--success); }
+.siemens-result .tag-list-unmatched { color: var(--danger); }
+.siemens-result .spinner {
+    display: inline-block; width: 14px; height: 14px;
+    border: 2px solid rgba(255,255,255,0.3); border-top-color: currentColor;
+    border-radius: 50%; animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }

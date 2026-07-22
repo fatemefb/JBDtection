@@ -283,3 +283,145 @@ def get_default_dimensions():
     except Exception as e:
         logger.error(f"Error in get_default_dimensions: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# CABINET PRESETS — per-project full state save/load
+# ═══════════════════════════════════════════════════════════════════════════
+# These endpoints let the frontend save the entire cabinet-type configuration
+# (cabinet_plan + cabinet_dimensions + card_catalog + type_count + has_directions)
+# as a named preset tied to a project, then reload it later by selecting the
+# preset from a dropdown. Storage is in the io_assignment_presets table.
+#
+#   POST   /api/dimensions/presets              → create or update by project_name
+#   GET    /api/dimensions/presets              → list all (lightweight summaries)
+#   GET    /api/dimensions/presets/<id>         → get one (full JSON state)
+#   DELETE /api/dimensions/presets/<id>         → delete one
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Lazy import so the blueprint still loads even if preset_store can't find
+# SessionLocal (e.g. in dev environments without DB wiring).
+def _get_preset_store():
+    try:
+        import preset_store  # type: ignore
+        return preset_store
+    except Exception:
+        try:
+            from apps.backend.modules.io_assignment import preset_store  # type: ignore
+            return preset_store
+        except Exception as e:
+            logger.error("dimension_api: cannot import preset_store: %s", e)
+            raise
+
+
+@dimension_bp.route("/presets", methods=["GET"])
+def list_presets():
+    """GET /api/dimensions/presets — list all saved presets (newest first)."""
+    username = _require_auth()
+    if not username:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+    try:
+        store = _get_preset_store()
+        presets = store.list_presets()
+        return jsonify({"status": "success", "presets": presets})
+    except Exception as e:
+        logger.error(f"Error listing presets: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@dimension_bp.route("/presets/<int:preset_id>", methods=["GET"])
+def get_preset(preset_id):
+    """GET /api/dimensions/presets/<id> — get one preset with full JSON state."""
+    username = _require_auth()
+    if not username:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+    try:
+        store = _get_preset_store()
+        preset = store.get_preset(preset_id)
+        if not preset:
+            return jsonify({"status": "error", "message": "Preset not found"}), 404
+        return jsonify({"status": "success", "preset": preset})
+    except Exception as e:
+        logger.error(f"Error getting preset {preset_id}: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@dimension_bp.route("/presets", methods=["POST"])
+def save_preset():
+    """
+    POST /api/dimensions/presets — create or update a preset by project_name.
+
+    Request body (JSON):
+    {
+        "project_name": "Project XYZ",
+        "description": "Optional notes",
+        "type_count": 3,
+        "has_directions": true,
+        "cabinet_plan": [
+            {"type": "Type 1", "direction": "FRONT", "quantity": 2, "priority": 1},
+            ...
+        ],
+        "cabinet_dimensions": {
+            "Type 1": {
+                "FRONT": {
+                    "terminal_rail": {...},
+                    "card_column": {...},
+                    "side_checked": true,
+                    "side_count": 2,
+                    "side_length_mm": 600,
+                    "side_left_type": "columns",
+                    "side_right_type": "columns",
+                    "side_left_count": 1,
+                    "side_right_count": 1
+                },
+                "REAR": {...}
+            },
+            "Type 2": {...},
+            "Type 3": {...}
+        },
+        "card_catalog": {
+            "Barrier Board (AI)": 300,
+            "Barrier Board (AO)": 300,
+            ...
+        }
+    }
+
+    Response:
+    {
+        "status": "success",
+        "id": 42,
+        "action": "created" | "updated",
+        "project_name": "Project XYZ"
+    }
+    """
+    username = _require_auth()
+    if not username:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+    try:
+        store = _get_preset_store()
+        data = request.get_json(force=True)
+        if not data or not data.get("project_name"):
+            return jsonify({"status": "error", "message": "project_name is required"}), 400
+        result = store.upsert_preset(data, username=username)
+        return jsonify({"status": "success", **result})
+    except Exception as e:
+        logger.error(f"Error saving preset: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@dimension_bp.route("/presets/<int:preset_id>", methods=["DELETE"])
+def delete_preset(preset_id):
+    """DELETE /api/dimensions/presets/<id> — delete a preset."""
+    username = _require_auth()
+    if not username:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+    try:
+        store = _get_preset_store()
+        deleted = store.delete_preset(preset_id)
+        if not deleted:
+            return jsonify({"status": "error", "message": "Preset not found"}), 404
+        return jsonify({"status": "success", "deleted": True, "id": preset_id})
+    except Exception as e:
+        logger.error(f"Error deleting preset {preset_id}: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+

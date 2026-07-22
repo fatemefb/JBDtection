@@ -198,6 +198,32 @@
 
                     <!-- ── Dimension Input Panel (hidden by default, shown when dimension mode is selected) ── -->
                     <div class="dimension-panel" id="dimensionPanel">
+                        <!-- ── PRESET BAR — Save/Load project configurations ── -->
+                        <div class="preset-bar" id="presetBar" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:10px; margin-bottom:10px; border:1px solid var(--border, #ddd); border-radius:6px; background:var(--surface-2, rgba(0,0,0,0.02));">
+                            <div style="display:flex; align-items:center; gap:6px; flex:1; min-width:200px;">
+                                <i class="fas fa-bookmark" style="color:var(--accent);"></i>
+                                <label style="font-size:0.85rem; font-weight:600; white-space:nowrap;">Project Preset:</label>
+                                <select id="presetSelect" style="flex:1; min-width:160px; padding:6px 8px; border-radius:4px; border:1px solid var(--border, #ccc); background:var(--surface, #fff); color:var(--text, #333);">
+                                    <option value="">— Select preset —</option>
+                                </select>
+                            </div>
+                            <button type="button" class="primary-btn" id="presetLoadBtn" style="padding:6px 12px; font-size:0.8rem;" title="Load selected preset into all cabinet types">
+                                <i class="fas fa-folder-open"></i> Load
+                            </button>
+                            <button type="button" class="primary-btn" id="presetSaveBtn" style="padding:6px 12px; font-size:0.8rem; background:var(--accent-2);" title="Save current configuration as a new preset">
+                                <i class="fas fa-save"></i> Save As…
+                            </button>
+                            <button type="button" class="primary-btn" id="presetUpdateBtn" style="padding:6px 12px; font-size:0.8rem; display:none;" title="Update the currently-selected preset with current values">
+                                <i class="fas fa-sync"></i> Update
+                            </button>
+                            <button type="button" class="primary-btn" id="presetDeleteBtn" style="padding:6px 12px; font-size:0.8rem; background:#e74c3c; display:none;" title="Delete the currently-selected preset">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                            <button type="button" class="primary-btn" id="presetRefreshBtn" style="padding:6px 10px; font-size:0.8rem;" title="Refresh preset list">
+                                <i class="fas fa-rotate"></i>
+                            </button>
+                        </div>
+
                         <!-- Content is dynamically generated per cabinet type × direction -->
                         <div id="dimensionContent">
                             <p style="color: #999; font-size: 0.85rem; padding: 20px; text-align: center;">
@@ -206,6 +232,9 @@
                             </p>
                         </div>
                     </div>
+
+                    <!-- ── Toast for save confirmation ── -->
+                    <div id="dimToast" style="position:fixed; bottom:24px; right:24px; padding:12px 20px; border-radius:6px; background:var(--accent, #27ae96); color:#fff; font-weight:600; font-size:0.9rem; box-shadow:0 4px 16px rgba(0,0,0,0.15); z-index:9999; opacity:0; pointer-events:none; transition:opacity 0.25s, transform 0.25s; transform:translateY(8px);"></div>
 
 
                     <div class="limits-grid">
@@ -1795,17 +1824,49 @@
                 // Save any unsaved input from the current DOM before re-rendering
                 this.saveCurrentState();
 
-                // Use stored defaults if available, otherwise fallback
+                // Use stored defaults if available, otherwise fallback.
+                // FIELD_MAP provides a single source of truth mapping UI field names
+                // (as passed to def()) to their nested path inside dimData.
+                // Without this, fields like column_count / col_length_mm / side_*
+                // were silently falling through to terminal_rail.<wrong-key> and
+                // always returning undefined — causing values to reset to defaults
+                // every time the user switched cabinet-type tabs.
+                const FIELD_MAP = {
+                    // terminal_rail.* — data-field === storage key
+                    rail_count:         ['terminal_rail', 'rail_count'],
+                    rail_length_mm:     ['terminal_rail', 'rail_length_mm'],
+                    top_gap_mm:         ['terminal_rail', 'top_gap_mm'],
+                    bottom_gap_mm:      ['terminal_rail', 'bottom_gap_mm'],
+                    terminal_height_mm: ['terminal_rail', 'terminal_height_mm'],
+                    jb_gap_mm:          ['terminal_rail', 'jb_gap_mm'],
+
+                    // card_column.* — data-field === storage key (except col_* aliases)
+                    column_count:       ['card_column', 'column_count'],
+                    column_length_mm:   ['card_column', 'column_length_mm'],
+                    col_length_mm:      ['card_column', 'column_length_mm'],  // alias used in def()
+                    col_top_gap_mm:     ['card_column', 'top_gap_mm'],
+                    col_bottom_gap_mm:  ['card_column', 'bottom_gap_mm'],
+                    reserved_space_mm:  ['card_column', 'reserved_space_mm'],
+                    card_gap_mm:        ['card_column', 'card_gap_mm'],
+
+                    // top-level side_* (stored directly on dimData, not nested)
+                    side_checked:       [null, 'side_checked'],
+                    side_count:         [null, 'side_count'],
+                    side_length_mm:     [null, 'side_length_mm'],
+                    side_left_type:     [null, 'side_left_type'],
+                    side_right_type:    [null, 'side_right_type'],
+                    side_left_count:    [null, 'side_left_count'],
+                    side_right_count:   [null, 'side_right_count']
+                };
+
                 const getStored = (dir, field) => {
                     const stored = this.cabinetDimensions[`Type ${typeNum}`]?.[dir];
                     if (!stored) return undefined;
-                    if (field.startsWith('col_')) {
-                        return stored.card_column?.[field.replace('col_', '')];
-                    }
-                    if (field === 'side_count') return stored.side_count;
-                    if (field === 'side_length_mm') return stored.side_length_mm;
-                    if (field === 'side_element_count') return undefined;
-                    return stored.terminal_rail?.[field];
+                    const path = FIELD_MAP[field];
+                    if (!path) return undefined;
+                    const [sub, key] = path;
+                    // sub === null → top-level field on dimData
+                    return sub ? stored[sub]?.[key] : stored[key];
                 };
 
                 let html = '';
@@ -1885,7 +1946,10 @@
                 }
 
                 html += '<div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">';
-                html += '<button class="primary-btn" id="applyDimensionsActive" style="flex:1; min-width:160px;">APPLY THIS TYPE</button>';
+                html += '<button class="primary-btn" id="saveTypeBtn" style="flex:1; min-width:140px; background:var(--accent, #27ae96);" title="Commit current type\'s inputs to memory and switch tabs without losing values">';
+                html += '<i class="fas fa-check"></i> SAVE THIS TYPE';
+                html += '</button>';
+                html += '<button class="primary-btn" id="applyDimensionsActive" style="flex:1; min-width:140px;">APPLY THIS TYPE</button>';
                 html += '<button class="primary-btn" id="applyDimensionsAll" style="flex:2; min-width:220px; background:var(--accent-2);">SAVE ALL &amp; APPLY TO PERCENTAGES</button>';
                 html += '</div>';
 
@@ -1957,6 +2021,17 @@
                 const applyAllBtn = document.getElementById('applyDimensionsAll');
                 if (applyAllBtn) {
                     applyAllBtn.addEventListener('click', () => this.applyToPercentages(true));
+                }
+
+                // SAVE THIS TYPE — explicit save button with toast feedback
+                const saveTypeBtn = document.getElementById('saveTypeBtn');
+                if (saveTypeBtn) {
+                    saveTypeBtn.addEventListener('click', () => {
+                        this.saveCurrentState();
+                        const activeTab = document.querySelector('.tab-btn.active');
+                        const typeNum = activeTab ? activeTab.dataset.type : '?';
+                        this.showToast(`Type ${typeNum} settings saved ✓`, 'success');
+                    });
                 }
 
                 // Initial calculation
@@ -2242,6 +2317,328 @@
 
                 console.log(`[DimensionMode] getCabinetLimits() → ${Object.keys(cabinetLimits).length} type/dir entries`, cabinetLimits);
                 return cabinetLimits;
+            },
+
+            // ═══════════════════════════════════════════════════════════════
+            // PRESETS — per-project save/load full cabinet configuration
+            // ═══════════════════════════════════════════════════════════════
+
+            // Show a transient toast notification (bottom-right).
+            // type: 'success' | 'error' | 'info' (controls background color)
+            _toastTimer: null,
+            showToast(message, type = 'success') {
+                const toast = document.getElementById('dimToast');
+                if (!toast) {
+                    // Fallback to alert if toast element is missing
+                    console.log('[DimensionMode] toast:', message);
+                    return;
+                }
+                const bgMap = {
+                    success: 'var(--accent, #27ae96)',
+                    error: '#e74c3c',
+                    info: 'var(--accent-2, #2980b9)'
+                };
+                toast.style.background = bgMap[type] || bgMap.success;
+                toast.textContent = message;
+                toast.style.opacity = '1';
+                toast.style.transform = 'translateY(0)';
+                if (this._toastTimer) clearTimeout(this._toastTimer);
+                this._toastTimer = setTimeout(() => {
+                    toast.style.opacity = '0';
+                    toast.style.transform = 'translateY(8px)';
+                }, 2400);
+            },
+
+            // Collect the FULL current cabinet_plan from the DOM (per-type
+            // quantity inputs + has_directions + type_count).
+            collectCabinetPlan() {
+                const typeCount = parseInt(document.getElementById('typeCount').value, 10) || 1;
+                const hasDirs = document.getElementById('hasDirections').checked;
+                const plan = [];
+                let priority = 1;
+                for (let t = 1; t <= typeCount; t++) {
+                    if (hasDirs) {
+                        const frontEl = document.getElementById(`qty-type${t}-front`);
+                        const rearEl = document.getElementById(`qty-type${t}-rear`);
+                        const fq = frontEl ? (parseInt(frontEl.value, 10) || 0) : 0;
+                        const rq = rearEl ? (parseInt(rearEl.value, 10) || 0) : 0;
+                        if (fq > 0) plan.push({type: `Type ${t}`, direction: 'FRONT', quantity: fq, priority: priority++});
+                        if (rq > 0) plan.push({type: `Type ${t}`, direction: 'REAR', quantity: rq, priority: priority++});
+                    } else {
+                        const el = document.getElementById(`qty-type${t}`);
+                        const q = el ? (parseInt(el.value, 10) || 0) : 0;
+                        if (q > 0) plan.push({type: `Type ${t}`, direction: 'SINGLE', quantity: q, priority: priority++});
+                    }
+                }
+                return plan;
+            },
+
+            // Serialize the FULL current DimensionMode state into a plain object
+            // suitable for POSTing to /api/dimensions/presets.
+            serializeState() {
+                // Make sure every type's current DOM input values are in cabinetDimensions
+                this.saveCurrentState();
+                this.ensureAllTypesPopulated();
+
+                const typeCount = parseInt(document.getElementById('typeCount').value, 10) || 1;
+                const hasDirs = document.getElementById('hasDirections').checked;
+
+                return {
+                    type_count: typeCount,
+                    has_directions: hasDirs,
+                    cabinet_plan: this.collectCabinetPlan(),
+                    cabinet_dimensions: JSON.parse(JSON.stringify(this.cabinetDimensions)),
+                    card_catalog: JSON.parse(JSON.stringify(this.cardCatalog))
+                };
+            },
+
+            // Apply a preset (full state object loaded from DB) to the UI.
+            // Rebuilds DimensionMode.cabinetDimensions, cardCatalog, typeCount,
+            // hasDirections, and per-type quantity inputs — then re-renders.
+            applyPreset(preset) {
+                if (!preset || !preset.cabinet_dimensions) {
+                    this.showToast('Invalid preset data', 'error');
+                    return false;
+                }
+                try {
+                    // 1) type_count
+                    if (typeof preset.type_count === 'number') {
+                        const typeCountEl = document.getElementById('typeCount');
+                        if (typeCountEl) {
+                            typeCountEl.value = String(preset.type_count);
+                            // Trigger the existing change handler so tabs/qty rows are rebuilt
+                            typeCountEl.dispatchEvent(new Event('change', {bubbles: true}));
+                        }
+                    }
+
+                    // 2) has_directions
+                    if (typeof preset.has_directions === 'boolean') {
+                        const hasDirsEl = document.getElementById('hasDirections');
+                        if (hasDirsEl && hasDirsEl.checked !== preset.has_directions) {
+                            hasDirsEl.checked = preset.has_directions;
+                            hasDirsEl.dispatchEvent(new Event('change', {bubbles: true}));
+                        }
+                    }
+
+                    // 3) cabinet_dimensions (deep merge — overwrite our in-memory state)
+                    this.cabinetDimensions = JSON.parse(JSON.stringify(preset.cabinet_dimensions));
+
+                    // 4) card_catalog
+                    if (preset.card_catalog && typeof preset.card_catalog === 'object') {
+                        this.cardCatalog = Object.assign({}, this.cardCatalog, preset.card_catalog);
+                    }
+
+                    // 5) cabinet_plan (per-type quantities)
+                    if (Array.isArray(preset.cabinet_plan)) {
+                        for (const item of preset.cabinet_plan) {
+                            const t = parseInt(String(item.type || '').replace(/[^0-9]/g, ''), 10);
+                            if (!t) continue;
+                            const qty = parseInt(item.quantity, 10) || 0;
+                            const dir = (item.direction || 'SINGLE').toUpperCase();
+                            if (dir === 'FRONT') {
+                                const el = document.getElementById(`qty-type${t}-front`);
+                                if (el) el.value = String(qty);
+                            } else if (dir === 'REAR') {
+                                const el = document.getElementById(`qty-type${t}-rear`);
+                                if (el) el.value = String(qty);
+                            } else {
+                                const el = document.getElementById(`qty-type${t}`);
+                                if (el) el.value = String(qty);
+                            }
+                        }
+                    }
+
+                    // 6) Re-render the dimension panel for the active tab so the
+                    // restored values appear in the DOM
+                    if (this.active) {
+                        this.renderDimensionUI();
+                    }
+
+                    // 7) Apply calculated percentages to all limit blocks
+                    this.applyToPercentages(true);
+
+                    const name = preset.project_name || '(unnamed)';
+                    this.showToast(`Loaded preset "${name}" ✓`, 'success');
+                    return true;
+                } catch (e) {
+                    console.error('[DimensionMode] applyPreset error:', e);
+                    this.showToast('Failed to apply preset: ' + e.message, 'error');
+                    return false;
+                }
+            },
+
+            // ── Preset API helpers ─────────────────────────────────────────
+            async fetchPresets() {
+                try {
+                    const resp = await fetch('/api/dimensions/presets', {credentials: 'same-origin'});
+                    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                    const data = await resp.json();
+                    return (data && data.status === 'success') ? (data.presets || []) : [];
+                } catch (e) {
+                    console.error('[DimensionMode] fetchPresets error:', e);
+                    return [];
+                }
+            },
+
+            async fetchPresetById(id) {
+                try {
+                    const resp = await fetch(`/api/dimensions/presets/${id}`, {credentials: 'same-origin'});
+                    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                    const data = await resp.json();
+                    return (data && data.status === 'success') ? data.preset : null;
+                } catch (e) {
+                    console.error('[DimensionMode] fetchPresetById error:', e);
+                    return null;
+                }
+            },
+
+            async postPreset(payload) {
+                try {
+                    const resp = await fetch('/api/dimensions/presets', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        credentials: 'same-origin',
+                        body: JSON.stringify(payload)
+                    });
+                    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                    return await resp.json();
+                } catch (e) {
+                    console.error('[DimensionMode] postPreset error:', e);
+                    return {status: 'error', message: e.message};
+                }
+            },
+
+            async deletePresetById(id) {
+                try {
+                    const resp = await fetch(`/api/dimensions/presets/${id}`, {
+                        method: 'DELETE',
+                        credentials: 'same-origin'
+                    });
+                    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                    return await resp.json();
+                } catch (e) {
+                    console.error('[DimensionMode] deletePresetById error:', e);
+                    return {status: 'error', message: e.message};
+                }
+            },
+
+            // Populate the preset <select> dropdown from the API.
+            async refreshPresetDropdown(selectedId = null) {
+                const sel = document.getElementById('presetSelect');
+                if (!sel) return;
+                const presets = await this.fetchPresets();
+                // Preserve the placeholder option
+                let html = '<option value="">— Select preset —</option>';
+                for (const p of presets) {
+                    const id = p.id;
+                    const name = (p.project_name || '').replace(/</g, '&lt;');
+                    const tc = p.type_count || '?';
+                    const dirs = p.has_directions ? 'F/R' : 'S';
+                    const updated = (p.updated_at || '').slice(0, 16).replace('T', ' ');
+                    const label = `${name}  (${tc} types · ${dirs})  ${updated}`;
+                    const selAttr = (selectedId !== null && String(selectedId) === String(id)) ? ' selected' : '';
+                    html += `<option value="${id}"${selAttr}>${label}</option>`;
+                }
+                sel.innerHTML = html;
+                // Show/hide Update + Delete buttons depending on whether a preset is selected
+                this._syncPresetButtons();
+            },
+
+            _syncPresetButtons() {
+                const sel = document.getElementById('presetSelect');
+                const updateBtn = document.getElementById('presetUpdateBtn');
+                const deleteBtn = document.getElementById('presetDeleteBtn');
+                const hasSelection = !!(sel && sel.value);
+                if (updateBtn) updateBtn.style.display = hasSelection ? '' : 'none';
+                if (deleteBtn) deleteBtn.style.display = hasSelection ? '' : 'none';
+            },
+
+            // Initialize preset UI bindings — called once on page load.
+            initPresetUI() {
+                const sel = document.getElementById('presetSelect');
+                const loadBtn = document.getElementById('presetLoadBtn');
+                const saveBtn = document.getElementById('presetSaveBtn');
+                const updateBtn = document.getElementById('presetUpdateBtn');
+                const deleteBtn = document.getElementById('presetDeleteBtn');
+                const refreshBtn = document.getElementById('presetRefreshBtn');
+
+                if (sel) {
+                    sel.addEventListener('change', () => this._syncPresetButtons());
+                }
+                if (loadBtn) {
+                    loadBtn.addEventListener('click', async () => {
+                        if (!sel || !sel.value) {
+                            this.showToast('Select a preset first', 'info');
+                            return;
+                        }
+                        const preset = await this.fetchPresetById(parseInt(sel.value, 10));
+                        if (!preset) {
+                            this.showToast('Preset not found', 'error');
+                            return;
+                        }
+                        this.applyPreset(preset);
+                    });
+                }
+                if (saveBtn) {
+                    saveBtn.addEventListener('click', async () => {
+                        const name = prompt('Enter project name for this preset:');
+                        if (!name || !name.trim()) return;
+                        const description = prompt('Optional description (leave blank to skip):') || '';
+                        const payload = this.serializeState();
+                        payload.project_name = name.trim();
+                        payload.description = description.trim();
+                        const result = await this.postPreset(payload);
+                        if (result && result.status === 'success') {
+                            const verb = result.action === 'updated' ? 'Updated' : 'Saved';
+                            this.showToast(`${verb} preset "${name}" ✓`, 'success');
+                            await this.refreshPresetDropdown(result.id);
+                        } else {
+                            this.showToast('Save failed: ' + ((result && result.message) || 'unknown'), 'error');
+                        }
+                    });
+                }
+                if (updateBtn) {
+                    updateBtn.addEventListener('click', async () => {
+                        if (!sel || !sel.value) return;
+                        const id = parseInt(sel.value, 10);
+                        const selectedOption = sel.options[sel.selectedIndex];
+                        const currentName = selectedOption ? selectedOption.textContent.replace(/\s+\(.*$/, '').trim() : '';
+                        const payload = this.serializeState();
+                        payload.project_name = currentName;
+                        const result = await this.postPreset(payload);
+                        if (result && result.status === 'success') {
+                            this.showToast(`Updated preset "${currentName}" ✓`, 'success');
+                            await this.refreshPresetDropdown(id);
+                        } else {
+                            this.showToast('Update failed: ' + ((result && result.message) || 'unknown'), 'error');
+                        }
+                    });
+                }
+                if (deleteBtn) {
+                    deleteBtn.addEventListener('click', async () => {
+                        if (!sel || !sel.value) return;
+                        const id = parseInt(sel.value, 10);
+                        const selectedOption = sel.options[sel.selectedIndex];
+                        const name = selectedOption ? selectedOption.textContent.replace(/\s+\(.*$/, '').trim() : '';
+                        if (!confirm(`Delete preset "${name}"? This cannot be undone.`)) return;
+                        const result = await this.deletePresetById(id);
+                        if (result && result.status === 'success') {
+                            this.showToast(`Deleted preset "${name}" ✓`, 'success');
+                            await this.refreshPresetDropdown();
+                        } else {
+                            this.showToast('Delete failed: ' + ((result && result.message) || 'unknown'), 'error');
+                        }
+                    });
+                }
+                if (refreshBtn) {
+                    refreshBtn.addEventListener('click', () => {
+                        this.refreshPresetDropdown();
+                        this.showToast('Preset list refreshed', 'info');
+                    });
+                }
+
+                // Initial load
+                this.refreshPresetDropdown();
             }
         };
 
@@ -2994,6 +3391,11 @@
 
                 // Initialize on page load
                 DimensionMode.init();
+                // Bind preset UI (dropdown + load/save/update/delete/refresh buttons).
+                // Safe to call even if dimension mode is not active — the preset bar
+                // is shown only inside #dimensionPanel which is hidden until dimension
+                // mode is toggled on.
+                DimensionMode.initPresetUI();
 
                 // ═══════════════════════════════════════════════════════════════
                 // EXTEND buildConfig() — NOT replace it
