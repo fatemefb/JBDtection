@@ -1,0 +1,485 @@
+!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مدیریت کاربران — Control IntelliCraft</title>
+    <link rel="sty<lesheet" href="{{ url_for('static', filename='css/global.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        .users-container {
+            max-width: 1100px;
+            margin: 24px auto;
+            padding: 0 20px;
+        }
+        .users-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        .users-header h1 {
+            color: var(--text);
+            font-size: 1.6rem;
+            margin: 0;
+        }
+        .users-header .btn-add {
+            padding: 10px 20px;
+            background: var(--accent);
+            color: var(--bg);
+            border: none;
+            border-radius: var(--r-sm);
+            font-weight: 600;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        .users-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--bg-card);
+            border-radius: var(--r-md);
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+        .users-table th {
+            background: var(--bg-soft);
+            color: var(--text);
+            padding: 14px 16px;
+            text-align: right;
+            font-weight: 600;
+            font-size: 0.9rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .users-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text);
+            font-size: 0.9rem;
+        }
+        .users-table tr:hover td { background: rgba(44,224,207,0.04); }
+        .role-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: var(--r-pill);
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .role-admin { background: rgba(245,180,0,0.15); color: var(--warning); border: 1px solid var(--warning); }
+        .role-engineer { background: rgba(44,224,207,0.15); color: var(--accent); border: 1px solid var(--accent); }
+        .role-viewer { background: rgba(43,179,224,0.15); color: var(--info); border: 1px solid var(--info); }
+        .status-active { color: var(--success); font-weight: 600; }
+        .status-inactive { color: var(--danger); font-weight: 600; }
+        .action-btn {
+            padding: 5px 10px;
+            border: 1px solid var(--border);
+            background: var(--bg-soft);
+            color: var(--text);
+            border-radius: var(--r-xs);
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-family: inherit;
+            margin-inline-end: 4px;
+        }
+        .action-btn:hover { border-color: var(--accent); color: var(--accent); }
+        .action-btn.danger:hover { border-color: var(--danger); color: var(--danger); }
+        .action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--r-lg);
+            padding: 28px;
+            width: 90%;
+            max-width: 480px;
+            box-shadow: var(--shadow-hard);
+        }
+        .modal h2 {
+            margin: 0 0 20px 0;
+            color: var(--text);
+            font-size: 1.3rem;
+        }
+        .modal-field { margin-bottom: 16px; }
+        .modal-field label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 600;
+            color: var(--text);
+            font-size: 0.85rem;
+        }
+        .modal-field input, .modal-field select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: var(--r-xs);
+            background: var(--bg-soft);
+            color: var(--text);
+            font-family: inherit;
+            font-size: 0.9rem;
+        }
+        .modal-field input:focus, .modal-field select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 24px;
+        }
+        .modal-btn {
+            padding: 9px 18px;
+            border: 1px solid var(--border);
+            background: var(--bg-soft);
+            color: var(--text);
+            border-radius: var(--r-xs);
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 0.9rem;
+        }
+        .modal-btn.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); font-weight: 600; }
+        .modal-btn.danger { background: var(--danger); color: white; border-color: var(--danger); }
+        .modal-hint {
+            font-size: 0.75rem;
+            color: var(--muted);
+            margin-top: 4px;
+        }
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 24px;
+            border-radius: var(--r-sm);
+            color: white;
+            font-weight: 600;
+            font-size: 0.9rem;
+            z-index: 2000;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .toast.success { background: var(--success); }
+        .toast.error { background: var(--danger); }
+        .toast.show { opacity: 1; }
+    </style>
+</head>
+<body class="home-body jb-body">
+    <div class="home-shell">
+        <!-- Sidebar (همان sidebar فعلی سایت) -->
+        <aside class="side-panel" id="sidePanel">
+            <div class="side-header">
+                <div class="brand">
+                    <span class="brand-kicker">Control IntelliCraft</span>
+                    <h1 class="brand-title">User Management</h1>
+                </div>
+            </div>
+            <nav class="side-nav">
+                <a class="nav-item" href="/home"><i class="fas fa-house"></i> خانه</a>
+                <a class="nav-item" href="/dashboard"><i class="fas fa-chart-line"></i> JBDetection</a>
+                <a class="nav-item" href="/io-assignment"><i class="fas fa-project-diagram"></i> IO Assignment</a>
+                <a class="nav-item active" href="/admin/users"><i class="fas fa-users"></i> مدیریت کاربران</a>
+                <a class="nav-item" href="/logout"><i class="fas fa-sign-out-alt"></i> خروج</a>
+            </nav>
+        </aside>
+
+        <main class="main-content" style="padding: 24px;">
+            <div class="users-container">
+                <div class="users-header">
+                    <h1><i class="fas fa-users"></i> مدیریت کاربران</h1>
+                    <button class="btn-add" onclick="openCreateModal()">
+                        <i class="fas fa-user-plus"></i> افزودن کاربر
+                    </button>
+                </div>
+
+                <table class="users-table" id="usersTable">
+                    <thead>
+                        <tr>
+                            <th>نام کاربری</th>
+                            <th>نام نمایشی</th>
+                            <th>نقش</th>
+                            <th>ایمیل</th>
+                            <th>وضعیت</th>
+                            <th>عملیات</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersTableBody">
+                        <tr><td colspan="6" style="text-align:center; padding:40px; color:var(--muted);">در حال بارگذاری...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal: Create/Edit User -->
+    <div class="modal-overlay" id="userModal">
+        <div class="modal">
+            <h2 id="modalTitle">افزودن کاربر جدید</h2>
+            <input type="hidden" id="modalMode" value="create">
+            <input type="hidden" id="modalOriginalUsername" value="">
+
+            <div class="modal-field">
+                <label for="modalUsername">نام کاربری *</label>
+                <input type="text" id="modalUsername" required>
+                <div class="modal-hint" id="modalUsernameHint">نام کاربری برای ورود به سیستم</div>
+            </div>
+
+            <div class="modal-field">
+                <label for="modalDisplayName">نام نمایشی</label>
+                <input type="text" id="modalDisplayName" placeholder="مثلا: مهندس احمدی">
+            </div>
+
+            <div class="modal-field">
+                <label for="modalEmail">ایمیل</label>
+                <input type="email" id="modalEmail" placeholder="user@example.com">
+            </div>
+
+            <div class="modal-field">
+                <label for="modalRole">نقش *</label>
+                <select id="modalRole">
+                    <option value="viewer">Viewer (فقط مشاهده)</option>
+                    <option value="engineer" selected>Engineer (اجرای پردازش)</option>
+                    <option value="admin">Admin (مدیریت کامل)</option>
+                </select>
+                <div class="modal-hint">
+                    <strong>Viewer:</strong> فقط مشاهده‌ی پروژه‌ها و خروجی‌ها<br>
+                    <strong>Engineer:</strong> اجرای پردازش PDF و IO Assignment، فقط پروژه‌های خودش<br>
+                    <strong>Admin:</strong> دیدن همه‌ی پروژه‌ها + مدیریت کاربران
+                </div>
+            </div>
+
+            <div class="modal-field">
+                <label for="modalPassword">رمز عبور *</label>
+                <input type="password" id="modalPassword" required>
+                <div class="modal-hint" id="modalPasswordHint">حداقل ۶ کاراکتر</div>
+            </div>
+
+            <div class="modal-field" id="modalActiveField" style="display:none;">
+                <label>
+                    <input type="checkbox" id="modalActive" checked>
+                    حساب فعال
+                </label>
+                <div class="modal-hint">اگر غیرفعال باشد، کاربر نمی‌تواند وارد شود</div>
+            </div>
+
+            <div class="modal-actions">
+                <button class="modal-btn" onclick="closeModal()">انصراف</button>
+                <button class="modal-btn primary" id="modalSaveBtn" onclick="saveUser()">ذخیره</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Delete Confirmation -->
+    <div class="modal-overlay" id="deleteModal">
+        <div class="modal" style="max-width: 380px;">
+            <h2><i class="fas fa-exclamation-triangle" style="color: var(--danger);"></i> تأیید حذف</h2>
+            <p style="color: var(--text); margin: 16px 0;">
+                آیا از حذف کاربر "<strong id="deleteUsername"></strong>" مطمئن هستید؟
+                این عملیات قابل بازگشت نیست.
+            </p>
+            <div class="modal-actions">
+                <button class="modal-btn" onclick="closeDeleteModal()">انصراف</button>
+                <button class="modal-btn danger" id="deleteConfirmBtn" onclick="confirmDelete()">حذف</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        let currentUserRole = '{{ role|default("admin") }}';
+        let currentUsername = '{{ username|default("") }}';
+
+        // ── Load users on page load ─────────────────────────────────────────
+        document.addEventListener('DOMContentLoaded', loadUsers);
+
+        async function loadUsers() {
+            try {
+                const resp = await fetch('/api/admin/users', {credentials: 'same-origin'});
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const data = await resp.json();
+                if (data.status !== 'success') throw new Error(data.message || 'failed');
+
+                const tbody = document.getElementById('usersTableBody');
+                if (!data.users || data.users.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:40px; color:var(--muted);">هیچ کاربری یافت نشد</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = data.users.map(u => {
+                    const roleClass = 'role-' + u.role;
+                    const roleLabel = {admin: 'Admin', engineer: 'Engineer', viewer: 'Viewer'}[u.role] || u.role;
+                    const statusClass = u.active ? 'status-active' : 'status-inactive';
+                    const statusLabel = u.active ? 'فعال' : 'غیرفعال';
+                    const isSelf = u.username === currentUsername;
+                    return `
+                        <tr>
+                            <td><strong>${u.username}</strong>${isSelf ? ' <span style="color:var(--accent); font-size:0.75rem;">(شما)</span>' : ''}</td>
+                            <td>${u.display_name || '-'}</td>
+                            <td><span class="role-badge ${roleClass}">${roleLabel}</span></td>
+                            <td>${u.email || '-'}</td>
+                            <td><span class="${statusClass}">${statusLabel}</span></td>
+                            <td>
+                                <button class="action-btn" onclick="openEditModal('${u.username}')"><i class="fas fa-edit"></i> ویرایش</button>
+                                <button class="action-btn danger" onclick="openDeleteModal('${u.username}')" ${isSelf ? 'disabled' : ''}><i class="fas fa-trash"></i> حذف</button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (err) {
+                showToast('خطا در بارگذاری کاربران: ' + err.message, 'error');
+            }
+        }
+
+        // ── Create modal ────────────────────────────────────────────────────
+        function openCreateModal() {
+            document.getElementById('modalTitle').textContent = 'افزودن کاربر جدید';
+            document.getElementById('modalMode').value = 'create';
+            document.getElementById('modalOriginalUsername').value = '';
+            document.getElementById('modalUsername').value = '';
+            document.getElementById('modalUsername').disabled = false;
+            document.getElementById('modalDisplayName').value = '';
+            document.getElementById('modalEmail').value = '';
+            document.getElementById('modalRole').value = 'engineer';
+            document.getElementById('modalPassword').value = '';
+            document.getElementById('modalPassword').required = true;
+            document.getElementById('modalPasswordHint').textContent = 'حداقل ۶ کاراکتر';
+            document.getElementById('modalActiveField').style.display = 'none';
+            document.getElementById('userModal').classList.add('active');
+        }
+
+        async function openEditModal(username) {
+            try {
+                const resp = await fetch('/api/admin/users', {credentials: 'same-origin'});
+                const data = await resp.json();
+                const user = data.users.find(u => u.username === username);
+                if (!user) { showToast('کاربر یافت نشد', 'error'); return; }
+
+                document.getElementById('modalTitle').textContent = 'ویرایش کاربر: ' + username;
+                document.getElementById('modalMode').value = 'edit';
+                document.getElementById('modalOriginalUsername').value = username;
+                document.getElementById('modalUsername').value = username;
+                document.getElementById('modalUsername').disabled = true; // can't rename
+                document.getElementById('modalDisplayName').value = user.display_name || '';
+                document.getElementById('modalEmail').value = user.email || '';
+                document.getElementById('modalRole').value = user.role;
+                document.getElementById('modalPassword').value = '';
+                document.getElementById('modalPassword').required = false;
+                document.getElementById('modalPasswordHint').textContent = 'اگر نمی‌خواهید رمز را تغییر دهید، خالی بگذارید';
+                document.getElementById('modalActive').checked = user.active;
+                document.getElementById('modalActiveField').style.display = '';
+                document.getElementById('userModal').classList.add('active');
+            } catch (err) {
+                showToast('خطا: ' + err.message, 'error');
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('userModal').classList.remove('active');
+        }
+
+        async function saveUser() {
+            const mode = document.getElementById('modalMode').value;
+            const originalUsername = document.getElementById('modalOriginalUsername').value;
+            const payload = {
+                username: document.getElementById('modalUsername').value.trim(),
+                display_name: document.getElementById('modalDisplayName').value.trim(),
+                email: document.getElementById('modalEmail').value.trim(),
+                role: document.getElementById('modalRole').value,
+                password: document.getElementById('modalPassword').value,
+            };
+
+            if (!payload.username || !payload.password) {
+                showToast('نام کاربری و رمز عبور الزامی است', 'error');
+                return;
+            }
+            if (mode === 'create' && payload.password.length < 6) {
+                showToast('رمز عبور باید حداقل ۶ کاراکتر باشد', 'error');
+                return;
+            }
+
+            if (mode === 'edit') {
+                payload.active = document.getElementById('modalActive').checked;
+            }
+
+            try {
+                const url = mode === 'create' ? '/api/admin/users' : '/api/admin/users/' + encodeURIComponent(originalUsername);
+                const method = mode === 'create' ? 'POST' : 'PUT';
+                const resp = await fetch(url, {
+                    method: method,
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload),
+                    credentials: 'same-origin',
+                });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    showToast(data.message || 'ذخیره شد', 'success');
+                    closeModal();
+                    loadUsers();
+                } else {
+                    showToast(data.message || 'خطا', 'error');
+                }
+            } catch (err) {
+                showToast('خطا: ' + err.message, 'error');
+            }
+        }
+
+        // ── Delete modal ───────────────────────────────────────────────────
+        function openDeleteModal(username) {
+            document.getElementById('deleteUsername').textContent = username;
+            document.getElementById('deleteConfirmBtn').dataset.username = username;
+            document.getElementById('deleteModal').classList.add('active');
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('deleteModal').classList.remove('active');
+        }
+
+        async function confirmDelete() {
+            const username = document.getElementById('deleteConfirmBtn').dataset.username;
+            try {
+                const resp = await fetch('/api/admin/users/' + encodeURIComponent(username), {
+                    method: 'DELETE',
+                    credentials: 'same-origin',
+                });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    showToast(data.message || 'حذف شد', 'success');
+                    closeDeleteModal();
+                    loadUsers();
+                } else {
+                    showToast(data.message || 'خطا', 'error');
+                }
+            } catch (err) {
+                showToast('خطا: ' + err.message, 'error');
+            }
+        }
+
+        // ── Toast ──────────────────────────────────────────────────────────
+        let toastTimer = null;
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'toast ' + type + ' show';
+            if (toastTimer) clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => { toast.className = 'toast ' + type; }, 3000);
+        }
+
+        // Close modal on overlay click
+        document.getElementById('userModal').addEventListener('click', (e) => {
+            if (e.target.id === 'userModal') closeModal();
+        });
+        document.getElementById('deleteModal').addEventListener('click', (e) => {
+            if (e.target.id === 'deleteModal') closeDeleteModal();
+        });
+    </script>
+</body>
+</html>

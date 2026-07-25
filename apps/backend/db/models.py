@@ -15,6 +15,45 @@ def utcnow():
     return datetime.utcnow()
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# ENUMS — User Management (NEW)
+# ═══════════════════════════════════════════════════════════════════════════
+class UserRole(str, enum.Enum):
+    """User role hierarchy: admin > engineer > viewer."""
+    ADMIN = "admin"
+    ENGINEER = "engineer"
+    VIEWER = "viewer"
+
+
+class SessionStatus(str, enum.Enum):
+    """Status of a user session."""
+    ACTIVE = "active"
+    EXPIRED = "expired"
+    LOGGED_OUT = "logged_out"
+    REVOKED = "revoked"
+
+
+class AuditAction(str, enum.Enum):
+    """Action types recorded in the audit log."""
+    LOGIN = "login"
+    LOGIN_FAILED = "login_failed"
+    LOGOUT = "logout"
+    USER_CREATE = "user_create"
+    USER_UPDATE = "user_update"
+    USER_DELETE = "user_delete"
+    USER_ACTIVATE = "user_activate"
+    USER_DEACTIVATE = "user_deactivate"
+    PRESET_SAVE = "preset_save"
+    PRESET_LOAD = "preset_load"
+    PRESET_DELETE = "preset_delete"
+    RUN_START = "run_start"
+    RUN_FINALIZE = "run_finalize"
+    PERMISSION_DENIED = "permission_denied"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ENUMS — Existing (unchanged)
+# ═══════════════════════════════════════════════════════════════════════════
 class RunStatus(str, enum.Enum):
     PENDING = "pending"
     PROCESSING = "processing"
@@ -51,6 +90,9 @@ class UploadedFileType(str, enum.Enum):
     OTHER = "other"
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# EXISTING TABLES (unchanged)
+# ═══════════════════════════════════════════════════════════════════════════
 class Project(Base):
     __tablename__ = "projects"
 
@@ -329,3 +371,233 @@ class ExportArtifact(Base):
     __table_args__ = (
         sa.UniqueConstraint("run_id", "artifact_type", name="uq_artifact_per_run_type"),
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# USER MANAGEMENT TABLES (NEW — added 2026-07-22)
+# ═══════════════════════════════════════════════════════════════════════════
+# Four tables added for multi-user support:
+#   1. users                  — user accounts (bcrypt password hashes)
+#   2. user_sessions          — server-side session tracking (force-logout capable)
+#   3. audit_logs             — append-only audit trail (compliance + debugging)
+#   4. io_assignment_presets  — per-user cabinet configuration presets
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class User(Base):
+    """
+    User account. Replaces the hardcoded VALID_USERS dict.
+
+    Passwords are stored as bcrypt hashes (60 chars). The password_hash
+    column is set via the helper method `set_password()` — never write
+    plaintext to this column.
+
+    The `is_active` flag allows deactivating a user without deleting them
+    (preserves audit trail integrity). Inactive users cannot log in.
+    """
+    __tablename__ = "users"
+
+    id = sa.Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    username = sa.Column(sa.String(128), nullable=False, unique=True, index=True)
+    password_hash = sa.Column(sa.String(60), nullable=False)  # bcrypt hash
+    role = sa.Column(
+        sa.Enum(
+            UserRole,
+            name="user_role",
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+            validate_strings=True,
+        ),
+        nullable=False,
+        default=UserRole.ENGINEER,
+    )
+    display_name = sa.Column(sa.String(255), nullable=True)
+    email = sa.Column(sa.String(255), nullable=True, index=True)
+    is_active = sa.Column(sa.Boolean, nullable=False, default=True)
+    failed_login_count = sa.Column(sa.Integer, nullable=False, default=0)
+    locked_until = sa.Column(sa.DateTime(timezone=True), nullable=True)
+    last_login_at = sa.Column(sa.DateTime(timezone=True), nullable=True)
+    last_login_ip = sa.Column(sa.String(45), nullable=True)  # IPv6 max length
+    password_changed_at = sa.Column(sa.DateTime(timezone=True), nullable=True)
+    created_at = sa.Column(sa.DateTime(timezone=True), default=sa.func.now(), nullable=False)
+    updated_at = sa.Column(sa.DateTime(timezone=True), default=sa.func.now(), onupdate=sa.func.now(), nullable=False)
+    created_by = sa.Column(sa.String(128), nullable=True)  # username of admin who created this user
+
+    sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
+    audit_entries = relationship("AuditLog", back_populates="user", cascade="all, delete-orphan")
+    presets = relationship("IOAssignmentPreset", back_populates="user", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        sa.Index("ix_users_role", "role"),
+        sa.Index("ix_users_active", "is_active"),
+    )
+
+    def set_password(self, plaintext: str) -> None:
+        """Hash a plaintext password and store the hash. Requires bcrypt."""
+        import bcrypt
+        if not plaintext:
+            raise ValueError("Password cannot be empty")
+        if len(plaintext) < 4:
+            raise ValueError("Password must be at least 4 characters")
+        self.password_hash = bcrypt.hashpw(
+            plaintext.encode("utf-8"),
+            bcrypt.gensalt(rounds=12),
+        ).decode("utf-8")
+        self.password_changed_at = datetime.utcnow()
+
+    def check_password(self, plaintext: str) -> bool:
+        """Verify a plaintext password against the stored hash."""
+        if not self.password_hash or not plaintext:
+            return False
+        try:
+            import bcrypt
+            return bcrypt.checkpw(
+                plaintext.encode("utf-8"),
+                self.password_hash.encode("utf-8"),
+            )
+        except Exception:
+            return False
+
+    def to_dict(self, include_sensitive: bool = False) -> dict:
+        """Serialize for API responses. Excludes password_hash by default."""
+        return {
+            "id": str(self.id) if self.id else None,
+            "username": self.username,
+            "role": self.role.value if self.role else None,
+            "display_name": self.display_name,
+            "email": self.email,
+            "is_active": self.is_active,
+            "failed_login_count": self.failed_login_count,
+            "locked_until": self.locked_until.isoformat() if self.locked_until else None,
+            "last_login_at": self.last_login_at.isoformat() if self.last_login_at else None,
+            "last_login_ip": self.last_login_ip,
+            "password_changed_at": self.password_changed_at.isoformat() if self.password_changed_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "created_by": self.created_by,
+            **({"password_hash": self.password_hash} if include_sensitive else {}),
+        }
+
+
+class UserSession(Base):
+    """
+    Server-side session tracking. Each login creates a session row; logout
+    marks it as logged_out. Allows the admin to see who's currently online
+    and to revoke active sessions (force-logout a user).
+    """
+    __tablename__ = "user_sessions"
+
+    id = sa.Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id = sa.Column(UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    session_token = sa.Column(sa.String(128), nullable=False, unique=True, index=True)
+    status = sa.Column(
+        sa.Enum(
+            SessionStatus,
+            name="session_status",
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+            validate_strings=True,
+        ),
+        nullable=False,
+        default=SessionStatus.ACTIVE,
+    )
+    ip_address = sa.Column(sa.String(45), nullable=True)
+    user_agent = sa.Column(sa.Text, nullable=True)
+    created_at = sa.Column(sa.DateTime(timezone=True), default=sa.func.now(), nullable=False)
+    last_activity_at = sa.Column(sa.DateTime(timezone=True), default=sa.func.now(), onupdate=sa.func.now(), nullable=False)
+    expires_at = sa.Column(sa.DateTime(timezone=True), nullable=True)
+    logged_out_at = sa.Column(sa.DateTime(timezone=True), nullable=True)
+    revoked_at = sa.Column(sa.DateTime(timezone=True), nullable=True)
+    revoked_by = sa.Column(sa.String(128), nullable=True)  # username of admin who revoked
+    meta = sa.Column(JSONB, nullable=True)
+
+    user = relationship("User", back_populates="sessions")
+
+    __table_args__ = (
+        sa.Index("ix_user_sessions_user_status", "user_id", "status"),
+        sa.Index("ix_user_sessions_expires", "expires_at"),
+    )
+
+
+class AuditLog(Base):
+    """
+    Append-only audit log. Records every security-relevant action:
+    logins, user management, preset save/load/delete, permission denials.
+    Used for compliance and for debugging "who did what" questions.
+    """
+    __tablename__ = "audit_logs"
+
+    id = sa.Column(sa.BigInteger, primary_key=True, autoincrement=True)
+    user_id = sa.Column(UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    username = sa.Column(sa.String(128), nullable=True, index=True)  # denormalized for fast queries even after user deletion
+    action = sa.Column(
+        sa.Enum(
+            AuditAction,
+            name="audit_action",
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+            validate_strings=True,
+        ),
+        nullable=False,
+    )
+    target_username = sa.Column(sa.String(128), nullable=True)  # for user-management actions
+    target_resource = sa.Column(sa.String(255), nullable=True)  # e.g. preset name, run ID
+    ip_address = sa.Column(sa.String(45), nullable=True)
+    user_agent = sa.Column(sa.Text, nullable=True)
+    success = sa.Column(sa.Boolean, nullable=False, default=True)
+    message = sa.Column(sa.Text, nullable=True)
+    details = sa.Column(JSONB, nullable=True)
+    created_at = sa.Column(sa.DateTime(timezone=True), default=sa.func.now(), nullable=False)
+
+    user = relationship("User", back_populates="audit_entries")
+
+    __table_args__ = (
+        sa.Index("ix_audit_logs_user_action", "user_id", "action"),
+        sa.Index("ix_audit_logs_action_created", "action", "created_at"),
+        sa.Index("ix_audit_logs_created", "created_at"),
+    )
+
+
+class IOAssignmentPreset(Base):
+    """
+    Per-user cabinet configuration preset. Stores the full DimensionMode
+    state (cabinet_dimensions, cabinet_plan, card_catalog) so users can save
+    a project's settings and reload them later.
+
+    Owned by a user (user_id). Admin users can see all presets; non-admin
+    users see only their own presets. Project name is unique per user.
+    """
+    __tablename__ = "io_assignment_presets"
+
+    id = sa.Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id = sa.Column(UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    project_name = sa.Column(sa.String(255), nullable=False)
+    description = sa.Column(sa.Text, nullable=True)
+    type_count = sa.Column(sa.Integer, nullable=False, default=1)
+    has_directions = sa.Column(sa.Boolean, nullable=False, default=True)
+    cabinet_plan = sa.Column(JSONB, nullable=False, default="[]")
+    cabinet_dimensions = sa.Column(JSONB, nullable=False, default="{}")
+    card_catalog = sa.Column(JSONB, nullable=False, default="{}")
+    created_at = sa.Column(sa.DateTime(timezone=True), default=sa.func.now(), nullable=False)
+    updated_at = sa.Column(sa.DateTime(timezone=True), default=sa.func.now(), onupdate=sa.func.now(), nullable=False)
+
+    user = relationship("User", back_populates="presets")
+
+    __table_args__ = (
+        sa.UniqueConstraint("user_id", "project_name", name="uq_preset_user_project"),
+        sa.Index("ix_presets_user", "user_id"),
+        sa.Index("ix_presets_project", "project_name"),
+    )
+
+    def to_dict(self, include_config: bool = True) -> dict:
+        """Serialize for API responses."""
+        return {
+            "id": str(self.id),
+            "user_id": str(self.user_id),
+            "project_name": self.project_name,
+            "description": self.description,
+            "type_count": self.type_count,
+            "has_directions": self.has_directions,
+            **({"cabinet_plan": self.cabinet_plan,
+                "cabinet_dimensions": self.cabinet_dimensions,
+                "card_catalog": self.card_catalog} if include_config else {}),
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
