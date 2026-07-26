@@ -40,6 +40,12 @@
                     <i class="fas fa-project-diagram"></i>
                     <span id="nav-io">IO Assignment Module</span>
                 </a>
+                {% if is_admin_user %}
+                <a class="nav-item" href="/admin/users">
+                    <i class="fas fa-users"></i>
+                    <span id="nav-admin"> User Management</span>
+                </a>
+                {% endif %}
                 <button class="nav-item disabled" type="button">
                     <i class="fas fa-folder-open"></i>
                     <span id="nav-reports">Reports</span>
@@ -566,6 +572,7 @@
                 'nav-home': 'خانه',
                 'nav-jb': 'ماژول JBDetection',
                 'nav-io': 'ماژول IO Assignment',
+                'nav-admin':'مدیریت کاربران',
                 'nav-reports': 'گزارش‌ها',
                 'nav-settings': 'تنظیمات',
                 'nav-logout': 'خروج'
@@ -615,6 +622,7 @@
                 'nav-jb': 'JBDetection Module',
                 'nav-io': 'IO Assignment Module',
                 'nav-reports': 'Reports',
+                'nav-admin':'User Management',
                 'nav-settings': 'Settings',
                 'nav-logout': 'Logout'
             }

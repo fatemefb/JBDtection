@@ -4477,3 +4477,199 @@ body.home-body.light .module-cube .mini-cabinet {
     border-radius: 50%; animation: spin 0.8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+
+/* ═══════════════════════════════════════════════════════════════
+   ADMIN USERS PAGE  (admin_users.html)
+   Namespaced under .admin-users so it only affects this page.
+   ═══════════════════════════════════════════════════════════════ */
+
+.admin-users .users-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.admin-users .users-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--bg-card);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.admin-users .users-table thead th {
+  background: var(--bg-strong);
+  color: var(--muted);
+  font-weight: 600;
+  font-size: .76rem;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  padding: 10px 14px;
+  text-align: right;
+  border-bottom: 1px solid var(--border);
+}
+.admin-users .users-table tbody td {
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: .88rem;
+}
+.admin-users .users-table tbody tr:nth-child(odd) { background: var(--stripe); }
+.admin-users .users-table tbody tr:hover          { background: rgba(44,224,207,.08); }
+.admin-users .users-table tbody tr:last-child td  { border-bottom: none; }
+
+/* role + status badges */
+.admin-users .role-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 80px;
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  font-size: .72rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+.admin-users .role-admin    { color:#ffe8bf; background:rgba(245,180,0,.16);  border-color:rgba(245,180,0,.36); }
+.admin-users .role-engineer { color:#d4ffe9; background:rgba(44,209,152,.18); border-color:rgba(44,209,152,.38); }
+.admin-users .role-viewer   { color:#c9efff; background:rgba(44,179,224,.18); border-color:rgba(44,179,224,.38); }
+.admin-users .status-active   { color: var(--success); font-weight: 600; }
+.admin-users .status-inactive { color: var(--danger);  font-weight: 600; }
+.admin-users .self-tag {
+  color: var(--accent);
+  font-size: .72rem;
+  font-weight: 700;
+  margin-inline-start: 4px;
+}
+.admin-users .empty-row td {
+  text-align: center !important;
+  padding: 40px !important;
+  color: var(--muted) !important;
+}
+
+/* ── User modal (page override of global .modal/.modal-overlay) ── */
+.admin-users .modal-overlay {
+  display: none;
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,.60);
+  z-index: 2000;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+}
+.admin-users .modal-overlay.active { display: flex; }
+.admin-users .modal-overlay .modal {
+  position: relative;
+  inset: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  padding: 22px 24px;
+  width: 90%;
+  max-width: 480px;
+  box-shadow: var(--shadow-hard);
+  color: var(--text);
+}
+.admin-users .modal h2 {
+  margin: 0 0 20px 0;
+  color: var(--text);
+  font-size: 1.3rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.admin-users .modal-field { margin-bottom: 16px; }
+.admin-users .modal-field label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 600;
+  color: var(--text);
+  font-size: .86rem;
+}
+.admin-users .modal-field input,
+.admin-users .modal-field select {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-soft);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: .9rem;
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+.admin-users .modal-field input:focus,
+.admin-users .modal-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(44,224,207,.18);
+}
+.admin-users .modal-field input:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+.admin-users .modal-field input[type="checkbox"] {
+  width: 17px; height: 17px;
+  display: inline-flex;
+  margin-inline-end: 6px;
+}
+.admin-users .modal-field label:has(input[type="checkbox"]) {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+.admin-users .modal-hint {
+  font-size: .82rem;
+  color: var(--muted);
+  margin-top: 6px;
+  line-height: 1.5;
+  padding-inline-start: 8px;
+  border-inline-start: 2px solid var(--border);
+}
+.admin-users .modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+.admin-users .modal-btn {
+  padding: 9px 18px;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--text);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  font-family: var(--font);
+  font-weight: 600;
+  font-size: .9rem;
+  transition: all var(--dur) var(--ease);
+}
+.admin-users .modal-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: translateY(-1px);
+}
+.admin-users .modal-btn.primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #04101f;
+  border: none;
+  font-weight: 600;
+  box-shadow: 0 6px 16px rgba(44,224,207,.18);
+}
+.admin-users .modal-btn.primary:hover {
+  filter: brightness(1.06);
+  color: #04101f;
+  box-shadow: 0 8px 18px rgba(44,224,207,.22);
+}
+.admin-users .modal-btn.danger {
+  background: linear-gradient(135deg, var(--danger), #dc2626);
+  color: #fff;
+  border: none;
+}
+.admin-users .modal-btn.danger:hover {
+  filter: brightness(1.06);
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(246,84,106,.28);
+}
