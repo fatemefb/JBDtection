@@ -42,8 +42,8 @@ services:
       - DATABASE_URL=postgresql+psycopg2://vakav:vakav_strong_password_change_me@postgres:5432/vakav
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-      - GUNICORN_TIMEOUT=72000
-      - GUNICORN_GRACEFUL_TIMEOUT=72000
+      - GUNICORN_TIMEOUT=7200
+      - GUNICORN_GRACEFUL_TIMEOUT=7200
       - TF_FORCE_GPU_ALLOW_GROWTH=true
       - TF_CPP_MIN_LOG_LEVEL=2
       - OMP_NUM_THREADS=2
@@ -65,12 +65,11 @@ services:
       gunicorn apps.backend.app:app
         -b 0.0.0.0:5000
         --workers=1
-        --threads=2
+        --threads=4
         --timeout=72000
-        --graceful-timeout=72000
+        --graceful-timeout=7200
         --keep-alive=5
-        --max-requests=15
-        --max-requests-jitter=3
+        --max-requests=0
         --worker-class=gthread
         --log-level=info
         --access-logfile=-
@@ -122,12 +121,11 @@ services:
       gunicorn apps.backend.app:app
         -b 0.0.0.0:5000
         --workers=1
-        --threads=1
+        --threads=4
         --timeout=72000
-        --graceful-timeout=72000
+        --graceful-timeout=7200
         --keep-alive=5
-        --max-requests=10
-        --max-requests-jitter=2
+        --max-requests=0
         --worker-class=gthread
         --log-level=info
         --access-logfile=-
