@@ -874,12 +874,27 @@ class TagJBExtractor:
         Now we extract the LEADING ALPHANUMERIC segment (letters + digits together)
         up to the first dash, so "21HS-001" → "21HS" and "UZSH-2482" → "UZSH".
         Two tags with different leading segments will be correctly rejected.
+
+        🆕 v2: For digit-DASH-letter tags (e.g. "11-FV-301"), the leading
+        alphanumeric segment is just the digits ("11"). But the meaningful
+        prefix is the letter segment after the first dash ("FV"). We now
+        return the letter segment for this format so that prefix matching
+        works correctly in Phase 2 (similar match) and _score_pattern_candidate.
         """
         # مثال: PDIT-100-11 → PDIT
         #       FIT100-A → FIT100 (alphanumeric head, not just letters)
         #       21HS-001 → 21HS
         #       11SAM10AN020XB91 → 11SAM10AN020XB91 (no dash, whole string is the head)
-        match = re.match(r'^([A-Z0-9]+)', tag.upper())
+        #       11-FV-301 → FV (digit-dash-letter format: return the letter segment)
+        tag_upper = tag.upper()
+        # First try: digit-DASH-letter format (e.g. "11-FV-301")
+        # If the tag starts with digits followed by a dash followed by letters,
+        # return the letter segment (the "function code").
+        digit_dash_letter_match = re.match(r'^\d{1,4}-([A-Z]{1,6})[-\d]', tag_upper)
+        if digit_dash_letter_match:
+            return digit_dash_letter_match.group(1)
+        # Otherwise: extract the leading alphanumeric segment (up to first dash)
+        match = re.match(r'^([A-Z0-9]+)', tag_upper)
         return match.group(1) if match else ''
 
     def _calculate_numeric_similarity(self, tag1: str, tag2: str) -> float:
@@ -1027,6 +1042,12 @@ class TagJBExtractor:
         """
         Build a lightweight pattern profile from IO list to detect tag-like OCR text,
         even when the exact tag does not exist in IO list.
+
+        🆕 FIXED: Now correctly extracts the letter prefix from digit-leading tags
+        that have dashes (e.g. "11-FV-301" → prefix "FV"). Previously, the regex
+        `^\\d{1,4}([A-Z]{1,6})` only matched tags WITHOUT a dash after the digits
+        (e.g. "21HS-001" → "HS"), so tags like "11-FV-301" were not learned and
+        their siblings (e.g. "11-FV-302") were rejected as unmatched candidates.
         """
         prefixes: Set[str] = set()
         lengths: List[int] = []
@@ -1052,6 +1073,16 @@ class TagJBExtractor:
                 digit_letter_match = re.match(r'^\d{1,4}([A-Z]{1,6})', tag)
                 if digit_letter_match:
                     prefixes.add(digit_letter_match.group(1))
+
+                # 🆕 FIX: Also handle digit-DASH-letter format (e.g. "11-FV-301" → "FV")
+                # The previous regex `^\d{1,4}([A-Z]{1,6})` requires letters immediately
+                # after digits (no dash). But many industrial tags use the format
+                # "AREA-FUNCTION-SERIAL" (e.g. "11-FV-301", "13-FIT-502") where the
+                # letter segment comes AFTER a dash.
+                # Pattern: digits + dash + letters
+                digit_dash_letter_match = re.match(r'^\d{1,4}-([A-Z]{1,6})', tag)
+                if digit_dash_letter_match:
+                    prefixes.add(digit_dash_letter_match.group(1))
 
             for num_part in re.findall(r'\d+', tag):
                 numeric_lengths.append(len(num_part))
@@ -1112,6 +1143,16 @@ class TagJBExtractor:
             # With dashes between segments (e.g. 11HOTSPARE-DO22-03, 11SPARE-DO21-15)
             r'^\d{1,4}[A-Z]{2,10}[-][A-Z]{0,4}\d{1,4}[-]?\d{0,4}$',
             r'^\d{1,4}[A-Z]{2,10}[-]\d{1,4}[-][A-Z]{0,4}\d{0,4}$',
+            # 🆕 FIX: AREA-FUNCTION-SERIAL format (e.g. 11-FV-301, 13-FIT-502, 11-TV-412A)
+            # This is a very common industrial tag format where:
+            #   - First segment: area/unit number (1-4 digits)
+            #   - Second segment: instrument function code (2-6 letters)
+            #   - Third segment: serial number (1-5 digits, optional trailing letter)
+            # Without this pattern, tags like "11-FV-301" that are NOT in the IO List
+            # would get a score of 0.0 and be rejected as unmatched candidates.
+            r'^\d{1,4}-[A-Z]{2,6}-\d{1,5}[A-Z]?$',
+            # 🆕 AREA-FUNCTION-SERIAL with extra suffix (e.g. 11-FV-301-A, 13-FIT-502-X1)
+            r'^\d{1,4}-[A-Z]{2,6}-\d{1,5}-[A-Z0-9]{1,5}$',
         ]
 
         if not any(re.match(pattern, tag) for pattern in generic_patterns):
@@ -3505,6 +3546,7 @@ class TagJBExtractor:
         # ── LEARN TAG PATTERNS FROM IO LIST ────────────────────────────
         # Extract prefix patterns: e.g. "LUSY-2474A" → pattern "LUSY-"
         # "USY-2482A" → pattern "USY-", "21HS-001" → pattern "\d{2}HS-"
+        # 🆕 Also handles "11-FV-301" → pattern "FV" (digit-dash-letter format)
         _io_prefixes_set = set()
         _io_regex_patterns = []
         for io_tag in (io_list_tags or set()):
@@ -3516,15 +3558,42 @@ class TagJBExtractor:
             if prefix_match:
                 prefix = prefix_match.group(1)
                 _io_prefixes_set.add(prefix)
-            # Also extract digit-starting patterns
+            # Also extract digit-starting patterns (no dash between digits and letters)
+            # e.g. "21HS-001" → "21HS"
             digit_prefix_match = re.match(r'^(\d{1,4}[A-Z]{1,6})[-]?', tag_upper)
             if digit_prefix_match:
                 _io_prefixes_set.add(digit_prefix_match.group(1))
+            # 🆕 FIX: Extract letter prefix from digit-DASH-letter format
+            # e.g. "11-FV-301" → "FV", "13-FIT-502" → "FIT"
+            # This is the "AREA-FUNCTION-SERIAL" naming convention used in many
+            # industrial projects. Without this, tags like "11-FV-301" would
+            # not be learned and their siblings ("11-FV-302") would be rejected.
+            digit_dash_letter_match = re.match(r'^\d{1,4}-([A-Z]{1,6})', tag_upper)
+            if digit_dash_letter_match:
+                _io_prefixes_set.add(digit_dash_letter_match.group(1))
 
         # Build regex patterns from learned prefixes
         # e.g. prefix "LUSY" → r'^LUSY[-\d]'
+        # 🆕 For prefixes extracted from digit-dash-letter format (e.g. "FV" from
+        # "11-FV-301"), we need a different regex: r'^\d{1,4}-FV[-\d]' so that
+        # it matches any tag with the same letter segment regardless of the
+        # leading area number.
         for prefix in _io_prefixes_set:
-            _io_regex_patterns.append(re.compile(r'^' + re.escape(prefix) + r'[-\d]', re.IGNORECASE))
+            # Check if this prefix is a pure letter segment (likely from digit-dash-letter format)
+            # by looking at whether any IO tag starts with digits-dash-prefix
+            _is_pure_letter = prefix.isalpha() and not any(
+                str(t).upper().strip().startswith(prefix) for t in (io_list_tags or set())
+            )
+            if _is_pure_letter and len(prefix) <= 4:
+                # This prefix was likely extracted from a digit-dash-letter tag
+                # Build a regex that matches: digits-dash-PREFIX-dash-digits
+                _io_regex_patterns.append(re.compile(
+                    r'^\d{1,4}-' + re.escape(prefix) + r'[-\d]',
+                    re.IGNORECASE
+                ))
+            else:
+                # Standard pattern: prefix followed by dash or digit
+                _io_regex_patterns.append(re.compile(r'^' + re.escape(prefix) + r'[-\d]', re.IGNORECASE))
 
         logger.info(
             f"Phase 2.5: learned {len(_io_prefixes_set)} tag prefixes from IO List: {sorted(_io_prefixes_set)[:15]}"
