@@ -864,10 +864,22 @@ class TagJBExtractor:
 
             return ocr_sim # در بدترین حالت، فقط شباهت کاراکتری
     def _extract_tag_prefix(self, tag: str) -> str:
-        """استخراج پیشوند تگ (قبل از اولین '-' یا اعداد)"""
+        """استخراج پیشوند تگ (قبل از اولین '-' یا اعداد)
+
+        🆕 FIXED: For digit-leading tags (e.g. "21HS-001", "11SAM10AN020XB91"),
+        the previous regex `^([A-Z]+)` returned an empty string. This made
+        the Phase 2 prefix check trivially pass for ALL digit-leading tags
+        (both ocr_prefix and io_prefix were ''), causing false similar matches.
+
+        Now we extract the LEADING ALPHANUMERIC segment (letters + digits together)
+        up to the first dash, so "21HS-001" → "21HS" and "UZSH-2482" → "UZSH".
+        Two tags with different leading segments will be correctly rejected.
+        """
         # مثال: PDIT-100-11 → PDIT
-        #       FIT100-A → FIT
-        match = re.match(r'^([A-Z]+)', tag.upper())
+        #       FIT100-A → FIT100 (alphanumeric head, not just letters)
+        #       21HS-001 → 21HS
+        #       11SAM10AN020XB91 → 11SAM10AN020XB91 (no dash, whole string is the head)
+        match = re.match(r'^([A-Z0-9]+)', tag.upper())
         return match.group(1) if match else ''
 
     def _calculate_numeric_similarity(self, tag1: str, tag2: str) -> float:
@@ -1421,28 +1433,65 @@ class TagJBExtractor:
         
         return "Minor OCR noise"
 
-    def _are_numbers_identical(self, num1, num2, tolerance=0):
+    def _are_numbers_identical(self, tag1, tag2, tolerance=0):
         """
-        مقایسه دو شماره با احتساب تلرانس
-        
+        🆕 FIXED: Compare the digit sequences extracted from two tags.
+
+        Previously, this function received full tag strings (e.g. "UZSH-2482")
+        and tried to call int() on them — which always failed because the
+        strings contain letters. As a result, both n1 and n2 were set to 0,
+        and the function always returned True (abs(0-0) <= 0). This made the
+        "numbers identical" check in Phase 2 completely ineffective.
+
+        Now we extract ALL digit sequences from each tag (e.g. "UZSH-2482"
+        → ["2482"], "21HS-001-11" → ["21", "001", "11"]) and require that
+        ALL corresponding sequences match exactly (tolerance=0 by default).
+
         Args:
-            num1: شماره اول
-            num2: شماره دوم
-            tolerance: میزان تلرانس مجاز
-            
+            tag1, tag2: tag strings (e.g. "UZSH-2482", "21HS-001")
+            tolerance: max allowed numeric difference per sequence (default 0)
+
         Returns:
-            True اگر دو شماره معادل باشند، در غیر این صورت False
+            True if all digit sequences match within tolerance, AND the count
+            of digit sequences is the same. Returns False if the tags have
+            different numbers of digit sequences, or any pair differs by
+            more than `tolerance`.
         """
         try:
-            # تبدیل به عدد صحیح
-            n1 = int(num1) if num1 and str(num1).strip().isdigit() else 0
-            n2 = int(num2) if num2 and str(num2).strip().isdigit() else 0
-            
-            # مقایسه با احتساب تلرانس
-            return abs(n1 - n2) <= tolerance
-        except (ValueError, TypeError):
-            # اگر تبدیل به عدد امکان‌پذیر نبود، مقایسه رشته‌ای انجام دهیم
-            return str(num1).strip() == str(num2).strip()
+            nums1 = re.findall(r'\d+', str(tag1))
+            nums2 = re.findall(r'\d+', str(tag2))
+
+            # Different count of digit sequences → cannot be identical
+            if len(nums1) != len(nums2):
+                return False
+
+            # No digit sequences in either → vacuously identical (both empty)
+            if not nums1 and not nums2:
+                return True
+
+            # Compare each pair
+            for n1_str, n2_str in zip(nums1, nums2):
+                # If either is empty, they must be equal
+                if not n1_str or not n2_str:
+                    if n1_str != n2_str:
+                        return False
+                    continue
+
+                # Equal-length digit strings: must match char-by-char within tolerance
+                # (this catches OCR drift like "2482" vs "2483" when tolerance > 0)
+                try:
+                    n1 = int(n1_str)
+                    n2 = int(n2_str)
+                    if abs(n1 - n2) > tolerance:
+                        return False
+                except (ValueError, TypeError):
+                    # Fallback: string comparison
+                    if n1_str != n2_str:
+                        return False
+
+            return True
+        except Exception:
+            return str(tag1).strip() == str(tag2).strip()
 
     def assign_tag_numbers_by_position(self, tags_with_positions: List[Dict], 
                                     spare_identifiers_with_positions: List[Dict] = None) -> Dict[str, int]:
@@ -3313,54 +3362,96 @@ class TagJBExtractor:
             
             if similar_tags:
                 best_match, best_score = similar_tags[0]
-                
+
                 # STRICT VALIDATION RULES
-                if not (0.96 <= best_score < 1.0):
+                # 🆕 Use phase2_lower_gate (table=0.94, diagrams=0.96) instead of
+                # hardcoded 0.96. Previously phase2_lower_gate was computed but
+                # never used (dead code).
+                if not (phase2_lower_gate <= best_score < 1.0):
                     continue
-                
+
                 len_diff = abs(len(ocr_tag) - len(best_match))
                 if len_diff > 1:
                     logger.debug(f"❌ REJECTED (length): {ocr_tag} → {best_match}")
                     similar_rejected_count += 1
                     continue
-                
+
                 ocr_prefix = self._extract_tag_prefix(ocr_tag)
                 io_prefix = self._extract_tag_prefix(best_match)
-                
+
                 if ocr_prefix != io_prefix:
                     logger.debug(f"❌ REJECTED (prefix): {ocr_tag} → {best_match}")
                     similar_rejected_count += 1
                     continue
-                
+
                 ocr_parts = ocr_tag.split('-')
                 io_parts = best_match.split('-')
-                
+
                 if len(ocr_parts) != len(io_parts):
                     logger.debug(f"❌ REJECTED (structure): {ocr_tag} → {best_match}")
                     similar_rejected_count += 1
                     continue
-                
+
+                # 🆕 FIXED: _are_numbers_identical now correctly extracts digit
+                # sequences from both tags and compares them. Previously it
+                # always returned True (both n1 and n2 were 0 because the full
+                # tag strings contain letters, so isdigit() was False).
+                # This was the #1 cause of false "similar" (yellow) matches in
+                # table mode digital PDFs: tags like "UZSH-2482" → "UZSH-3032"
+                # (2-char difference) were accepted because the numbers check
+                # was a no-op.
                 if not self._are_numbers_identical(ocr_tag, best_match):
                     logger.debug(f"❌ REJECTED (numbers differ): {ocr_tag} → {best_match}")
                     similar_rejected_count += 1
                     continue
-                
-                if len_diff == 0 and self._count_different_chars(ocr_tag, best_match) == 1:
-                    diff_char_ocr, diff_char_io = self._get_different_chars(ocr_tag, best_match)
-                    
-                    ocr_confusion_pairs = [
-                        ('O', '0'), ('0', 'O'),
-                        ('I', '1'), ('1', 'I'), ('l', '1'), ('1', 'l'),
-                        ('S', '5'), ('5', 'S'),
-                        ('B', '8'), ('8', 'B'),
-                        ('Z', '2'), ('2', 'Z'),
-                    ]
-                    
-                    is_ocr_error = (diff_char_ocr, diff_char_io) in ocr_confusion_pairs or \
-                                (diff_char_io, diff_char_ocr) in ocr_confusion_pairs
-                    
-                    if not is_ocr_error:
-                        logger.debug(f"❌ REJECTED (not OCR error): {ocr_tag} → {best_match}")
+
+                # 🆕 EXTENDED OCR-confusion check: now covers 1- AND 2-char diffs.
+                # Previously only 1-char diffs were validated, so 2-char diffs
+                # (e.g. "UZSH-2482" vs "UZSH-3032" — digits 2482 vs 3032 differ
+                # in 3 positions, but the prefix/structure/length all match)
+                # were blindly accepted. Now we require that ALL differing
+                # characters are OCR-confusion pairs.
+                if len_diff == 0:
+                    diff_count = self._count_different_chars(ocr_tag, best_match)
+                    if diff_count == 0:
+                        # Identical — shouldn't happen here (would be exact match)
+                        pass
+                    elif diff_count <= 2:
+                        # Get ALL differing char pairs (not just the first)
+                        diff_pairs = []
+                        for c1, c2 in zip(ocr_tag, best_match):
+                            if c1 != c2:
+                                diff_pairs.append((c1, c2))
+
+                        ocr_confusion_pairs = {
+                            ('O', '0'), ('0', 'O'),
+                            ('I', '1'), ('1', 'I'), ('l', '1'), ('1', 'l'),
+                            ('S', '5'), ('5', 'S'),
+                            ('B', '8'), ('8', 'B'),
+                            ('Z', '2'), ('2', 'Z'),
+                            ('G', '6'), ('6', 'G'),
+                            ('D', '0'), ('0', 'D'),
+                        }
+
+                        # ALL diff pairs must be OCR confusions
+                        all_ocr_errors = all(
+                            (c1, c2) in ocr_confusion_pairs or (c2, c1) in ocr_confusion_pairs
+                            for c1, c2 in diff_pairs
+                        )
+
+                        if not all_ocr_errors:
+                            logger.debug(
+                                f"❌ REJECTED (not OCR error): {ocr_tag} → {best_match} "
+                                f"(diff_pairs={diff_pairs})"
+                            )
+                            similar_rejected_count += 1
+                            continue
+                    else:
+                        # More than 2 char differences — too different to be OCR drift
+                        logger.debug(
+                            f"❌ REJECTED (too many diffs): {ocr_tag} → {best_match} "
+                            f"({diff_count} diffs)"
+                        )
                         similar_rejected_count += 1
                         continue
                 
