@@ -1635,14 +1635,67 @@ class TagJBExtractor:
         )
         return str(best)
 
+    def _build_mc_prefix_regex(self, suffix_pattern: str, *, line_start: bool = False, word_boundary: bool = False) -> 're.Pattern':
+        """
+        🆕 Build a regex pattern that matches any of the configured MC prefixes
+        followed by `suffix_pattern`.
+
+        This correctly handles multi-pattern MC configurations like "NC,IC"
+        by building an alternation: (NC|IC)<suffix>
+
+        Args:
+            suffix_pattern: The regex pattern AFTER the MC prefix
+                           (e.g. r'-\\d{1,2}-\\d{1,2}-\\d{1,2}-[A-Z]-\\d{1,2}-[A-Z]{1,3}')
+            line_start: If True, anchor with ^
+            word_boundary: If True, anchor with \\b
+
+        Returns:
+            Compiled regex pattern, or None if no MC prefixes are configured.
+
+        Example:
+            # Match cables like "NC-0-1-2-C-3-BL" or "IC-0-1-2-C-3-BL"
+            cable_re = self._build_mc_prefix_regex(
+                r'-\\d{1,2}-\\d{1,2}-\\d{1,2}-[A-Z]-\\d{1,2}-[A-Z]{1,3}',
+                word_boundary=True
+            )
+        """
+        mc_prefixes = list(getattr(self, 'mc_examples_list', None) or [])
+        if not mc_prefixes:
+            _mc_raw = getattr(self, 'mc_examples', '') or ''
+            if _mc_raw:
+                mc_prefixes = self._parse_multi_patterns(_mc_raw)
+        if not mc_prefixes:
+            return None
+
+        # Build alternation: (NC|IC)
+        prefix_alt = '|'.join(re.escape(p) for p in mc_prefixes if p)
+        if not prefix_alt:
+            return None
+
+        pattern = f'({prefix_alt}){suffix_pattern}'
+        if line_start:
+            pattern = '^' + pattern
+        if word_boundary:
+            pattern = r'\b' + pattern
+        return re.compile(pattern, re.IGNORECASE)
+
     def _select_best_mc_identifier(self, mc_identifiers: 'Union[Set[str], List[str]]', jb_identifiers: 'Union[Set[str], List[str]]') -> str:
         """
         Select a single best MC identifier for a page in a deterministic way.
         Prefers codes that start with mc_examples and look structurally valid; when a JB exists,
         prefers MC that matches the JB suffix (e.g., JB-EEV-101 -> IC-EEV-101).
+
+        🆕 Multi-pattern support: correctly handles mc_examples like "NC,IC"
+        by iterating over each prefix individually (instead of treating the
+        comma-separated string as a single prefix).
         """
-        mc_prefix = (getattr(self, "mc_examples", "") or "").strip().upper()
-        if not mc_prefix:
+        # 🆕 Use the LIST of prefixes, not the comma-joined string
+        mc_prefixes = list(getattr(self, 'mc_examples_list', None) or [])
+        if not mc_prefixes:
+            _mc_raw = getattr(self, 'mc_examples', '') or ''
+            if _mc_raw:
+                mc_prefixes = self._parse_multi_patterns(_mc_raw)
+        if not mc_prefixes:
             return ""
 
         raw_candidates = list(mc_identifiers) if mc_identifiers else []
@@ -1652,21 +1705,43 @@ class TagJBExtractor:
             if norm:
                 norm_candidates_all.append(norm)
 
-        # Pass 1: strict filter (prefix + digit)
-        norm_candidates = [c for c in norm_candidates_all if self._is_prefixed_identifier(c, mc_prefix, require_digit=True)]
-        # Pass 2: relax digit requirement (still must start with prefix)
+        # 🆕 Pass 1: strict filter — check against EACH prefix individually
+        norm_candidates = [
+            c for c in norm_candidates_all
+            if any(self._is_prefixed_identifier(c, p, require_digit=True) for p in mc_prefixes)
+        ]
+        # Pass 2: relax digit requirement (still must start with one of the prefixes)
         if not norm_candidates:
-            norm_candidates = [c for c in norm_candidates_all if self._is_prefixed_identifier(c, mc_prefix, require_digit=False)]
+            norm_candidates = [
+                c for c in norm_candidates_all
+                if any(self._is_prefixed_identifier(c, p, require_digit=False) for p in mc_prefixes)
+            ]
         if not norm_candidates:
             return ""
 
-        jb_prefix = (getattr(self, "jb_examples", "") or "").strip().upper()
+        # 🆕 JB prefix list (same multi-pattern treatment)
+        jb_prefixes = list(getattr(self, 'jb_examples_list', None) or [])
+        if not jb_prefixes:
+            _jb_raw = getattr(self, 'jb_examples', '') or ''
+            if _jb_raw:
+                jb_prefixes = self._parse_multi_patterns(_jb_raw)
+
+        # 🆕 Build expected_mc by finding which JB prefix actually matches jb_norm,
+        # then constructing the expected MC using the CORRESPONDING MC prefix.
+        # (Previously, the code used jb_prefix.split(',') which gave wrong lengths
+        #  when jb_examples was "JSF,JSX" — len("JSF,JSX")=7, not 3.)
         expected_mc = None
-        if jb_identifiers:
+        if jb_identifiers and jb_prefixes:
             jb_raw = list(jb_identifiers)[0]
             jb_norm = self._normalize_code_token(jb_raw)
-            if jb_norm and jb_prefix and any(jb_norm.startswith(p) for p in jb_prefix.split(',') if p):
-                expected_mc = mc_prefix + jb_norm[len(jb_prefix):]
+            if jb_norm:
+                for jp in jb_prefixes:
+                    if jb_norm.startswith(jp) and len(jb_norm) > len(jp):
+                        jb_suffix = jb_norm[len(jp):]  # e.g. "-309S" for JSF-309S with prefix JSF
+                        # Use the FIRST MC prefix to construct expected_mc
+                        # (most users have a single MC prefix; if multiple, the first one wins)
+                        expected_mc = mc_prefixes[0] + jb_suffix
+                        break
 
         def candidate_score(cand: str) -> 'Tuple[float, int, int, int]':
             digits = sum(ch.isdigit() for ch in cand)
@@ -2115,11 +2190,13 @@ class TagJBExtractor:
         #   cable_re: matches PREFIX-DIGIT-DIGIT-DIGIT-LETTER-DIGIT-LETTERS
         #     where PREFIX comes from self.mc_examples (not hardcoded "NC")
         tag_like_re = re.compile(r'^[A-Z]{1,5}-\d{3,4}[A-Z]?$', re.IGNORECASE)
-        _mc_prefix = self._get_mc_prefix()
-        cable_re = re.compile(
-            re.escape(_mc_prefix) + r'-\d{1,2}-\d{1,2}-\d{1,2}-[A-Z]-\d{1,2}-[A-Z]{1,3}',
-            re.IGNORECASE
-        )
+        # 🆕 Multi-pattern MC support: build cable_re using _build_mc_prefix_regex
+        # so it matches ANY of the configured MC prefixes (e.g. "NC" OR "IC").
+        # Previously, re.escape(_mc_prefix) was used, which broke when
+        # mc_examples was "NC,IC" (re.escape("NC,IC") = "NC,IC" — never matches).
+        cable_re = self._build_mc_prefix_regex(
+            r'-\d{1,2}-\d{1,2}-\d{1,2}-[A-Z]-\d{1,2}-[A-Z]{1,3}'
+        ) or re.compile(r'(?!)')  # fallback: never match
         spare_re = re.compile(r'SPARE', re.IGNORECASE)
         
         # ── DYNAMIC column detection via header text ──────────────────
@@ -2406,11 +2483,16 @@ class TagJBExtractor:
         # not in data cells). We do a full-page pass at 300 AND 400 DPI
         # to catch JB/MC that the 300 DPI pass misses.
         jb_re = re.compile(r'^[A-Z]{2,5}-\d{2,5}[A-Z]?$', re.IGNORECASE)
-        mc_re = re.compile(r'^' + re.escape(_mc_prefix) + r'-?[A-Z]{2,5}-?\d{2,5}[A-Z]?$', re.IGNORECASE)
-        full_cable_re = re.compile(
-            r'^' + re.escape(_mc_prefix) + r'-\d{1,2}-\d{1,2}-\d{1,2}-[A-Z]-\d{1,2}-[A-Z]{1,3}$',
-            re.IGNORECASE
-        )
+        # 🆕 Multi-pattern MC support: use _build_mc_prefix_regex instead of
+        # re.escape(_mc_prefix) which broke on "NC,IC" configurations.
+        mc_re = self._build_mc_prefix_regex(
+            r'-?[A-Z]{2,5}-?\d{2,5}[A-Z]?$',
+            line_start=True
+        ) or re.compile(r'(?!)')
+        full_cable_re = self._build_mc_prefix_regex(
+            r'-\d{1,2}-\d{1,2}-\d{1,2}-[A-Z]-\d{1,2}-[A-Z]{1,3}$',
+            line_start=True
+        ) or re.compile(r'(?!)')
         
         seen_jb_tokens = set()
         seen_mc_tokens = set()
@@ -2454,8 +2536,9 @@ class TagJBExtractor:
                         ocr_data['word_num'].append(1)
                 
                 # Add JB tokens (matching jb_examples prefix, not hardcoded "JSF")
-                _jb_prefix = str(getattr(self, 'jb_examples', None) or '').strip().upper()
-                if jb_re.match(text) and _jb_prefix and any(text.startswith(p) for p in _jb_prefix.split(',') if p):
+                # 🆕 Multi-pattern JB support: use the LIST of prefixes
+                _jb_prefixes_p4 = self._get_jb_prefixes()
+                if jb_re.match(text) and _jb_prefixes_p4 and any(text.startswith(p) for p in _jb_prefixes_p4 if p):
                     if text not in seen_jb_tokens:
                         seen_jb_tokens.add(text)
                         ocr_data['text'].append(text)
@@ -3919,11 +4002,14 @@ class TagJBExtractor:
         # IMPORTANT: We also store the bbox in tag_match_info so that
         # draw_bounding_boxes can draw a tight box around the actual text.
         if pdf_type == 'table':
-            _mc_prefix_fb = self._get_mc_prefix()
-            cable_re_fb = re.compile(
-                r'\b' + re.escape(_mc_prefix_fb) + r'-\d{1,2}-\d{1,2}-\d{1,2}-[A-Z]-\d{1,2}-[A-Z]{1,3}\b',
-                re.IGNORECASE
+            # 🆕 Multi-pattern MC support: use _build_mc_prefix_regex instead of
+            # re.escape(_mc_prefix_fb) which broke on "NC,IC" configurations.
+            cable_re_fb = self._build_mc_prefix_regex(
+                r'-\d{1,2}-\d{1,2}-\d{1,2}-[A-Z]-\d{1,2}-[A-Z]{1,3}\b',
+                word_boundary=True
             )
+            if cable_re_fb is None:
+                cable_re_fb = re.compile(r'(?!)')  # never match
             for idx, word in enumerate(ocr_data['text']):
                 text = str(word).strip()
                 if not text:
@@ -5808,8 +5894,9 @@ class TagJBExtractor:
         # prefix (e.g. "JS"). Tokens like "FUY-5239" that don't start with
         # the JB prefix are NOT removed, even if they match the JB pattern,
         # because they could be real tags that aren't in the IO List.
-        _jb_prefix = str(getattr(self, 'jb_examples', None) or '').strip().upper()
-        if io_list_tags and _jb_prefix:
+        # 🆕 Multi-pattern JB support: use the LIST of prefixes
+        _jb_prefixes_final = self._get_jb_prefixes()
+        if io_list_tags and _jb_prefixes_final:
             final_tags_upper = set(str(t).upper() for t in tags)
             tags_to_remove_final = set()
             for ocr_tag in list(all_ocr_tags):
@@ -5822,7 +5909,7 @@ class TagJBExtractor:
                     continue
                 # Only check tokens that start with JB prefix (e.g. JS, JB)
                 # This prevents removing real tags like FUY-5239
-                if not any(ocr_upper.startswith(p) for p in _jb_prefix.split(',') if p):
+                if not any(ocr_upper.startswith(p) for p in _jb_prefixes_final if p):
                     continue
                 # Check if it matches JB pattern (letters-digits)
                 if jb_re.match(ocr_upper):
@@ -6009,9 +6096,14 @@ class TagJBExtractor:
                             if not hasattr(self, '_table_known_jbs') or not self._table_known_jbs:
                                 self._table_known_jbs = {_prev_jb}
                             if not hasattr(self, '_table_known_mcs') or not self._table_known_mcs:
-                                mc_prefix = self._get_mc_prefix()
-                                if mc_prefix:
-                                    mc_val = mc_prefix + '-' + _prev_jb if not _prev_jb.startswith(mc_prefix) else _prev_jb
+                                # 🆕 Multi-pattern MC support: use the FIRST MC prefix
+                                # to construct the derived MC value (previously, when
+                                # mc_examples was "NC,IC", mc_prefix was "NC,IC" and
+                                # mc_val became "NC,IC-JSF-309S" which is invalid).
+                                _mc_prefixes_derive = self._get_mc_prefixes()
+                                if _mc_prefixes_derive:
+                                    _first_mc_prefix = _mc_prefixes_derive[0]
+                                    mc_val = _first_mc_prefix + '-' + _prev_jb if not _prev_jb.startswith(_first_mc_prefix) else _prev_jb
                                     self._table_known_mcs = {mc_val}
                         else:
                             # Digital found nothing, no previous JB — run OCR
@@ -6513,9 +6605,12 @@ class TagJBExtractor:
                                     if not hasattr(self, '_table_known_jbs') or not self._table_known_jbs:
                                         self._table_known_jbs = {_prev_jb}
                                     if not hasattr(self, '_table_known_mcs') or not self._table_known_mcs:
-                                        mc_prefix = self._get_mc_prefix()
-                                        if mc_prefix:
-                                            mc_val = mc_prefix + '-' + _prev_jb if not _prev_jb.startswith(mc_prefix) else _prev_jb
+                                        # 🆕 Multi-pattern MC support: use the FIRST MC prefix
+                                        # (previously, mc_examples="NC,IC" produced mc_val="NC,IC-JSF-309S")
+                                        _mc_prefixes_derive2 = self._get_mc_prefixes()
+                                        if _mc_prefixes_derive2:
+                                            _first_mc_prefix2 = _mc_prefixes_derive2[0]
+                                            mc_val = _first_mc_prefix2 + '-' + _prev_jb if not _prev_jb.startswith(_first_mc_prefix2) else _prev_jb
                                             self._table_known_mcs = {mc_val}
                                 else:
                                     try:
@@ -7225,7 +7320,10 @@ class TagJBExtractor:
         # Now we pick the best cable (largest numbers) and draw only that one.
         logger.info("Phase 6: Collecting cable descriptions...")
         cable_found_count = 0
-        _mc_prefix = self._get_mc_prefix()
+        # 🆕 Multi-pattern MC support: use the LIST of prefixes (not the
+        # comma-joined string) so we correctly skip MC tokens for BOTH
+        # "NC" and "IC" when mc_examples is "NC,IC".
+        _mc_prefixes_phase6 = self._get_mc_prefixes()
 
         # 🆕 Select the single best cable to draw
         _best_cable_to_draw = self._select_best_cable_description(cable_descriptions) if cable_descriptions else ''
@@ -7342,7 +7440,7 @@ class TagJBExtractor:
                 for i, text in enumerate(ocr_data['text']):
                     text_clean = text.strip().upper()
                     # Skip MC tokens
-                    if any(text_clean.startswith(p + '-') for p in _mc_prefix.split(',') if p):
+                    if any(text_clean.startswith(p + '-') for p in _mc_prefixes_phase6 if p):
                         continue
 
                     # Check if this token starts the cable code
@@ -7404,7 +7502,7 @@ class TagJBExtractor:
                 search_pattern = '-'.join(cable_parts[2:5])
                 for i, text in enumerate(ocr_data['text']):
                     text_clean = text.strip().upper()
-                    if any(text_clean.startswith(p + '-') for p in _mc_prefix.split(',') if p):
+                    if any(text_clean.startswith(p + '-') for p in _mc_prefixes_phase6 if p):
                         continue
                     if search_pattern in text_clean:
                         region_key = (ocr_data['left'][i], ocr_data['top'][i],
