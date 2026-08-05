@@ -66,15 +66,7 @@ from apps.backend.db.models import (
     IssueSeverity,
     IssueStatus,
     UploadedFileType,
-    User,
-    UserSession,
-    AuditLog,
-    IOAssignmentPreset,
-    UserRole,
-    SessionStatus,
-    AuditAction,
 )
-
 from apps.backend.modules.io_assignment.dimension_api import dimension_bp
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -114,32 +106,11 @@ PDF_CLASSIFIER_LABELS_PATH = os.environ.get(
 )
 
 # کاربران مجاز
-from user_manager_db import (
-    authenticate,
-    get_current_user,
-    is_admin,
-    is_admin_username,  # backward-compat با _is_admin_username
-    require_role,
-    require_login,
-    logout_current_user,
-    list_users,
-    get_user,
-    create_user,
-    update_user,
-    delete_user,
-    list_active_sessions,
-    revoke_session,
-    revoke_all_user_sessions,
-    list_audit_logs,
-    log_audit,
-    seed_admin_if_empty,
-    # Preset functions (جایگزین preset_store.py)
-    list_presets,
-    get_preset,
-    upsert_preset,
-    delete_preset,
-)
-#
+VALID_USERS = {
+    'admin': 'admin123',
+    'user': 'user123',
+    'cpec':'cpec@123'
+}
 
 
 # ایجاد لاگر برای فایل اصلی
@@ -590,8 +561,7 @@ def _normalize_project_name_for_lookup(value: str) -> str:
 
 
 def _is_admin_username(username: Optional[str]) -> bool:
-    """پشت صحنه به user_manager_db.is_admin_username وصل می‌شود."""
-    return is_admin_username(username)
+    return str(username or "").strip().lower() == "admin"
 
 
 def get_latest_excel_from_db(project_id: Optional[str] = None, project_name: Optional[str] = None,
@@ -951,6 +921,8 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
         )
         pattern_unmatched_candidates = list(getattr(extractor, 'latest_pattern_unmatched_candidates', []) or [])
         pattern_unmatched_details = list(getattr(extractor, 'latest_pattern_unmatched_details', []) or [])
+        # 🆕 Warnings collected per-run (JB_NOT_FOUND, DUPLICATE_JB, DUPLICATE_TAG, PAGE_SKIPPED_MULTIPLE_JB)
+        latest_warnings = list(getattr(extractor, 'latest_warnings', []) or [])
         
         TaskManager.update_task(task_id, {'progress': 80})
         logger.info(f"Task {task_id}: پردازش PDF ها کامل شد")
@@ -982,6 +954,8 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
                     'unmatched_pdf_tags': len(unmatched_pdf_tags),
                     'pattern_unmatched_candidates': len(pattern_unmatched_candidates),
                     'pattern_unmatched_details': len(pattern_unmatched_details),
+                    'warnings_count': len(latest_warnings),
+                    'warnings': latest_warnings,
                     'pdf_count': len(pdf_paths),
                     'pdf_names': [os.path.basename(p) for p in pdf_paths],
                     'pdf_types': getattr(extractor, 'document_types', {})
@@ -997,6 +971,12 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
                 pdf_path = os.path.join(annotated_pdf_dir, f)
                 output_files.append(pdf_path)
                 annotated_pdfs.append(pdf_path)
+        # 🆕 Add the dedicated Warnings Excel file if it was generated
+        warnings_excel_filename = "JB_Wiring_Diagram_Warnings.xlsx"
+        warnings_excel_path_local = os.path.join(annotated_pdf_dir, warnings_excel_filename)
+        if os.path.exists(warnings_excel_path_local):
+            output_files.append(warnings_excel_path_local)
+            logger.info(f"Task {task_id}: فایل هشدارها اضافه شد: {warnings_excel_filename}")
         
         TaskManager.update_task(task_id, {'progress': 90})
         
@@ -1033,7 +1013,8 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
                     'report_path': report_path,
                     'zip_path': zip_path,
                     'download_url': download_url,
-                    'annotated_pdfs': annotated_pdfs
+                    'annotated_pdfs': annotated_pdfs,
+                    'warnings_excel_path': warnings_excel_path_local if os.path.exists(warnings_excel_path_local) else None
                 },
                 'results': {
                     'unmatched_excel_tags': unmatched_excel_tags,
@@ -1043,7 +1024,9 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
                     'unmatched_excel_count': len(unmatched_excel_tags),
                     'unmatched_pdf_count': len(unmatched_pdf_tags),
                     'pattern_unmatched_count': len(pattern_unmatched_candidates),
-                    'pattern_unmatched_detail_count': len(pattern_unmatched_details)
+                    'pattern_unmatched_detail_count': len(pattern_unmatched_details),
+                    'warnings': latest_warnings,
+                    'warnings_count': len(latest_warnings)
                 },
                 'patterns_used': pattern_config
             }
@@ -1295,38 +1278,24 @@ def home():
 
 @app.route('/login', methods=['POST'])
 def login():
-    username = request.form.get('username', '').strip()
-    password = request.form.get('password', '')
-
-    user = authenticate(username, password)
-    if user:
-        # ذخیره در Flask session
-        session['user_id'] = user['id']
-        session['username'] = user['username']
-        session['role'] = user['role']
-        session['display_name'] = user['display_name']
-        session['session_token'] = user['session_token']  # server-side session
-        session['login_time'] = datetime.now().isoformat()
-
-        logger.info(f"کاربر {user['username']} (نقش: {user['role']}) وارد سیستم شد")
-        return jsonify({
-            'status': 'success',
-            'user': {
-                'username': user['username'],
-                'role': user['role'],
-                'display_name': user['display_name'],
-            }
-        })
+    username = request.form.get('username')
+    password = request.form.get('password')
+    
+    if username in VALID_USERS and VALID_USERS[username] == password:
+        session['username'] = username
+        global logger
+        logger = get_logger('app', username)
+        logger.info(f"کاربر {username} وارد سیستم شد")
+        return jsonify({'status': 'success'})
     else:
-        logger.warning(f"تلاش ناموفق برای ورود: username={username}, ip={request.remote_addr}")
-        return jsonify({
-            'status': 'error',
-            'message': 'نام کاربری یا رمز عبور اشتباه است'
-        })
+        logger.warning(f"تلاش ناموفق برای ورود با نام کاربری: {username}")
+        return jsonify({'status': 'error', 'message': 'نام کاربری یا رمز عبور اشتباه است'})
 
 @app.route('/logout')
 def logout():
-    logout_current_user() 
+    username = session.get('username', 'anonymous')
+    session.pop('username', None)
+    logger.info(f"کاربر {username} از سیستم خارج شد")
     return redirect(url_for('home'))
 
 @app.route('/home')
@@ -1338,16 +1307,12 @@ def portal():
     return render_template('home.html', username=username)
 
 @app.route('/dashboard')
-@require_login()
 def dashboard():
-    user = get_current_user()
-    logger.info(f"کاربر {user['username']} (نقش: {user['role']}) به داشبورد دسترسی پیدا کرد")
-    return render_template('JB.html',
-                           username=user['username'],
-                           role=user['role'],
-                           display_name=user['display_name'])
-
-
+    if 'username' not in session:
+        return redirect(url_for('home'))
+    username = session.get('username')
+    logger.info(f"کاربر {username} به داشبورد دسترسی پیدا کرد")
+    return render_template('JB.html', username=username)
 
 @app.route('/io-assignment')
 def io_assignment():
@@ -1398,179 +1363,6 @@ def system_info():
         'status': 'success',
         'system_info': system_info
     })
-
-@app.route('/admin/users')
-@require_role('admin')
-def admin_users_page():
-    """صفحه‌ی مدیریت کاربران (فقط admin)."""
-    user = get_current_user()
-    return render_template('admin_users.html',
-                           username=user['username'],
-                           role=user['role'])
-
-
-@app.route('/api/admin/users', methods=['GET'])
-@require_role('admin')
-def api_list_users():
-    """لیست همه‌ی کاربران (بدون hash رمز)."""
-    return jsonify({'status': 'success', 'users': list_users()})
-
-
-@app.route('/api/admin/users', methods=['POST'])
-@require_role('admin')
-def api_create_user():
-    """ایجاد کاربر جدید."""
-    data = request.get_json(force=True)
-    current = get_current_user()
-    success, message = create_user(
-        username=data.get('username', ''),
-        password=data.get('password', ''),
-        role=data.get('role', 'engineer'),
-        display_name=data.get('display_name'),
-        email=data.get('email'),
-        created_by=current['username'] if current else 'admin',
-    )
-    return jsonify({'status': 'success' if success else 'error', 'message': message}), \
-           (200 if success else 400)
-
-
-@app.route('/api/admin/users/<username>', methods=['PUT'])
-@require_role('admin')
-def api_update_user(username):
-    """به‌روزرسانی کاربر موجود."""
-    data = request.get_json(force=True)
-    current = get_current_user()
-    success, message = update_user(
-        username=username,
-        password=data.get('password'),
-        role=data.get('role'),
-        display_name=data.get('display_name'),
-        email=data.get('email'),
-        active=data.get('active'),
-        updated_by=current['username'] if current else None,
-    )
-    # اگه کاربر دیفعال شد، تمام session‌های فعالش رو revoke کن
-    if success and data.get('active') is False:
-        revoke_all_user_sessions(
-            user_id=get_user(username)['id'],
-            revoked_by=current['username'] if current else 'admin',
-        )
-    return jsonify({'status': 'success' if success else 'error', 'message': message}), \
-           (200 if success else 400)
-
-
-@app.route('/api/admin/users/<username>', methods=['DELETE'])
-@require_role('admin')
-def api_delete_user(username):
-    """حذف کاربر."""
-    current = get_current_user()
-    # اول تمام session‌هاش رو revoke کن
-    target = get_user(username)
-    if target:
-        revoke_all_user_sessions(
-            user_id=target['id'],
-            revoked_by=current['username'] if current else 'admin',
-        )
-    success, message = delete_user(username,
-                                    deleted_by=current['username'] if current else None)
-    return jsonify({'status': 'success' if success else 'error', 'message': message}), \
-           (200 if success else 400)
-
-
-@app.route('/api/admin/sessions', methods=['GET'])
-@require_role('admin')
-def api_list_sessions():
-    """لیست session‌های فعال (چه کسی آنلاین است)."""
-    return jsonify({'status': 'success', 'sessions': list_active_sessions()})
-
-
-@app.route('/api/admin/sessions/<session_id>/revoke', methods=['POST'])
-@require_role('admin')
-def api_revoke_session(session_id):
-    """Revoke (force-logout) یک session."""
-    current = get_current_user()
-    success, message = revoke_session(session_id,
-                                       revoked_by=current['username'] if current else 'admin')
-    return jsonify({'status': 'success' if success else 'error', 'message': message}), \
-           (200 if success else 400)
-
-@app.route('/api/admin/audit-logs', methods=['GET'])
-@require_role('admin')
-def api_audit_logs():
-    """لیست audit logs (با فیلتر اختیاری)."""
-    limit = min(int(request.args.get('limit', 100)), 1000)
-    username = request.args.get('username')
-    action = request.args.get('action')
-    since = request.args.get('since')  # ISO datetime
-    since_dt = datetime.fromisoformat(since) if since else None
-    return jsonify({
-        'status': 'success',
-        'logs': list_audit_logs(limit=limit, username=username, action=action, since=since_dt),
-    })
-
-@app.route('/api/dimensions/presets', methods=['GET'])
-@require_login()
-def api_list_presets():
-    """لیست preset‌های کاربر فعلی."""
-    user = get_current_user()
-    presets = list_presets(user_id=user['id'], include_admin_all=True)
-    return jsonify({'status': 'success', 'presets': presets})
-
-
-@app.route('/api/dimensions/presets/<preset_id>', methods=['GET'])
-@require_login()
-def api_get_preset(preset_id):
-    """گرفتن یک preset با ID."""
-    user = get_current_user()
-    preset = get_preset(preset_id=preset_id, user_id=user['id'])
-    if not preset:
-        return jsonify({'status': 'error', 'message': 'Preset not found'}), 404
-    return jsonify({'status': 'success', 'preset': preset})
-
-
-@app.route('/api/dimensions/presets', methods=['POST'])
-@require_login()
-def api_save_preset():
-    """ایجاد یا به‌روزرسانی preset با (user_id, project_name)."""
-    user = get_current_user()
-    data = request.get_json(force=True)
-    if not data or not data.get('project_name'):
-        return jsonify({'status': 'error', 'message': 'project_name is required'}), 400
-    try:
-        result = upsert_preset(payload=data, user_id=user['id'], username=user['username'])
-        return jsonify({'status': 'success', **result})
-    except Exception as exc:
-        return jsonify({'status': 'error', 'message': str(exc)}), 500
-
-
-@app.route('/api/dimensions/presets/<preset_id>', methods=['DELETE'])
-@require_login()
-def api_delete_preset(preset_id):
-    """حذف preset."""
-    user = get_current_user()
-    deleted = delete_preset(preset_id=preset_id, user_id=user['id'], username=user['username'])
-    if not deleted:
-        return jsonify({'status': 'error', 'message': 'Preset not found or access denied'}), 404
-    return jsonify({'status': 'success', 'deleted': True, 'id': preset_id})
-
-
-@app.context_processor
-def inject_user():
-    """اطلاعات کاربر فعلی در همه‌ی templates قابل دسترسی است."""
-    user = get_current_user()
-    if user:
-        return {
-            'current_user': user,
-            'current_username': user['username'],
-            'current_role': user['role'],
-            'is_admin_user': user['role'] == 'admin',
-        }
-    return {
-        'current_user': None,
-        'current_username': None,
-        'current_role': None,
-        'is_admin_user': False,
-    }
 
 @app.route('/task-status/<task_id>', methods=['GET'])
 def get_task_status(task_id):
@@ -1875,6 +1667,8 @@ def api_process():
         )
         pattern_unmatched_candidates = list(getattr(extractor, 'latest_pattern_unmatched_candidates', []) or [])
         pattern_unmatched_details = list(getattr(extractor, 'latest_pattern_unmatched_details', []) or [])
+        # 🆕 Warnings collected per-run
+        latest_warnings = list(getattr(extractor, 'latest_warnings', []) or [])
         
         unmatched_excel_filename = generate_document_filename(project_name, "UnmatchedTags", "xlsx")
         unmatched_excel_path = os.path.join(project_output_dir, unmatched_excel_filename)
@@ -1890,6 +1684,10 @@ def api_process():
                 pdf_path = os.path.join(annotated_pdf_dir, f)
                 output_files.append(pdf_path)
                 annotated_pdfs.append(pdf_path)
+        # 🆕 Add the dedicated Warnings Excel file if it was generated
+        warnings_excel_path_local2 = os.path.join(annotated_pdf_dir, "JB_Wiring_Diagram_Warnings.xlsx")
+        if os.path.exists(warnings_excel_path_local2):
+            output_files.append(warnings_excel_path_local2)
         
         zip_path = create_zip_archive(project_name, output_files)
         download_url = get_download_url(zip_path)
@@ -1902,13 +1700,16 @@ def api_process():
                     "excel_path": output_excel_path,
                     "annotated_pdfs": annotated_pdfs,
                     "zip_path": zip_path,
-                    "download_url": download_url
+                    "download_url": download_url,
+                    "warnings_excel_path": warnings_excel_path_local2 if os.path.exists(warnings_excel_path_local2) else None
                 },
                 "results": {
                     "unmatched_pdf_tags": unmatched_pdf_tags,
                     "unmatched_excel_tags": unmatched_excel_tags,
                     "pattern_unmatched_candidates": pattern_unmatched_candidates,
-                    "pattern_unmatched_details": pattern_unmatched_details
+                    "pattern_unmatched_details": pattern_unmatched_details,
+                    "warnings": latest_warnings,
+                    "warnings_count": len(latest_warnings)
                 }
             }
         }
@@ -2459,12 +2260,6 @@ scheduler.start()
 
 # خاموش کردن scheduler هنگام خروج
 atexit.register(lambda: scheduler.shutdown())
-
-try:
-    seed_admin_if_empty(default_password="admin123")
-except Exception as exc:
-    logger.warning("Could not seed admin user (DB not ready?): %s", exc)
-
 
 if __name__ == '__main__':
     # Print startup message

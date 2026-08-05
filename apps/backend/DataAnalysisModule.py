@@ -396,6 +396,16 @@ class TagJBExtractor:
         self.similarity_reports = [] 
         self.latest_pattern_unmatched_candidates = []
         self.latest_pattern_unmatched_details = []
+        # 🆕 Warnings collected per-run:
+        #   - JB not found on a page that has tags/spares
+        #   - Same JB appearing on multiple pages
+        #   - Same tag appearing on multiple pages
+        #   - Pages skipped due to multiple JBs
+        # Each entry: {type, item, pages, tag_count, severity, description, action}
+        self.latest_warnings = []
+        # Per-page warnings accumulated during _process_single_page_data
+        # (merged into latest_warnings at the end of run_with_annotated_pdf)
+        self._page_warnings = []
         
         # تنظیم مقادیر پیش‌فرض الگوها (به عنوان رشته)
         self.jb_examples = None
@@ -4389,6 +4399,200 @@ class TagJBExtractor:
         return new_tags
 
 
+    def _extract_jb_mc_from_digital_header(self, page, page_num):
+        """
+        Extract JB and MC identifiers from the DIGITAL text layer of a PDF page.
+
+        Uses a dictionary-based label search: scans the header for any label
+        synonym (e.g. "JB", "JB No.", "Junction Box", "Multi Cable", "MC"),
+        then reads the text immediately after the label and checks if it
+        matches the user's JB/MC input patterns (jb_examples / mc_examples).
+
+        Label dictionaries:
+            JB labels: "JB", "JB No.", "JB No:", "Junction Box", "Junction Box No."
+            MC labels: "MC", "MC No.", "MC No:", "Multi Cable", "Multi Cable No."
+
+        Returns:
+            (set of JB identifiers, set of MC identifiers)
+        """
+        jb_ids = set()
+        mc_ids = set()
+
+        try:
+            words = page.get_text("words")
+            if not words:
+                return jb_ids, mc_ids
+
+            # ── Get user's JB/MC prefix patterns ────────────────────────
+            _jb_prefixes = list(getattr(self, 'jb_examples_list', None) or [])
+            if not _jb_prefixes and getattr(self, 'jb_examples', None):
+                _jb_prefixes = self._parse_multi_patterns(self.jb_examples)
+            _mc_prefixes = list(getattr(self, 'mc_examples_list', None) or [])
+            if not _mc_prefixes and getattr(self, 'mc_examples', None):
+                _mc_prefixes = self._parse_multi_patterns(self.mc_examples)
+
+            # ── Label dictionaries ──────────────────────────────────────
+            # Each entry: (label_words_tuple, type)
+            # label_words_tuple is a tuple of uppercase words to match
+            # sequentially in the header line.
+            _LABEL_DICT = [
+                # JB labels — ordered by specificity (longest first)
+                (('JUNCTION', 'BOX', 'NO'), 'jb'),
+                (('JUNCTION', 'BOX'), 'jb'),
+                (('JB', 'NO'), 'jb'),
+                (('JB',), 'jb'),
+                # MC labels — ordered by specificity (longest first)
+                (('MULTI', 'CABLE', 'NO'), 'mc'),
+                (('MULTI', 'CABLE'), 'mc'),
+                (('MC', 'NO'), 'mc'),
+                (('MC',), 'mc'),
+            ]
+
+            # ── Group words by line ─────────────────────────────────────
+            lines = {}
+            for w in words:
+                key = (w[5], w[6])  # (block_no, line_no)
+                if key not in lines:
+                    lines[key] = []
+                lines[key].append(w)
+
+            for key in lines:
+                lines[key].sort(key=lambda w: w[0])
+
+            sorted_lines = sorted(lines.values(), key=lambda line: line[0][1] if line else 0)
+
+            # ── Scan header lines (first 10) ────────────────────────────
+            header_line_count = min(10, len(sorted_lines))
+
+            for line_idx in range(header_line_count):
+                line_words = sorted_lines[line_idx]
+                word_texts = [str(w[4]).strip().upper() for w in line_words]
+                line_text = ' '.join(word_texts)
+
+                logger.debug(
+                    f"_extract_jb_mc_from_digital_header: line {line_idx}: '{line_text[:120]}'"
+                )
+
+                # ── Scan for label matches ──────────────────────────────
+                for i, wt in enumerate(word_texts):
+                    for label_words, label_type in _LABEL_DICT:
+                        # Check if words starting at position i match the label
+                        if i + len(label_words) > len(word_texts):
+                            continue
+
+                        match = True
+                        for j, lw in enumerate(label_words):
+                            wt_j = word_texts[i + j]
+                            # Allow "NO", "NO.", "NO:" to match each other
+                            if lw == 'NO':
+                                if wt_j not in ('NO', 'NO.', 'NO:', 'NUMBER', 'NO,', 'NO;'):
+                                    match = False
+                                    break
+                            else:
+                                if wt_j != lw:
+                                    match = False
+                                    break
+
+                        if not match:
+                            continue
+
+                        # ── Label found! Now read the next words after it ──
+                        # Skip optional separators: ":", ".", "No.", "No:", etc.
+                        search_start = i + len(label_words)
+                        while search_start < len(word_texts):
+                            wt_skip = word_texts[search_start]
+                            # Skip pure punctuation
+                            if wt_skip in (':', '.', ':.', '.:', ',', ';'):
+                                search_start += 1
+                                continue
+                            # Skip "NO" + any punctuation combination (NO., NO:, NO.:, etc.)
+                            if re.match(r'^NO[:.;,]+$', wt_skip):
+                                search_start += 1
+                                continue
+                            # Skip "NUMBER"
+                            if wt_skip == 'NUMBER':
+                                search_start += 1
+                                continue
+                            break
+
+                        # Read up to 3 words after the label as candidate identifier
+                        # (identifier may be split across words, e.g. "JSF" + "-" + "309S")
+                        candidate_parts = []
+                        for k in range(search_start, min(search_start + 4, len(word_texts))):
+                            wt_k = word_texts[k]
+                            # Stop if we hit another label
+                            if wt_k in ('JB', 'MC', 'MULTI', 'JUNCTION', 'TAG', 'PAGE', 'SHEET'):
+                                break
+                            candidate_parts.append(wt_k)
+
+                        if not candidate_parts:
+                            continue
+
+                        # Join parts and clean up
+                        candidate = ''.join(candidate_parts)
+                        candidate = re.sub(r'[:.;,\s]+', '', candidate)
+                        candidate = candidate.upper()
+
+                        if len(candidate) < 4 or not any(c.isdigit() for c in candidate):
+                            continue
+
+                        # ── Validate against user's JB/MC patterns ─────────
+                        if label_type == 'jb':
+                            # Check if candidate starts with any JB prefix
+                            # OR matches general JB pattern (letters-digits)
+                            starts_with_jb = bool(_jb_prefixes) and any(
+                                candidate.startswith(p) for p in _jb_prefixes
+                            )
+                            looks_like_jb = bool(re.match(r'^[A-Z]{2,5}-?\d{2,5}[A-Z]?$', candidate))
+                            if starts_with_jb or looks_like_jb:
+                                jb_ids.add(candidate)
+                                logger.info(
+                                    f"_extract_jb_mc_from_digital_header: page {page_num + 1} — "
+                                    f"found JB '{candidate}' after label {' '.join(label_words)} "
+                                    f"in line: '{line_text[:80]}'"
+                                )
+
+                        elif label_type == 'mc':
+                            # Check if candidate starts with any MC prefix
+                            starts_with_mc = bool(_mc_prefixes) and any(
+                                candidate.startswith(p) for p in _mc_prefixes
+                            )
+                            # Also accept NC- prefixed identifiers
+                            starts_with_nc = candidate.startswith('NC')
+                            if starts_with_mc or starts_with_nc:
+                                mc_ids.add(candidate)
+                                logger.info(
+                                    f"_extract_jb_mc_from_digital_header: page {page_num + 1} — "
+                                    f"found MC '{candidate}' after label {' '.join(label_words)} "
+                                    f"in line: '{line_text[:80]}'"
+                                )
+
+            # ── Derive MC from JB (or vice versa) ────────────────────────
+            if jb_ids and not mc_ids:
+                for jb in jb_ids:
+                    derived_mc = f"NC-{jb}"
+                    mc_ids.add(derived_mc)
+                    logger.info(
+                        f"_extract_jb_mc_from_digital_header: page {page_num + 1} — "
+                        f"derived MC '{derived_mc}' from JB '{jb}'"
+                    )
+
+            if mc_ids and not jb_ids:
+                for mc in mc_ids:
+                    if mc.upper().startswith('NC-'):
+                        derived_jb = mc[3:]
+                        if len(derived_jb) >= 4:
+                            jb_ids.add(derived_jb)
+                            logger.info(
+                                f"_extract_jb_mc_from_digital_header: page {page_num + 1} — "
+                                f"derived JB '{derived_jb}' from MC '{mc}'"
+                            )
+
+        except Exception as exc:
+            logger.warning(f"_extract_jb_mc_from_digital_header: failed: {exc}")
+        return jb_ids, mc_ids
+
+
     def _extract_header_references_only(self, page, page_num):
         """
         Extract JB/MC identifiers from the table header ONLY (no body).
@@ -5294,12 +5498,28 @@ class TagJBExtractor:
         jb_identifiers = clean_jbs
 
         # ── Step 4: JB Preservation across pages ───────────────────────
-        # If current page has no valid JB after cleanup, use the last valid JB.
+        # If current page has no valid JB after cleanup, we do NOT reuse the
+        # JB from the previous page. Instead, we mark the JB as "unknown" so
+        # that tags/spares on this page are NOT incorrectly assigned to a
+        # different JB.
+        #
+        # The previous behavior (reusing JB from previous page) caused tags
+        # and spares from a page with no JB to be incorrectly assigned to
+        # the previous page's JB — which is wrong because each page in a
+        # table-mode PDF typically belongs to a DIFFERENT JB.
         if not jb_identifiers:
+            # Do NOT reuse — leave jb_identifiers empty so tags on this page
+            # get marked as "JB_NOT_FOUND" instead of being assigned to the
+            # wrong JB.
             last_jb = getattr(self, '_table_last_valid_jb', None)
             if last_jb:
-                jb_identifiers = {last_jb}
-                logger.info(f"_post_process: reused JB from previous page: {last_jb}")
+                logger.info(
+                    f"_post_process: NO JB found on this page — "
+                    f"NOT reusing '{last_jb}' from previous page "
+                    f"(tags/spares will be marked as JB_NOT_FOUND to avoid wrong assignment)"
+                )
+            else:
+                logger.info(f"_post_process: NO JB found on this page and no previous JB available")
         else:
             # Deduplicate: if multiple JB candidates, keep only the longest one
             # (it's the most complete identifier — e.g. JSF-5776S over JSF-57).
@@ -5596,17 +5816,69 @@ class TagJBExtractor:
                 # TABLE-MODE: use multi-pass extraction (S13 strategy) for
                 # maximum recall. Diagram-mode keeps the original single-pass.
                 if pdf_type == 'table':
-                    # ── FIRST: Extract header references (JB/MC) ──────────
-                    # This populates self._table_known_jbs and self._table_known_mcs
-                    # so that _apply_table_ocr_corrections can use them to fix
-                    # OCR errors in the body (e.g. JSF-5765 → JSF-576S).
+                    # ── STEP 1: Try digital text extraction for JB/MC labels ──
+                    # This uses the PDF's digital text layer (not OCR) to find
+                    # "JB No.: JSF-309S" and "Multi Cable No.: NC-JSF-309S"
+                    # in the header. Much more accurate than OCR.
+                    #
+                    # This is NOT mandatory — it's an ADDITIONAL method that runs
+                    # alongside the OCR-based header extraction. If digital finds
+                    # something, great. If not, OCR still runs. If both find
+                    # something, we merge the results (digital takes priority).
+                    digital_jbs, digital_mcs = set(), set()
                     try:
-                        self._extract_header_references_only(page, page_num)
-                    except Exception as hdr_err:
+                        digital_jbs, digital_mcs = self._extract_jb_mc_from_digital_header(page, page_num)
+                        if digital_jbs:
+                            if not hasattr(self, '_table_known_jbs'):
+                                self._table_known_jbs = set()
+                            self._table_known_jbs.update(digital_jbs)
+                            self._table_last_valid_jb = max(digital_jbs, key=len)
+                            logger.info(
+                                "process_pdf_page %d: digital header found JBs: %s",
+                                page_num + 1, digital_jbs
+                            )
+                        if digital_mcs:
+                            if not hasattr(self, '_table_known_mcs'):
+                                self._table_known_mcs = set()
+                            self._table_known_mcs.update(digital_mcs)
+                            self._table_last_valid_mc = max(digital_mcs, key=len)
+                            logger.info(
+                                "process_pdf_page %d: digital header found MCs: %s",
+                                page_num + 1, digital_mcs
+                            )
+                    except Exception as digital_hdr_err:
                         logger.warning(
-                            "process_pdf_page %d: header reference extraction failed: %s",
-                            page_num + 1, hdr_err
+                            "process_pdf_page %d: digital header extraction failed: %s",
+                            page_num + 1, digital_hdr_err
                         )
+
+                    # ── STEP 2: Run OCR-based header extraction ONLY if digital found nothing ──
+                    # If digital already found JB/MC, skip OCR (saves time).
+                    _prev_jb = getattr(self, '_table_last_valid_jb', None)
+                    if not digital_jbs and not digital_mcs:
+                        if _prev_jb:
+                            # Digital found nothing, but we have JB from previous page
+                            logger.info(
+                                "process_pdf_page %d: skipping header OCR — "
+                                "reusing JB '%s' from previous page (digital found nothing)",
+                                page_num + 1, _prev_jb
+                            )
+                            if not hasattr(self, '_table_known_jbs') or not self._table_known_jbs:
+                                self._table_known_jbs = {_prev_jb}
+                            if not hasattr(self, '_table_known_mcs') or not self._table_known_mcs:
+                                mc_prefix = self._get_mc_prefix()
+                                if mc_prefix:
+                                    mc_val = mc_prefix + '-' + _prev_jb if not _prev_jb.startswith(mc_prefix) else _prev_jb
+                                    self._table_known_mcs = {mc_val}
+                        else:
+                            # Digital found nothing, no previous JB — run OCR
+                            try:
+                                self._extract_header_references_only(page, page_num)
+                            except Exception as hdr_err:
+                                logger.warning(
+                                    "process_pdf_page %d: header reference extraction failed: %s",
+                                    page_num + 1, hdr_err
+                                )
                     logger.info(f"process_pdf_page {page_num + 1}: TABLE mode — using multi-pass OCR (S13)")
                     result = self._extract_from_image_table_multipass(page, temp_dir, page_num)
                 else:
@@ -6038,30 +6310,44 @@ class TagJBExtractor:
 
                         # TABLE-MODE: use multi-pass extraction (S13 strategy)
                         if self._current_pdf_type == 'table':
-                            # ── FIRST: Extract header references (JB/MC) ──────
-                            # Populates self._table_known_jbs / _table_known_mcs
-                            # so _apply_table_ocr_corrections can fix OCR errors.
-                            # PERFORMANCE FIX: Skip if we already have JB from previous page
+                            # ── STEP 1: Try digital text extraction for JB/MC labels ──
+                            # Additional method — not mandatory. Runs alongside OCR.
                             _prev_jb = getattr(self, '_table_last_valid_jb', None)
-                            if _prev_jb:
-                                logger.info(f"process_pdf page {page_num + 1}: skipping header OCR — reusing JB '{_prev_jb}' from previous page")
-                                # Populate known_jbs/mcs from previous page
-                                if not hasattr(self, '_table_known_jbs') or not self._table_known_jbs:
-                                    self._table_known_jbs = {_prev_jb}
-                                if not hasattr(self, '_table_known_mcs') or not self._table_known_mcs:
-                                    # Derive MC from JB (e.g., JB="JAG-902S" → MC="NC-JAG-902S")
-                                    mc_prefix = self._get_mc_prefix()
-                                    if mc_prefix:
-                                        mc_val = mc_prefix + '-' + _prev_jb if not _prev_jb.startswith(mc_prefix) else _prev_jb
-                                        self._table_known_mcs = {mc_val}
-                            else:
-                                try:
-                                    self._extract_header_references_only(page, page_num)
-                                except Exception as hdr_err:
-                                    logger.warning(
-                                        "process_pdf page %d: header reference extraction failed: %s",
-                                        page_num + 1, hdr_err
-                                    )
+                            _digital_jbs2, _digital_mcs2 = set(), set()
+                            try:
+                                _digital_jbs2, _digital_mcs2 = self._extract_jb_mc_from_digital_header(page, page_num)
+                                if _digital_jbs2:
+                                    if not hasattr(self, '_table_known_jbs'):
+                                        self._table_known_jbs = set()
+                                    self._table_known_jbs.update(_digital_jbs2)
+                                    self._table_last_valid_jb = max(_digital_jbs2, key=len)
+                                    logger.info(f"process_pdf page {page_num + 1}: digital header found JBs: {_digital_jbs2}")
+                                if _digital_mcs2:
+                                    if not hasattr(self, '_table_known_mcs'):
+                                        self._table_known_mcs = set()
+                                    self._table_known_mcs.update(_digital_mcs2)
+                                    self._table_last_valid_mc = max(_digital_mcs2, key=len)
+                                    logger.info(f"process_pdf page {page_num + 1}: digital header found MCs: {_digital_mcs2}")
+                            except Exception as dh_err2:
+                                logger.warning(f"process_pdf page {page_num + 1}: digital header extraction failed: {dh_err2}")
+
+                            # ── STEP 2: Run OCR ONLY if digital found nothing ──
+                            # If digital already found JB/MC, skip OCR (saves time).
+                            if not _digital_jbs2 and not _digital_mcs2:
+                                if _prev_jb:
+                                    logger.info(f"process_pdf page {page_num + 1}: skipping header OCR — reusing JB '{_prev_jb}' from previous page (digital found nothing)")
+                                    if not hasattr(self, '_table_known_jbs') or not self._table_known_jbs:
+                                        self._table_known_jbs = {_prev_jb}
+                                    if not hasattr(self, '_table_known_mcs') or not self._table_known_mcs:
+                                        mc_prefix = self._get_mc_prefix()
+                                        if mc_prefix:
+                                            mc_val = mc_prefix + '-' + _prev_jb if not _prev_jb.startswith(mc_prefix) else _prev_jb
+                                            self._table_known_mcs = {mc_val}
+                                else:
+                                    try:
+                                        self._extract_header_references_only(page, page_num)
+                                    except Exception as hdr_err:
+                                        logger.warning(f"process_pdf page {page_num + 1}: header reference extraction failed: {hdr_err}")
                             logger.info(f"process_pdf page {page_num + 1}: TABLE mode — using multi-pass OCR (S13)")
                             extract_result = self._extract_from_image_table_multipass(page, temp_dir, page_num)
                         else:
@@ -7137,7 +7423,103 @@ class TagJBExtractor:
                         except Exception as e:
                             logger.error(f"Error adding overlay to page {page_num + 1}: {e}")
                             
-                        
+                        # ── 🆕 WARNING BANNERS ──────────────────────────────────────
+                        # Draw attention-grabbing banners at the BOTTOM of the page when:
+                        #   - JB_NOT_FOUND: page has tags/spares but no JB detected  (RED)
+                        #   - MULTIPLE_JB:  page has more than one JB                (ORANGE)
+                        #   - DUPLICATE_JB: this page's JB also appears on another page (ORANGE)
+                        #   - DUPLICATE_TAG: this page has a tag that also appears on another page (YELLOW)
+                        # The operator sees these directly in the annotated PDF — no need
+                        # to dig through Excel.
+                        # ──────────────────────────────────────────────────────────
+                        try:
+                            _banners = []  # list of (text, color)
+
+                            # JB not found on this page but tags exist
+                            if not jb_identifiers and (tags or spare_identifiers):
+                                _banners.append((
+                                    f"WARNING: JB NOT FOUND on page {page_num + 1} "
+                                    f"— {len(tags)} tag(s) + {len(spare_identifiers)} spare(s) "
+                                    f"exported WITHOUT a JB. Check page header!",
+                                    (0, 0, 220)  # RED (BGR)
+                                ))
+
+                            # Multiple JBs on this page
+                            if len(jb_identifiers) > 1:
+                                _banners.append((
+                                    f"WARNING: MULTIPLE JB DETECTED on page {page_num + 1} "
+                                    f"— {sorted(str(j) for j in jb_identifiers)}. "
+                                    f"Page was SKIPPED in Excel export.",
+                                    (0, 140, 220)  # ORANGE (BGR)
+                                ))
+
+                            # Duplicate JB across pages — check page_results
+                            if jb_identifiers and page_results:
+                                _jb_pages_map = {}
+                                for pn, pr in page_results.items():
+                                    if not isinstance(pr, (tuple, list)) or len(pr) < 9:
+                                        continue
+                                    page_jbs = pr[1] or set()
+                                    for j in page_jbs:
+                                        ju = str(j).strip().upper()
+                                        if ju:
+                                            _jb_pages_map.setdefault(ju, []).append(int(pn))
+                                for jb in jb_identifiers:
+                                    ju = str(jb).strip().upper()
+                                    other_pages = [p for p in _jb_pages_map.get(ju, []) if p != page_num + 1]
+                                    if other_pages:
+                                        _banners.append((
+                                            f"WARNING: DUPLICATE JB '{jb}' — also appears on page(s) "
+                                            f"{sorted(set(other_pages))}.",
+                                            (0, 140, 220)  # ORANGE
+                                        ))
+
+                            # Duplicate tags across pages — check page_results
+                            if tags and page_results:
+                                _tag_pages_map = {}
+                                for pn, pr in page_results.items():
+                                    if not isinstance(pr, (tuple, list)) or len(pr) < 9:
+                                        continue
+                                    page_tags_set = pr[0] or set()
+                                    for tg in page_tags_set:
+                                        tu = str(tg).strip().upper()
+                                        if tu and 'SPARE' not in tu:
+                                            _tag_pages_map.setdefault(tu, []).append(int(pn))
+                                for tag in tags:
+                                    tu = str(tag).strip().upper()
+                                    if not tu or 'SPARE' in tu:
+                                        continue
+                                    other_pages = [p for p in _tag_pages_map.get(tu, []) if p != page_num + 1]
+                                    if other_pages:
+                                        _banners.append((
+                                            f"INFO: Tag '{tag}' also appears on page(s) "
+                                            f"{sorted(set(other_pages))}.",
+                                            (0, 200, 220)  # YELLOW-ish (BGR)
+                                        ))
+
+                            # Draw the banners (stacked from bottom-up)
+                            if _banners:
+                                _banner_h = 32
+                                _banner_pad = 4
+                                _banner_w = min(annotated_image.shape[1] - 10, 1100)
+                                _start_y = annotated_image.shape[0] - len(_banners) * (_banner_h + _banner_pad) - 5
+                                for bi, (text, color) in enumerate(_banners):
+                                    by = _start_y + bi * (_banner_h + _banner_pad)
+                                    bx = 5
+                                    if by + _banner_h > annotated_image.shape[0]:
+                                        break
+                                    # Draw filled rectangle
+                                    cv2.rectangle(annotated_image, (bx, by), (bx + _banner_w, by + _banner_h),
+                                                color, -1)
+                                    # Draw text
+                                    # Truncate text if too long
+                                    _max_chars = _banner_w // 9  # rough estimate
+                                    _disp_text = text if len(text) <= _max_chars else text[:_max_chars - 3] + '...'
+                                    cv2.putText(annotated_image, _disp_text, (bx + 8, by + 22),
+                                                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2)
+                        except Exception as banner_err:
+                            logger.error(f"Error drawing warning banners on page {page_num + 1}: {banner_err}")
+
                         # Save annotated image and add to PDF
                         try:
                             annotated_path = os.path.join(temp_dir, f"annotated_{page_num + 1}.png")
@@ -7392,6 +7774,10 @@ class TagJBExtractor:
             logger.info("="*80)
             logger.info("🚀 STARTING COMPLETE PROCESSING WITH ANNOTATED PDFs")
             logger.info("="*80)
+            
+            # 🆕 Reset per-run warning state
+            self._page_warnings = []
+            self.latest_warnings = []
             
             # ============================================================
             # مرحله 1: مقداردهی اولیه و بارگذاری داده‌ها
@@ -7854,6 +8240,56 @@ class TagJBExtractor:
                 unique_details.append(item)
             self.latest_pattern_unmatched_details = unique_details
             
+            # ============================================================
+            # 🆕 مرحله 5b: جمع‌آوری هشدارهای cross-page
+            # ============================================================
+            #   - JB های که در چندین صفحه تکرار شده‌اند
+            #   - Tag هایی که در چندین صفحه تکرار شده‌اند
+            #   - Pages که به دلیل multiple JB skip شده‌اند
+            #   - Pages که tags دارند ولی JB پیدا نشده
+            # این هشدارها در UI / Excel / Annotated PDF نمایش داده می‌شوند.
+            # ============================================================
+            try:
+                cross_page_warnings = self._collect_cross_page_warnings(all_pdf_results)
+                # Merge per-page warnings (JB_NOT_FOUND, PAGE_SKIPPED_MULTIPLE_JB)
+                # with cross-page warnings (DUPLICATE_JB, DUPLICATE_TAG)
+                merged_warnings = list(self._page_warnings or []) + list(cross_page_warnings or [])
+                # Deduplicate by (type, item, pdf_name)
+                seen_warn_keys = set()
+                deduped = []
+                for w in merged_warnings:
+                    k = (
+                        str(w.get('type', '')).upper(),
+                        str(w.get('item', '')).upper(),
+                        str(w.get('pdf_name', '')).upper(),
+                    )
+                    if k in seen_warn_keys:
+                        continue
+                    seen_warn_keys.add(k)
+                    deduped.append(w)
+                self.latest_warnings = deduped
+                logger.info(
+                    f"📋 Warnings collected: {len(self.latest_warnings)} "
+                    f"(JB_NOT_FOUND={sum(1 for w in self.latest_warnings if w.get('type')=='JB_NOT_FOUND')}, "
+                    f"DUPLICATE_JB={sum(1 for w in self.latest_warnings if w.get('type')=='DUPLICATE_JB')}, "
+                    f"DUPLICATE_TAG={sum(1 for w in self.latest_warnings if w.get('type')=='DUPLICATE_TAG')}, "
+                    f"PAGE_SKIPPED_MULTIPLE_JB={sum(1 for w in self.latest_warnings if w.get('type')=='PAGE_SKIPPED_MULTIPLE_JB')})"
+                )
+                
+                # 🆕 ایجاد فایل Excel جداگانه برای warnings
+                warnings_excel_path = os.path.join(output_pdf_dir, "JB_Wiring_Diagram_Warnings.xlsx")
+                try:
+                    self._create_warnings_excel(self.latest_warnings, warnings_excel_path)
+                    output_files.append(warnings_excel_path)
+                    logger.info(f"✅ Warnings Excel saved: {warnings_excel_path}")
+                except Exception as w_err:
+                    logger.error(f"❌ Error creating Warnings Excel: {w_err}")
+                    logger.error(traceback.format_exc())
+            except Exception as warn_err:
+                logger.error(f"❌ Error collecting warnings: {warn_err}")
+                logger.error(traceback.format_exc())
+                self.latest_warnings = list(self._page_warnings or [])
+            
             return list(io_only_tags), list(ocr_only_unmatched)
             
         except Exception as e:
@@ -7865,8 +8301,217 @@ class TagJBExtractor:
             logger.error("="*80)
             self.latest_pattern_unmatched_candidates = []
             self.latest_pattern_unmatched_details = []
+            self.latest_warnings = list(getattr(self, '_page_warnings', []) or [])
             return [], []
         
+    def _collect_cross_page_warnings(self, all_pdf_results: 'Dict[str, Dict[int, Tuple[Any, ...]]]') -> 'List[Dict[str, Any]]':
+        """
+        🆕 Detect cross-page anomalies and return them as a list of warning dicts.
+
+        Warnings produced:
+          - DUPLICATE_JB:      same JB identifier appears on 2+ pages of the same PDF
+          - DUPLICATE_TAG:     same tag appears on 2+ pages of the same PDF (or across PDFs)
+
+        Args:
+            all_pdf_results: dict keyed by PDF filename → dict keyed by page number → 9-tuple
+
+        Returns:
+            list of warning dicts (each compatible with self._page_warnings entries)
+        """
+        warnings_list = []
+
+        if not all_pdf_results:
+            return warnings_list
+
+        try:
+            # Per-PDF analysis (JBs and tags duplicated within the same PDF)
+            for pdf_name, page_results_dict in all_pdf_results.items():
+                if not page_results_dict:
+                    continue
+
+                # Build JB → [pages] and Tag → [pages] maps
+                jb_pages: 'Dict[str, List[int]]' = {}
+                tag_pages: 'Dict[str, List[int]]' = {}
+
+                for page_num, page_results in page_results_dict.items():
+                    if not isinstance(page_results, (tuple, list)) or len(page_results) < 9:
+                        continue
+                    jbs = page_results[1] or set()
+                    tags = page_results[0] or set()
+
+                    for jb in jbs:
+                        jb_u = str(jb).strip().upper()
+                        if not jb_u:
+                            continue
+                        jb_pages.setdefault(jb_u, []).append(int(page_num))
+
+                    for tag in tags:
+                        tag_u = str(tag).strip().upper()
+                        if not tag_u:
+                            continue
+                        # Skip pure SPARE / placeholder tokens
+                        if 'SPARE' in tag_u:
+                            continue
+                        tag_pages.setdefault(tag_u, []).append(int(page_num))
+
+                # Duplicate JBs (same JB on 2+ pages within one PDF)
+                for jb_u, pages in jb_pages.items():
+                    if len(pages) > 1:
+                        warnings_list.append({
+                            'type': 'DUPLICATE_JB',
+                            'item': jb_u,
+                            'pages': sorted(set(pages)),
+                            'tag_count': 0,
+                            'severity': 'WARNING',
+                            'description': (
+                                f"JB '{jb_u}' appears on {len(pages)} pages of '{pdf_name}': "
+                                f"{sorted(set(pages))}. "
+                                f"In table-mode PDFs each page typically belongs to a DIFFERENT JB — "
+                                f"a duplicate JB often means the wrong JB was assigned on one of the pages "
+                                f"(e.g. previous page's JB was reused by mistake)."
+                            ),
+                            'action': (
+                                'Open the annotated PDF and verify that the JB label on each listed '
+                                'page actually matches. If a page has no JB, it should be flagged as '
+                                'JB_NOT_FOUND rather than inheriting the previous JB.'
+                            ),
+                            'pdf_name': pdf_name,
+                        })
+
+                # Duplicate tags (same tag on 2+ pages within one PDF)
+                for tag_u, pages in tag_pages.items():
+                    if len(pages) > 1:
+                        warnings_list.append({
+                            'type': 'DUPLICATE_TAG',
+                            'item': tag_u,
+                            'pages': sorted(set(pages)),
+                            'tag_count': 0,
+                            'severity': 'WARNING',
+                            'description': (
+                                f"Tag '{tag_u}' appears on {len(pages)} pages of '{pdf_name}': "
+                                f"{sorted(set(pages))}. "
+                                f"A single instrument tag should normally appear on only ONE page. "
+                                f"Duplicates may indicate OCR double-read, page-header leakage, "
+                                f"or a genuinely duplicated tag in the source PDF."
+                            ),
+                            'action': (
+                                'Check the annotated PDF — confirm the tag appears at the correct '
+                                'position on each listed page. If it is an OCR artefact, ignore. '
+                                'If it is a real duplicate, fix the source PDF or IO List.'
+                            ),
+                            'pdf_name': pdf_name,
+                        })
+
+            # Cross-PDF duplicate tags (same tag across different PDFs)
+            cross_tag_pdfs: 'Dict[str, List[str]]' = {}
+            for pdf_name, page_results_dict in all_pdf_results.items():
+                if not page_results_dict:
+                    continue
+                pdf_tag_set = set()
+                for page_num, page_results in page_results_dict.items():
+                    if not isinstance(page_results, (tuple, list)) or len(page_results) < 9:
+                        continue
+                    tags = page_results[0] or set()
+                    for tag in tags:
+                        tag_u = str(tag).strip().upper()
+                        if not tag_u or 'SPARE' in tag_u:
+                            continue
+                        pdf_tag_set.add(tag_u)
+                for tag_u in pdf_tag_set:
+                    cross_tag_pdfs.setdefault(tag_u, []).append(pdf_name)
+
+            for tag_u, pdfs in cross_tag_pdfs.items():
+                if len(pdfs) > 1:
+                    warnings_list.append({
+                        'type': 'DUPLICATE_TAG',
+                        'item': tag_u,
+                        'pages': sorted(set(pdfs)),
+                        'tag_count': 0,
+                        'severity': 'INFO',
+                        'description': (
+                            f"Tag '{tag_u}' appears in {len(pdfs)} different PDFs: {sorted(set(pdfs))}. "
+                            f"This is normal if the same instrument is wired through multiple JBs, "
+                            f"but please verify it is intentional."
+                        ),
+                        'action': 'Verify the tag is expected to appear in multiple PDFs.',
+                        'pdf_name': ','.join(sorted(set(pdfs))),
+                    })
+
+        except Exception as e:
+            logger.error(f"Error in _collect_cross_page_warnings: {e}")
+            logger.error(traceback.format_exc())
+
+        return warnings_list
+
+    def _create_warnings_excel(self, warnings: 'List[Dict[str, Any]]', output_path: str):
+        """
+        🆕 Create a dedicated Excel file listing all warnings collected during the run.
+
+        Columns:
+            Warning_Type | Item | PDF_Name | Pages | Tag_Count | Severity | Description | Action
+        """
+        try:
+            if warnings:
+                rows = []
+                for w in warnings:
+                    pages = w.get('pages', [])
+                    if pages and all(isinstance(p, int) for p in pages):
+                        pages_str = ', '.join(str(p) for p in sorted(pages))
+                    else:
+                        pages_str = ', '.join(str(p) for p in pages)
+                    rows.append({
+                        'Warning_Type': w.get('type', ''),
+                        'Item': w.get('item', ''),
+                        'PDF_Name': w.get('pdf_name', ''),
+                        'Pages': pages_str,
+                        'Tag_Count': w.get('tag_count', 0),
+                        'Severity': w.get('severity', ''),
+                        'Description': w.get('description', ''),
+                        'Action': w.get('action', ''),
+                    })
+                df = pd.DataFrame(rows, columns=[
+                    'Warning_Type', 'Item', 'PDF_Name', 'Pages',
+                    'Tag_Count', 'Severity', 'Description', 'Action'
+                ])
+                # Sort: ERROR first, then WARNING, then INFO
+                severity_order = {'ERROR': 0, 'WARNING': 1, 'INFO': 2}
+                df['_sev_order'] = df['Severity'].map(severity_order).fillna(3)
+                df = df.sort_values(by=['_sev_order', 'Warning_Type', 'Item']).drop(columns=['_sev_order'])
+                df.to_excel(output_path, index=False)
+                logger.info(f"   Warnings Excel: {len(df)} rows")
+            else:
+                # No warnings — create a "success" placeholder file so the
+                # operator can see the system actually ran the check.
+                df = pd.DataFrame([{
+                    'Warning_Type': 'NONE',
+                    'Item': 'N/A',
+                    'PDF_Name': 'N/A',
+                    'Pages': 'N/A',
+                    'Tag_Count': 0,
+                    'Severity': 'SUCCESS',
+                    'Description': 'No JB-not-found, duplicate-JB, or duplicate-tag issues detected.',
+                    'Action': 'No action needed.',
+                }])
+                df.to_excel(output_path, index=False)
+                logger.info("   Warnings Excel: no warnings — wrote success placeholder")
+        except Exception as e:
+            logger.error(f"Error in _create_warnings_excel: {e}")
+            logger.error(traceback.format_exc())
+            # Last-resort: write an empty file so the rest of the pipeline doesn't break
+            try:
+                pd.DataFrame([{
+                    'Warning_Type': 'ERROR',
+                    'Item': 'SYSTEM',
+                    'PDF_Name': 'N/A',
+                    'Pages': 'N/A',
+                    'Tag_Count': 0,
+                    'Severity': 'ERROR',
+                    'Description': f'Error generating warnings report: {e}',
+                    'Action': 'Check logs for details.',
+                }]).to_excel(output_path, index=False)
+            except Exception:
+                pass
+
     def set_wire_color_rule(self, rule):
         """
         تنظیم قانون تولید رنگ سیم
@@ -8177,7 +8822,8 @@ class TagJBExtractor:
                     column_order = [
                         'PDF_Name', 'Page', 'JB', 'MC', 'Tag/SPARE', 'Tag_Number', 
                         'Wire_Code_1', 'Wire_Code_2', 'Terminal_First_Number', 'Terminal_Second_Number','Cable_Code', 'SCR_Terminal_Number',
-                        'Cable_Description', 'Type', 'Tag_Number_Status'  # اضافه کردن ستون وضعیت
+                        'Cable_Description', 'Type', 'Tag_Number_Status',  # اضافه کردن ستون وضعیت
+                        'Warning'  # 🆕 ستون هشدار (خالی اگر مشکلی نیست)
                     ]
                     
                     # فقط ستون‌هایی که وجود دارند را انتخاب کن
@@ -8188,7 +8834,7 @@ class TagJBExtractor:
                     new_df = pd.DataFrame(columns=[
                         'PDF_Name', 'Page', 'JB', 'MC', 'Tag/SPARE', 'Tag_Number', 
                         'Wire_Code_1', 'Wire_Code_2', 'Terminal_First_Number', 'Terminal_Second_Number','Cable_Code', 'SCR_Terminal_Number',
-                        'Cable_Description', 'Type', 'Tag_Number_Status'
+                        'Cable_Description', 'Type', 'Tag_Number_Status', 'Warning'
                     ])
                     logger.warning("Created empty DataFrame with proper columns")
                 
@@ -8529,9 +9175,68 @@ class TagJBExtractor:
             logger.debug(f"Page {page_num} - Tags: {len(tags)}, JBs: {len(jb_identifiers)}, MCs: {len(mc_identifiers)}, OCR tags: {len(all_ocr_tags)}")
             
             # بررسی شرط multiple JB
+            # 🆕 Instead of silently skipping, record a warning so the operator
+            # knows data was lost. We still skip the page (ambiguous JB) but the
+            # warning surfaces in UI / Excel / annotated PDF.
             if len(jb_identifiers) > 1:
                 logger.warning(f"⚠️ Skipping page {page_num}: Multiple JBs {jb_identifiers}")
+                if not hasattr(self, '_page_warnings'):
+                    self._page_warnings = []
+                self._page_warnings.append({
+                    'type': 'PAGE_SKIPPED_MULTIPLE_JB',
+                    'item': ','.join(sorted(str(j) for j in jb_identifiers)),
+                    'pages': [page_num],
+                    'tag_count': len(tags),
+                    'severity': 'ERROR',
+                    'description': (
+                        f"Page {page_num} of '{pdf_name}' was SKIPPED because "
+                        f"multiple JB identifiers were detected: {sorted(str(j) for j in jb_identifiers)}. "
+                        f"{len(tags)} tags on this page were NOT exported."
+                    ),
+                    'action': (
+                        'Manually review the page and choose the correct JB, '
+                        'or split the page so it contains a single JB.'
+                    ),
+                    'pdf_name': pdf_name,
+                })
                 return
+
+            # 🆕 JB_NOT_FOUND detection: tags/spares exist on this page but no
+            # JB was identified. We DO NOT reuse the previous page's JB (that
+            # caused wrong assignments). Instead, the JB column is filled with
+            # a sentinel value so the operator sees the problem in the Excel.
+            _jb_value = jb_identifiers[0] if jb_identifiers else ''
+            _jb_not_found_on_page = False
+            if not jb_identifiers and (tags or spare_identifiers):
+                _jb_not_found_on_page = True
+                _jb_value = f'JB_NOT_FOUND (page {page_num})'
+                logger.warning(
+                    f"⚠️ JB NOT FOUND on page {page_num} of '{pdf_name}' — "
+                    f"{len(tags)} tags + {len(spare_identifiers)} spares will be "
+                    f"exported with JB='JB_NOT_FOUND (page {page_num})'"
+                )
+                if not hasattr(self, '_page_warnings'):
+                    self._page_warnings = []
+                self._page_warnings.append({
+                    'type': 'JB_NOT_FOUND',
+                    'item': _jb_value,
+                    'pages': [page_num],
+                    'tag_count': len(tags) + len(spare_identifiers),
+                    'severity': 'WARNING',
+                    'description': (
+                        f"Page {page_num} of '{pdf_name}' contains "
+                        f"{len(tags)} tag(s) and {len(spare_identifiers)} spare(s), "
+                        f"but NO JB identifier could be detected on this page. "
+                        f"Tags were NOT assigned to any JB — please verify the "
+                        f"page header manually."
+                    ),
+                    'action': (
+                        'Check the page header (top of page) — the JB label may '
+                        'be missing, smudged, or use an unfamiliar prefix. If the '
+                        'JB is genuinely absent, split the page or fix the source PDF.'
+                    ),
+                    'pdf_name': pdf_name,
+                })
 
             selected_mc = self._select_best_mc_identifier(mc_identifiers, jb_identifiers)
             
@@ -8570,11 +9275,19 @@ class TagJBExtractor:
                     else:
                         match_status = f'Unknown: {match_type}'
                 
+                # 🆕 Per-row warning text (empty when everything is fine)
+                _row_warning = ''
+                if _jb_not_found_on_page:
+                    _row_warning = (
+                        f'JB_NOT_FOUND: page {page_num} has tag {tag} but no JB '
+                        f'was detected on this page. Tag was NOT assigned to any JB.'
+                    )
+
                 row_data = {
                     'PDF_Name': pdf_name,
                     'Page': page_num,
                     'Tag/SPARE': tag,
-                    'JB': jb_identifiers[0] if jb_identifiers else '',
+                    'JB': _jb_value,
                     'MC': selected_mc,
                     'Tag_Number': tag_number,
                     'Wire_Code_1': wire_code_1,
@@ -8585,7 +9298,8 @@ class TagJBExtractor:
                     'SCR_Terminal_Number': terminal_info['scr_terminal'],
                     'Cable_Description': raw_cable_descriptions[0] if raw_cable_descriptions else '',
                     'Type': 'Tag',
-                    'Tag_Number_Status': match_status
+                    'Tag_Number_Status': match_status,
+                    'Warning': _row_warning,
                 }
                 
                 new_df_data.append(row_data)
@@ -8640,11 +9354,19 @@ class TagJBExtractor:
                 wire_code_1 = wire_colors[0] if len(wire_colors) > 0 else ''
                 wire_code_2 = wire_colors[1] if len(wire_colors) > 1 else ''
  
+                # 🆕 Per-row warning text for SPARE (mirror the JB-not-found logic)
+                _row_warning = ''
+                if _jb_not_found_on_page:
+                    _row_warning = (
+                        f'JB_NOT_FOUND: page {page_num} has SPARE {spare} but no JB '
+                        f'was detected on this page. SPARE was NOT assigned to any JB.'
+                    )
+
                 row_data = {
                     'PDF_Name': pdf_name,
                     'Page': page_num,
                     'Tag/SPARE': spare,
-                    'JB': jb_identifiers[0] if jb_identifiers else '',
+                    'JB': _jb_value,
                     'MC': selected_mc,
                     'Tag_Number': spare_number,
                     'Wire_Code_1': wire_code_1,
@@ -8657,7 +9379,8 @@ class TagJBExtractor:
                     'Type': 'SPARE',
                     'Tag_Number_Status': 'Assigned (Position-based)'
                     if page_tag_to_number.get(spare_id) or tag_to_number.get(spare_id)
-                    else 'Auto-assigned (WARNING: not in tag_to_number)'
+                    else 'Auto-assigned (WARNING: not in tag_to_number)',
+                    'Warning': _row_warning,
                 }
  
                 new_df_data.append(row_data)
