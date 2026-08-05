@@ -1572,6 +1572,69 @@ class TagJBExtractor:
 
         return True
 
+    def _select_best_cable_description(self, cable_descriptions: 'List[str]') -> str:
+        """
+        🆕 When multiple cable descriptions are detected on a page, pick the one
+        that contains the LARGEST numbers.
+
+        Cable codes look like: NC-0-1-2-C-3-BL, NC-1-2-3-A-4-WHT, etc.
+        The digits represent: system-loop-channel-pair-core. The "largest numbers"
+        heuristic favors real cable codes over header/legend samples because real
+        cables typically use larger loop/channel/pair numbers.
+
+        Args:
+            cable_descriptions: list of cable code strings (e.g. ['NC-0-1-2-C-3-BL', 'NC-12-3-4-A-5-WHT'])
+
+        Returns:
+            The cable code with the largest sum of digits. Returns '' if list is empty.
+        """
+        if not cable_descriptions:
+            return ''
+        if len(cable_descriptions) == 1:
+            return str(cable_descriptions[0])
+
+        def score(cable: str):
+            """
+            Score = (sum_of_all_digits, max_single_digit, length).
+            Higher is better. We use sum to prefer cables with bigger overall
+            numbers, and max_single_digit as a tiebreaker for cables where one
+            segment has a particularly large number.
+            """
+            try:
+                cable_str = str(cable).upper().strip()
+                # Extract all digit groups from the cable code
+                digit_groups = re.findall(r'\d+', cable_str)
+                if not digit_groups:
+                    return (0, 0, 0)
+                digits_int = [int(d) for d in digit_groups]
+                return (sum(digits_int), max(digits_int), len(cable_str))
+            except Exception:
+                return (0, 0, 0)
+
+        # Deduplicate while preserving order
+        seen = set()
+        unique = []
+        for c in cable_descriptions:
+            cs = str(c).strip().upper()
+            if cs and cs not in seen:
+                seen.add(cs)
+                unique.append(c)
+
+        if not unique:
+            return ''
+        if len(unique) == 1:
+            return str(unique[0])
+
+        # Sort by score descending; pick the highest. On tie, prefer the FIRST
+        # one (preserves the original detection order which often reflects
+        # position on the page).
+        best = max(unique, key=lambda c: score(c))
+        logger.info(
+            f"_select_best_cable_description: picked '{best}' from "
+            f"{[str(c) for c in unique]} (score={score(best)})"
+        )
+        return str(best)
+
     def _select_best_mc_identifier(self, mc_identifiers: 'Union[Set[str], List[str]]', jb_identifiers: 'Union[Set[str], List[str]]') -> str:
         """
         Select a single best MC identifier for a page in a deterministic way.
@@ -3446,12 +3509,7 @@ class TagJBExtractor:
                     'match_type': 'jb',
                     'score': 1.0,
                     'ocr_text': word_clean,
-                    'bbox': {
-                        'x': x,
-                        'y': y,
-                        'width': int(ocr_data['width'][i]),
-                        'height': int(ocr_data['height'][i])
-                    }
+                    'bbox': _bbox(i)  # 🆕 FIX: use _bbox(i) so coord_source + dpi_factor are embedded in the bbox dict (same as MC/SPARE/tags)
                 }
                 logger.info(f"JB: {word_clean}")
                 continue
@@ -3662,8 +3720,9 @@ class TagJBExtractor:
                 }
 
         # Enrich unmatched candidates with position-based numbering and derived columns
-        default_cable_desc = raw_cable_descriptions[0] if raw_cable_descriptions else ''
-        default_cable_code = cable_descriptions[0] if cable_descriptions else ''
+        # 🆕 Pick the cable with the largest numbers when multiple are detected
+        default_cable_desc = self._select_best_cable_description(raw_cable_descriptions) if raw_cable_descriptions else ''
+        default_cable_code = self._select_best_cable_description(cable_descriptions) if cable_descriptions else ''
         for candidate_key, info in tag_match_info.items():
             if not isinstance(info, dict) or info.get('match_type') != 'unmatched_candidate':
                 continue
@@ -3777,7 +3836,9 @@ class TagJBExtractor:
                                     'bbox': {
                                         'x': word_x, 'y': word_y,
                                         'width': ocr_data['width'][i],
-                                        'height': ocr_data['height'][i]
+                                        'height': ocr_data['height'][i],
+                                        'coord_source': coord_source,  # 🆕 FIX: embed coord_source so bbox_to_region scales correctly (same as MC/SPARE/tags)
+                                        'dpi_factor': dpi_factor,      # 🆕 FIX: embed dpi_factor so bbox_to_region scales correctly
                                     },
                                     'coord_source': coord_source,
                                     'dpi_factor': dpi_factor
@@ -4414,13 +4475,28 @@ class TagJBExtractor:
 
         Returns:
             (set of JB identifiers, set of MC identifiers)
+
+        Side effect:
+            Populates self._digital_jb_bboxes_by_page[page_num + 1] with a
+            dict mapping each JB identifier → bbox dict (in PDF point space,
+            with coord_source='digital'). This is later read by
+            draw_bounding_boxes so the JB box is drawn at the correct location
+            (on the JB header label), not at the first OCR match anywhere on
+            the page.
         """
         jb_ids = set()
         mc_ids = set()
+        # 🆕 jb_id → bbox dict (PDF point space). Stored at the end of the
+        # function into self._digital_jb_bboxes_by_page[page_num + 1].
+        jb_bbox_map = {}
 
         try:
             words = page.get_text("words")
             if not words:
+                # Make sure we don't leave stale data from a previous page
+                if not hasattr(self, '_digital_jb_bboxes_by_page'):
+                    self._digital_jb_bboxes_by_page = {}
+                self._digital_jb_bboxes_by_page[page_num + 1] = {}
                 return jb_ids, mc_ids
 
             # ── Get user's JB/MC prefix patterns ────────────────────────
@@ -4518,12 +4594,14 @@ class TagJBExtractor:
                         # Read up to 3 words after the label as candidate identifier
                         # (identifier may be split across words, e.g. "JSF" + "-" + "309S")
                         candidate_parts = []
+                        candidate_word_indices = []  # 🆕 track which PDF words form the candidate
                         for k in range(search_start, min(search_start + 4, len(word_texts))):
                             wt_k = word_texts[k]
                             # Stop if we hit another label
                             if wt_k in ('JB', 'MC', 'MULTI', 'JUNCTION', 'TAG', 'PAGE', 'SHEET'):
                                 break
                             candidate_parts.append(wt_k)
+                            candidate_word_indices.append(k)
 
                         if not candidate_parts:
                             continue
@@ -4551,6 +4629,32 @@ class TagJBExtractor:
                                     f"found JB '{candidate}' after label {' '.join(label_words)} "
                                     f"in line: '{line_text[:80]}'"
                                 )
+                                # 🆕 Compute the bbox of the candidate by taking
+                                # the union of the underlying PDF words' bboxes.
+                                # Each PDF word is (x0, y0, x1, y1, text, block, line, word).
+                                try:
+                                    xs0 = min(line_words[idx][0] for idx in candidate_word_indices)
+                                    ys0 = min(line_words[idx][1] for idx in candidate_word_indices)
+                                    xs1 = max(line_words[idx][2] for idx in candidate_word_indices)
+                                    ys1 = max(line_words[idx][3] for idx in candidate_word_indices)
+                                    jb_bbox_map[candidate] = {
+                                        'x': float(xs0),
+                                        'y': float(ys0),
+                                        'width': float(xs1 - xs0),
+                                        'height': float(ys1 - ys0),
+                                        'coord_source': 'digital',
+                                        'dpi_factor': 300 / 72,  # default; will be overridden by render_dpi at draw time
+                                    }
+                                    logger.debug(
+                                        f"_extract_jb_mc_from_digital_header: JB '{candidate}' "
+                                        f"bbox (PDF pts): x={xs0:.2f} y={ys0:.2f} "
+                                        f"w={xs1 - xs0:.2f} h={ys1 - ys0:.2f}"
+                                    )
+                                except Exception as bbox_err:
+                                    logger.debug(
+                                        f"_extract_jb_mc_from_digital_header: could not compute "
+                                        f"bbox for JB '{candidate}': {bbox_err}"
+                                    )
 
                         elif label_type == 'mc':
                             # Check if candidate starts with any MC prefix
@@ -4587,9 +4691,21 @@ class TagJBExtractor:
                                 f"_extract_jb_mc_from_digital_header: page {page_num + 1} — "
                                 f"derived JB '{derived_jb}' from MC '{mc}'"
                             )
+                            # 🆕 For derived JBs, we don't have a direct bbox
+                            # (we only know the MC's bbox). The draw_bounding_boxes
+                            # fallback to OCR will handle this case, but with a
+                            # preference for header-position tokens (see below).
 
         except Exception as exc:
             logger.warning(f"_extract_jb_mc_from_digital_header: failed: {exc}")
+
+        # 🆕 Persist the JB bbox map so draw_bounding_boxes can use it later.
+        # Keyed by page_num + 1 (matches the 1-indexed page numbering used
+        # throughout the codebase).
+        if not hasattr(self, '_digital_jb_bboxes_by_page'):
+            self._digital_jb_bboxes_by_page = {}
+        self._digital_jb_bboxes_by_page[page_num + 1] = jb_bbox_map
+
         return jb_ids, mc_ids
 
 
@@ -5789,6 +5905,33 @@ class TagJBExtractor:
                     f"process_pdf_page {page_num + 1}: DIGITAL page text extraction "
                     f"(dpi_factor={dpi_factor:.4f})"
                 )
+                # 🆕 ALWAYS call _extract_jb_mc_from_digital_header for table-mode
+                # digital PDFs, even when the main extraction will succeed. This
+                # populates self._digital_jb_bboxes_by_page so draw_bounding_boxes
+                # can later draw the JB box at the correct location (on the JB
+                # header label) instead of falling back to the first OCR match.
+                if pdf_type == 'table':
+                    try:
+                        _djbs, _dmcs = self._extract_jb_mc_from_digital_header(page, page_num)
+                        if _djbs:
+                            if not hasattr(self, '_table_known_jbs'):
+                                self._table_known_jbs = set()
+                            self._table_known_jbs.update(_djbs)
+                            self._table_last_valid_jb = max(_djbs, key=len)
+                            logger.info(
+                                "process_pdf_page %d: digital header (pre-extract) found JBs: %s",
+                                page_num + 1, _djbs
+                            )
+                        if _dmcs:
+                            if not hasattr(self, '_table_known_mcs'):
+                                self._table_known_mcs = set()
+                            self._table_known_mcs.update(_dmcs)
+                            self._table_last_valid_mc = max(_dmcs, key=len)
+                    except Exception as _pre_dh_err:
+                        logger.warning(
+                            "process_pdf_page %d: pre-extraction digital header call failed: %s",
+                            page_num + 1, _pre_dh_err
+                        )
                 extraction_mode = 'digital'
                 result = self.extract_from_text_page(page, dpi_factor=dpi_factor)
                 if not result or not isinstance(result, tuple) or len(result) != 9:
@@ -6117,6 +6260,10 @@ class TagJBExtractor:
             logger.error(f"Error initializing Tesseract in process: {e}")
             return {}
 
+        # 🆕 Reset the per-PDF digital JB bbox map so stale data from a
+        # previous PDF doesn't leak into this one.
+        self._digital_jb_bboxes_by_page = {}
+
         pdf_nature = 'scanned'
         try:
             if pdf_path in getattr(self, 'document_nature_by_path', {}):
@@ -6241,6 +6388,33 @@ class TagJBExtractor:
                             f"process_pdf page {page_num + 1}: DIGITAL mode — attempting "
                             f"text-based extraction first (dpi_factor={dpi_factor:.4f})"
                         )
+                        # 🆕 ALWAYS call _extract_jb_mc_from_digital_header for table-mode
+                        # digital PDFs, even when the main extraction will succeed. This
+                        # populates self._digital_jb_bboxes_by_page so draw_bounding_boxes
+                        # can later draw the JB box at the correct location (on the JB
+                        # header label) instead of falling back to the first OCR match.
+                        if self._current_pdf_type == 'table':
+                            try:
+                                _pre_djbs, _pre_dmcs = self._extract_jb_mc_from_digital_header(page, page_num)
+                                if _pre_djbs:
+                                    if not hasattr(self, '_table_known_jbs'):
+                                        self._table_known_jbs = set()
+                                    self._table_known_jbs.update(_pre_djbs)
+                                    self._table_last_valid_jb = max(_pre_djbs, key=len)
+                                    logger.info(
+                                        "process_pdf page %d: digital header (pre-extract) found JBs: %s",
+                                        page_num + 1, _pre_djbs
+                                    )
+                                if _pre_dmcs:
+                                    if not hasattr(self, '_table_known_mcs'):
+                                        self._table_known_mcs = set()
+                                    self._table_known_mcs.update(_pre_dmcs)
+                                    self._table_last_valid_mc = max(_pre_dmcs, key=len)
+                            except Exception as _pre_dh_err2:
+                                logger.warning(
+                                    "process_pdf page %d: pre-extraction digital header call failed: %s",
+                                    page_num + 1, _pre_dh_err2
+                                )
                         try:
                             extract_result = self.extract_from_text_page(page, dpi_factor=dpi_factor)
                         except Exception as text_err:
@@ -6861,36 +7035,105 @@ class TagJBExtractor:
         # ============================================================
         logger.info("Phase 3: Collecting JB identifiers...")
         jb_found_count = 0
-        
+
+        # 🆕 Determine the current page number so we can look up the
+        # digital JB bbox map populated by _extract_jb_mc_from_digital_header.
+        # The page number is stored as self._current_drawing_page (set by
+        # create_annotated_pdf before calling draw_bounding_boxes). If that
+        # attribute is missing, fall back to None (the digital map won't be
+        # used and we rely on OCR — same as the previous behavior).
+        _current_drawing_page = getattr(self, '_current_drawing_page', None)
+        _digital_jb_bboxes = {}
+        if _current_drawing_page is not None:
+            _digital_jb_bboxes = (
+                getattr(self, '_digital_jb_bboxes_by_page', {})
+                .get(_current_drawing_page, {})
+                or {}
+            )
+            if _digital_jb_bboxes:
+                logger.info(
+                    f"Phase 3: digital JB bbox map for page {_current_drawing_page} "
+                    f"has {len(_digital_jb_bboxes)} entries: "
+                    f"{list(_digital_jb_bboxes.keys())}"
+                )
+
         for jb in jb_identifiers:
+            jb_upper = str(jb).upper().strip()
+
+            # ── 1st priority: digital bbox from _extract_jb_mc_from_digital_header ──
+            # This is the most accurate — it's the exact position of the JB
+            # label text as found in the PDF text layer (after "JB No:" etc.).
+            digital_bbox = _digital_jb_bboxes.get(jb_upper) or _digital_jb_bboxes.get(jb)
+            if digital_bbox:
+                jb_bbox = bbox_to_region(digital_bbox)
+                if jb_bbox is not None and jb_bbox not in processed_regions:
+                    all_found_items.append({
+                        'type': 'jb',
+                        'text': jb,
+                        'position': jb_bbox,
+                        'y_position': jb_bbox[1],
+                        'source': 'digital_header'
+                    })
+                    processed_regions.add(jb_bbox)
+                    jb_found_count += 1
+                    logger.info(
+                        f"Phase 3: JB '{jb}' bbox from DIGITAL header → "
+                        f"pixel=({jb_bbox[0]},{jb_bbox[1]},{jb_bbox[2]},{jb_bbox[3]})"
+                    )
+                    continue
+
+            # ── 2nd priority: tag_match_info (set by Phase 1/2 if JB was
+            # also detected as a tag-like token during OCR) ──
             jb_bbox = bbox_to_region(tag_match_info.get(jb, {}).get('bbox'))
             if jb_bbox is not None and jb_bbox not in processed_regions:
                 all_found_items.append({
                     'type': 'jb',
                     'text': jb,
                     'position': jb_bbox,
-                    'y_position': jb_bbox[1]
+                    'y_position': jb_bbox[1],
+                    'source': 'tag_match_info'
                 })
                 processed_regions.add(jb_bbox)
                 jb_found_count += 1
                 continue
 
+            # ── 3rd priority: OCR fallback — collect ALL matches and pick the
+            # one with the smallest y (topmost on the page). JB identifiers in
+            # table-mode PDFs are in the header row at the TOP of the page, so
+            # the topmost OCR match is almost certainly the JB label — not a
+            # duplicate reference somewhere in the page body. ──
+            jb_candidates = []
             for i, text in enumerate(ocr_data['text']):
                 text_clean = text.strip().upper()
-                if text_clean == jb.upper():
+                if text_clean == jb_upper:
                     region_key = (ocr_data['left'][i], ocr_data['top'][i],
                                 ocr_data['width'][i], ocr_data['height'][i])
                     if region_key not in processed_regions:
-                        all_found_items.append({
-                            'type': 'jb',
-                            'text': jb,
-                            'position': region_key,
-                            'y_position': ocr_data['top'][i]
-                        })
-                        processed_regions.add(region_key)
-                        jb_found_count += 1
-                        break
-        
+                        jb_candidates.append((ocr_data['top'][i], i, region_key))
+
+            if jb_candidates:
+                # Pick the TOPMOST match (smallest y)
+                jb_candidates.sort(key=lambda t: (t[0], t[1]))
+                _, _, region_key = jb_candidates[0]
+                all_found_items.append({
+                    'type': 'jb',
+                    'text': jb,
+                    'position': region_key,
+                    'y_position': region_key[1],
+                    'source': 'ocr_topmost'
+                })
+                processed_regions.add(region_key)
+                jb_found_count += 1
+                logger.info(
+                    f"Phase 3: JB '{jb}' bbox from OCR (topmost of {len(jb_candidates)} matches) → "
+                    f"pixel=({region_key[0]},{region_key[1]},{region_key[2]},{region_key[3]})"
+                )
+            else:
+                logger.warning(
+                    f"Phase 3: JB '{jb}' NOT found in any source "
+                    f"(digital_header, tag_match_info, OCR) — no bbox will be drawn"
+                )
+
         logger.info(f"Phase 3 complete: Found {jb_found_count} JBs")
         
         # ============================================================
@@ -6976,10 +7219,27 @@ class TagJBExtractor:
         # ============================================================
         # Phase 6: Cable descriptions
         # ============================================================
+        # 🆕 FIX: Only draw ONE cable box per page — the selected best cable.
+        # Previously, every cable in cable_descriptions got its own box, which
+        # meant 2+ boxes appeared on the page (one per unique cable code).
+        # Now we pick the best cable (largest numbers) and draw only that one.
         logger.info("Phase 6: Collecting cable descriptions...")
         cable_found_count = 0
         _mc_prefix = self._get_mc_prefix()
-        
+
+        # 🆕 Select the single best cable to draw
+        _best_cable_to_draw = self._select_best_cable_description(cable_descriptions) if cable_descriptions else ''
+        if _best_cable_to_draw:
+            logger.info(
+                f"Phase 6: selected best cable to draw: '{_best_cable_to_draw}' "
+                f"(from {len(cable_descriptions)} candidates: {list(set(str(c) for c in cable_descriptions))})"
+            )
+            # Replace the list with just the selected cable so the loop below
+            # only processes one cable.
+            cable_descriptions = [_best_cable_to_draw]
+        else:
+            cable_descriptions = []
+
         for cable_desc in cable_descriptions:
             cable_bbox = None
             for info in tag_match_info.values():
@@ -7006,30 +7266,50 @@ class TagJBExtractor:
             #   3. Multi-token match (cable code spans multiple adjacent tokens)
             # The bounding box is drawn using the EXACT OCR token coordinates,
             # so it's tight around the text — not on the MC row.
+            #
+            # 🆕 When multiple OCR tokens match the cable code (which is common
+            # in table-mode PDFs where the cable code appears on every tag row),
+            # we pick the TOPMOST match (smallest y) that is NOT in the header
+            # area. The header is typically y < 150px at 300 DPI, so we skip
+            # matches with y < 80px (to avoid header/legend text) and prefer
+            # the topmost match in the body.
             cable_desc_upper = cable_desc.upper().strip()
             found = False
-            
-            # 1. Exact match of the full cable code
+
+            # 1. Exact match of the full cable code — collect ALL matches
+            #    and pick the topmost body match (y >= 80).
+            _exact_matches = []
             for i, text in enumerate(ocr_data['text']):
                 text_clean = text.strip().upper()
                 if text_clean == cable_desc_upper:
                     region_key = (ocr_data['left'][i], ocr_data['top'][i],
                                 ocr_data['width'][i], ocr_data['height'][i])
                     if region_key not in processed_regions:
-                        all_found_items.append({
-                            'type': 'cable',
-                            'text': cable_desc,
-                            'position': region_key,
-                            'y_position': ocr_data['top'][i]
-                        })
-                        processed_regions.add(region_key)
-                        cable_found_count += 1
-                        found = True
-                        break
-            
+                        _exact_matches.append((ocr_data['top'][i], i, region_key))
+
+            if _exact_matches:
+                # Sort by y (topmost first); skip header matches (y < 80)
+                _exact_matches.sort(key=lambda t: (t[0], t[1]))
+                _body_matches = [m for m in _exact_matches if m[0] >= 80]
+                _chosen = _body_matches[0] if _body_matches else _exact_matches[0]
+                _, _, region_key = _chosen
+                all_found_items.append({
+                    'type': 'cable',
+                    'text': cable_desc,
+                    'position': region_key,
+                    'y_position': region_key[1]
+                })
+                processed_regions.add(region_key)
+                cable_found_count += 1
+                found = True
+                logger.info(
+                    f"Phase 6: cable '{cable_desc}' bbox from OCR exact match "
+                    f"(topmost of {len(_exact_matches)} matches, y={region_key[1]})"
+                )
+
             if found:
                 continue
-            
+
             # 2. Substring match (cable code is part of a larger token)
             for i, text in enumerate(ocr_data['text']):
                 text_clean = text.strip().upper()
@@ -7047,10 +7327,10 @@ class TagJBExtractor:
                         cable_found_count += 1
                         found = True
                         break
-            
+
             if found:
                 continue
-            
+
             # 3. Multi-token match: cable code is split across adjacent tokens
             # e.g. "NC-0-1-2" + "-" + "C-3-BL" → combine and check
             # We look for consecutive tokens on the same line that together
@@ -7064,7 +7344,7 @@ class TagJBExtractor:
                     # Skip MC tokens
                     if any(text_clean.startswith(p + '-') for p in _mc_prefix.split(',') if p):
                         continue
-                    
+
                     # Check if this token starts the cable code
                     if not cable_desc_upper.startswith(text_clean):
                         # Maybe this token contains the start of the cable code
@@ -7072,7 +7352,7 @@ class TagJBExtractor:
                             pass  # potential start
                         else:
                             continue
-                    
+
                     # Look at the next few tokens on the same line
                     combined = text_clean
                     min_x = int(ocr_data['left'][i])
@@ -7080,7 +7360,7 @@ class TagJBExtractor:
                     max_x = int(ocr_data['left'][i]) + int(ocr_data['width'][i])
                     max_y = int(ocr_data['top'][i]) + int(ocr_data['height'][i])
                     y_ref = int(ocr_data['top'][i])
-                    
+
                     for j in range(i + 1, min(i + 8, len(ocr_data['text']))):
                         next_text = str(ocr_data['text'][j]).strip().upper()
                         if not next_text:
@@ -7089,13 +7369,13 @@ class TagJBExtractor:
                         # Must be on same line (within 10px)
                         if abs(next_y - y_ref) > 10:
                             break
-                        
+
                         combined += next_text
                         nx = int(ocr_data['left'][j])
                         nw = int(ocr_data['width'][j])
                         max_x = max(max_x, nx + nw)
                         max_y = max(max_y, int(ocr_data['top'][j]) + int(ocr_data['height'][j]))
-                        
+
                         # Check if combined text now contains the cable code
                         if cable_desc_upper in combined:
                             # Found it! Create a merged bounding box
@@ -7111,13 +7391,13 @@ class TagJBExtractor:
                                 cable_found_count += 1
                                 found = True
                             break
-                    
+
                     if found:
                         break
-            
+
             if found:
                 continue
-            
+
             # 4. Last resort: search for distinctive middle part
             # (skip MC tokens to avoid drawing on MC row)
             if len(cable_parts) >= 5:
@@ -7382,6 +7662,11 @@ class TagJBExtractor:
                         
                         # Set the rendering DPI for coordinate scaling in draw_bounding_boxes
                         self._current_render_dpi = render_dpi
+                        # 🆕 Set the current page number so draw_bounding_boxes can
+                        # look up the digital JB bbox map populated by
+                        # _extract_jb_mc_from_digital_header. Page numbering is
+                        # 1-indexed (matches page_num + 1 used everywhere else).
+                        self._current_drawing_page = page_num + 1
                         
                         # رسم bounding boxes
                         try:
@@ -9006,8 +9291,8 @@ class TagJBExtractor:
                                 'Terminal_First_Number': str(tag_number) if tag_number else str(row_counter),
                                 'Terminal_Second_Number': str(tag_number + 1) if tag_number else str(row_counter + 1),
                                 'SCR_Terminal_Number': self.generate_scr_number(tag_number) if tag_number else '',
-                                'Cable_code': cable_descriptions[0] if cable_descriptions else '',
-                                'Cable_Description': raw_cable_descriptions[0] if raw_cable_descriptions else (cable_descriptions[0] if cable_descriptions else ''),
+                                'Cable_code': self._select_best_cable_description(cable_descriptions) if cable_descriptions else '',
+                                'Cable_Description': self._select_best_cable_description(raw_cable_descriptions) if raw_cable_descriptions else (self._select_best_cable_description(cable_descriptions) if cable_descriptions else ''),
                                 'Type': 'Tag',
                                 'Tag_Number_Status': 'Assigned' if tag_number else 'Auto-Assigned'
                             }
@@ -9036,8 +9321,8 @@ class TagJBExtractor:
                                 'Terminal_First_Number': str(spare_number),
                                 'Terminal_Second_Number': str(spare_number + 1),
                                 'SCR_Terminal_Number': self.generate_scr_number(spare_number),
-                                'Cable_code': cable_descriptions[0] if cable_descriptions else '',
-                                'Cable_Description': raw_cable_descriptions[0] if raw_cable_descriptions else (cable_descriptions[0] if cable_descriptions else ''),
+                                'Cable_code': self._select_best_cable_description(cable_descriptions) if cable_descriptions else '',
+                                'Cable_Description': self._select_best_cable_description(raw_cable_descriptions) if raw_cable_descriptions else (self._select_best_cable_description(cable_descriptions) if cable_descriptions else ''),
                                 'Type': 'SPARE',
                                 'Tag_Number_Status': 'Assigned' if tag_to_number.get(spare_id) else 'Auto-Assigned'
                             }
@@ -9294,9 +9579,9 @@ class TagJBExtractor:
                     'Wire_Code_2': wire_code_2,
                     'Terminal_First_Number': terminal_info['terminal_first'],
                     'Terminal_Second_Number': terminal_info['terminal_second'],
-                    'Cable_Code': cable_descriptions[0] if cable_descriptions else '',
+                    'Cable_Code': self._select_best_cable_description(cable_descriptions) if cable_descriptions else '',
                     'SCR_Terminal_Number': terminal_info['scr_terminal'],
-                    'Cable_Description': raw_cable_descriptions[0] if raw_cable_descriptions else '',
+                    'Cable_Description': self._select_best_cable_description(raw_cable_descriptions) if raw_cable_descriptions else '',
                     'Type': 'Tag',
                     'Tag_Number_Status': match_status,
                     'Warning': _row_warning,
@@ -9373,9 +9658,9 @@ class TagJBExtractor:
                     'Wire_Code_2': wire_code_2,
                     'Terminal_First_Number': terminal_info['terminal_first'],
                     'Terminal_Second_Number': terminal_info['terminal_second'],
-                    'Cable_Code': cable_descriptions[0] if cable_descriptions else '',
+                    'Cable_Code': self._select_best_cable_description(cable_descriptions) if cable_descriptions else '',
                     'SCR_Terminal_Number': terminal_info['scr_terminal'],
-                    'Cable_Description': raw_cable_descriptions[0] if raw_cable_descriptions else '',
+                    'Cable_Description': self._select_best_cable_description(raw_cable_descriptions) if raw_cable_descriptions else '',
                     'Type': 'SPARE',
                     'Tag_Number_Status': 'Assigned (Position-based)'
                     if page_tag_to_number.get(spare_id) or tag_to_number.get(spare_id)
