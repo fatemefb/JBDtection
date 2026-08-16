@@ -29,7 +29,7 @@ services:
     build:
       context: ../..
       dockerfile: apps/backend/Dockerfile
-    image: jbdetection-image-v1:${IMAGE_TAG:-latest}
+    image: jbdetection-image-v1:${IMAGE_TAG}
     ports:
       - "5000:5000"
     volumes:
