@@ -1,4 +1,7 @@
-from DataAnalysisModule import TagJBExtractor
+# MIGRATION: switched from DataAnalysisModule to jb_detection.compat
+# The compat layer provides the same TagJBExtractor API (PaddleOCR-based).
+# To revert: change back to `from DataAnalysisModule import TagJBExtractor`
+from jb_detection.compat import TagJBExtractor
 from logger_config import LoggerMixin
 import re
 import logging

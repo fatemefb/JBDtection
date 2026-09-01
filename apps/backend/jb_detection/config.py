@@ -207,8 +207,9 @@ SPARE_PATTERN: re.Pattern = re.compile(
 
 # Cable pattern: multi-segment codes like "NC-0-1-2-C-3-BL".
 # At least 3 hyphen-separated segments, with at least one digit segment.
+# NOTE: group(1) captures the full cable code (required by PatternMatcher.match()).
 CABLE_PATTERN: re.Pattern = re.compile(
-    r"^[A-Z]{1,3}\d{0,3}(?:[-_][A-Z0-9]{1,4}){2,}$",
+    r"([A-Z]{1,3}\d{0,3}(?:[-_][A-Z0-9]{1,4}){2,})",
     re.IGNORECASE,
 )
 

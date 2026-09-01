@@ -103,6 +103,15 @@ class TextDetector:
         with self._init_lock:
             if self._ocr is not None:
                 return
+            # Preload libz globally to fix PaddlePaddle 2.6.x crash on
+            # Python 3.12+ where the bundled zlib conflicts with the
+            # system one (symptom: "free(): invalid pointer" SIGABRT).
+            try:
+                import ctypes
+                ctypes.CDLL("libz.so.1", mode=ctypes.RTLD_GLOBAL)
+            except Exception:
+                pass  # Not all systems have libz.so.1
+
             try:
                 from paddleocr import PaddleOCR  # type: ignore
             except Exception as exc:  # pragma: no cover

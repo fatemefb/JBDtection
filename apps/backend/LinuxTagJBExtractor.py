@@ -20,6 +20,7 @@ if parent_dir not in sys.path:
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 from apps.backend.utils.file_utils import standardize_path, copy_to_output_paths, ensure_directory_exists, verify_file_exists_with_retries
+
 # Check for GPU support
 try:
     import tensorflow as tf
@@ -36,14 +37,18 @@ try:
 except (ImportError, AttributeError, TypeError) as e:
     TF_AVAILABLE = False
     print(f"TensorFlow not available or error initializing: {e}")
-
     
+# MIGRATION: switched from DataAnalysisModule to jb_detection.compat.
+# The compat layer already provides GPU detection (gpu_available, gpu_type,
+# cuda_device_count) via PaddlePaddle — the TensorFlow-based GPU detection
+# below is kept as a legacy fallback but is no longer the primary path.
+# To revert: change back to `from DataAnalysisModule import TagJBExtractor`
 try:
-    from DataAnalysisModule import TagJBExtractor
+    from jb_detection.compat import TagJBExtractor
 except ImportError:
     import sys
     sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-    from DataAnalysisModule import TagJBExtractor
+    from jb_detection.compat import TagJBExtractor
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -184,25 +189,16 @@ class LinuxTagJBExtractor(TagJBExtractor):
         cv2.setUseOptimized(False)
         return True
 
-    def preprocess_image(self, image: np.ndarray, pdf_type: str = "diagrams") -> np.ndarray:
+    def preprocess_image(self, image: np.ndarray) -> np.ndarray:
         """
         Preprocess the image using GPU if available.
 
         Args:
             image: Input image.
-            pdf_type: 'diagrams' or 'table'. For 'table' we always use the
-                      base class's table branch (CPU) because table-mode
-                      preprocessing is just Gaussian + Otsu — no GPU benefit.
 
         Returns:
             Preprocessed image.
         """
-        # TABLE path: skip GPU branch entirely — the table preprocessing
-        # pipeline (Gaussian blur + Otsu threshold) is simpler and works
-        # best on CPU. Delegating to the base class ensures consistency.
-        if pdf_type == 'table':
-            return super().preprocess_image(image, pdf_type='table')
-
         if len(image.shape) == 3:
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         else:
@@ -237,7 +233,7 @@ class LinuxTagJBExtractor(TagJBExtractor):
                 logger.error(f"Error using GPU for preprocessing: {e}")
                 logger.info("Falling back to CPU preprocessing")
 
-        return super().preprocess_image(image, pdf_type=pdf_type)
+        return super().preprocess_image(image)
 
     def set_patterns(self, jb_examples=None, mc_examples=None, spare_examples=None, 
                      cable_examples=None, wire_color_rule=None, scr_number_rule=None):

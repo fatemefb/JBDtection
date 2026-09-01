@@ -39,7 +39,14 @@ from tkinter import filedialog
 from logger_config import get_logger, LoggerMixin
 from TagJBExtractorLogger import LoggedTagJBExtractor
 from LinuxTagJBExtractorLogger import LoggedLinuxTagJBExtractor
-from DataAnalysisModule import DataAnalysis, TagJBExtractor
+# ─────────────────────────────────────────────────────────────────
+# MIGRATION: switched from legacy DataAnalysisModule (Tesseract) to
+# the new jb_detection package (PaddleOCR + unified pipeline).
+# The compat layer preserves 100% of the legacy API — no other code
+# changes needed in this file.
+# To revert: change back to `from DataAnalysisModule import DataAnalysis, TagJBExtractor`
+# ─────────────────────────────────────────────────────────────────
+from jb_detection.compat import DataAnalysis, TagJBExtractor
 from werkzeug.utils import secure_filename
 from apps.backend.utils.file_naming import (
     BASE_OUTPUT_DIR,
@@ -67,7 +74,6 @@ from apps.backend.db.models import (
     IssueStatus,
     UploadedFileType,
 )
-from apps.backend.modules.io_assignment.dimension_api import dimension_bp
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
@@ -77,7 +83,6 @@ app = Flask(
     static_folder=os.path.join(BASE_DIR, 'frontend', 'static')
 )
 app.register_blueprint(api_bp)
-app.register_blueprint(dimension_bp)
 
 # تنظیم کلید محرمانه برای session
 app.secret_key = 'jb_detection_system_secret_key'
@@ -370,130 +375,6 @@ class TaskStatus:
     PROCESSING = 'processing'
     COMPLETED = 'completed'
     FAILED = 'failed'
-    STALE = 'stale'  # task whose worker died (timeout/OOM)
-
-# ─────────────────────────────────────────────────────────────────
-# HEARTBEAT MECHANISM — protects against worker TIMEOUT / OOM / SIGKILL
-# ─────────────────────────────────────────────────────────────────
-# When a gunicorn worker is killed (timeout/OOM), the processing thread
-# dies but the task JSON stays in 'processing' status forever. The
-# heartbeat mechanism solves this:
-#   1. Worker thread updates `last_heartbeat` every N seconds
-#   2. /task-status endpoint checks if heartbeat is stale (> 2 min)
-#   3. Stale tasks are automatically marked as FAILED
-#   4. Client receives proper error instead of hanging forever
-
-HEARTBEAT_INTERVAL_SECONDS = 30          # update heartbeat every 30s (was 15 — less file lock contention)
-HEARTBEAT_STALE_THRESHOLD_SECONDS = 1800  # 30 MINUTES — was 120s (too aggressive, caused false alarms during long OCR)
-HEARTBEAT_CHECK_INTERVAL_SECONDS = 300   # scheduler checks every 5 min (was 60s — less overhead)
-
-# Track active heartbeat threads so we can stop them on completion
-_active_heartbeats: Dict[str, threading.Event] = {}
-_heartbeats_lock = threading.Lock()
-
-def start_heartbeat(task_id: str) -> threading.Event:
-    """Start a background thread that updates task heartbeat every N seconds.
-    Returns an Event that can be set to stop the heartbeat."""
-    stop_event = threading.Event()
-    with _heartbeats_lock:
-        _active_heartbeats[task_id] = stop_event
-
-    def _heartbeat_loop():
-        while not stop_event.is_set():
-            try:
-                TaskManager.update_task(task_id, {
-                    'last_heartbeat': datetime.now().isoformat()
-                })
-                logger.debug(f"Heartbeat tick for task {task_id}")
-            except Exception as e:
-                logger.warning(f"Heartbeat update failed for {task_id}: {e}")
-            stop_event.wait(HEARTBEAT_INTERVAL_SECONDS)
-
-    hb_thread = threading.Thread(target=_heartbeat_loop, daemon=True, name=f"hb-{task_id[:8]}")
-    hb_thread.start()
-    logger.info(f"Heartbeat started for task {task_id}")
-    return stop_event
-
-
-def stop_heartbeat(task_id: str):
-    """Stop the heartbeat thread for a task."""
-    with _heartbeats_lock:
-        stop_event = _active_heartbeats.pop(task_id, None)
-    if stop_event:
-        stop_event.set()
-        logger.info(f"Heartbeat stopped for task {task_id}")
-
-
-def is_task_stale(task_data: dict) -> bool:
-    """Check if a task is stale (worker died, no heartbeat for a while)."""
-    if not task_data:
-        return False
-    status = task_data.get('status')
-    if status not in (TaskStatus.PROCESSING, TaskStatus.PENDING):
-        return False
-    last_hb = task_data.get('last_heartbeat')
-    if not last_hb:
-        started = task_data.get('started_at')
-        if not started:
-            return False
-        try:
-            started_dt = datetime.fromisoformat(started)
-            age = (datetime.now() - started_dt).total_seconds()
-            return age > 600
-        except Exception:
-            return False
-    try:
-        last_hb_dt = datetime.fromisoformat(last_hb)
-        age = (datetime.now() - last_hb_dt).total_seconds()
-        return age > HEARTBEAT_STALE_THRESHOLD_SECONDS
-    except Exception:
-        return False
-
-
-def mark_stale_tasks_as_failed() -> int:
-    """Scan all tasks and mark stale ones as failed.
-    Returns count of tasks marked as stale."""
-    marked = 0
-    try:
-        for filename in os.listdir(TASKS_DIR):
-            if not filename.endswith('.json') or filename.startswith('.'):
-                continue
-            task_id = filename[:-5]
-            task_data = FileTaskManager.get_task(task_id)
-            if not task_data:
-                continue
-            if is_task_stale(task_data):
-                logger.warning(f"Task {task_id} is stale — marking as failed")
-                FileTaskManager.update_task(task_id, {
-                    'status': TaskStatus.FAILED,
-                    'error': f'Worker died (timeout/OOM/SIGKILL). No heartbeat for >{HEARTBEAT_STALE_THRESHOLD_SECONDS} seconds.',
-                    'error_details': 'Task marked as stale by heartbeat monitor. The gunicorn worker was likely killed due to timeout or out-of-memory.',
-                    'progress': 100,
-                    'failed_at': datetime.now().isoformat(),
-                    'failure_reason': 'worker_died'
-                })
-                stop_heartbeat(task_id)
-                run_id = task_data.get('run_id')
-                if run_id:
-                    try:
-                        with session_scope() as db:
-                            run = db.get(Run, run_id)
-                            if run and run.status not in (RunStatus.FAILED, RunStatus.FINALIZED):
-                                run_svc.set_status(db, run, RunStatus.FAILED, stage="jbdetection",
-                                                    notes="Worker died (timeout/OOM)")
-                                run_svc.add_log_line(db, run,
-                                    "Worker process killed (timeout/OOM). Task marked as stale.",
-                                    level="error")
-                                db.commit()
-                    except Exception as db_err:
-                        logger.error(f"Failed to update DB run {run_id} for stale task: {db_err}")
-                marked += 1
-    except Exception as e:
-        logger.error(f"Error in mark_stale_tasks_as_failed: {e}")
-    if marked > 0:
-        logger.info(f"Marked {marked} stale task(s) as failed")
-    return marked
-
 
 def append_task_log(task_id, message):
     task = TaskManager.get_task(task_id) or {}
@@ -830,10 +711,7 @@ def _persist_run_outputs(run_id, project_id, output_excel_path, unmatched_excel_
 
 
 def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_config, username, run_id, project_id):
-    """پردازش task به صورت asynchronous با مدیریت بهتر وضعیت و heartbeat"""
-    
-    # Start heartbeat to protect against worker timeout/OOM/SIGKILL
-    hb_stop = start_heartbeat(task_id)
+    """پردازش task به صورت asynchronous با مدیریت بهتر وضعیت"""
     
     try:
         # به‌روزرسانی وضعیت اولیه
@@ -841,10 +719,8 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
             'status': TaskStatus.PROCESSING,
             'progress': 10,
             'started_at': datetime.now().isoformat(),
-            'last_heartbeat': datetime.now().isoformat(),
             'run_id': run_id,
-            'project_id': project_id,
-            'worker_pid': os.getpid()  # track which worker is processing
+            'project_id': project_id
         })
 
         with session_scope() as db:
@@ -854,7 +730,7 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
                 run_svc.add_log_line(db, run, "JBDetection processing started", level="info")
                 db.commit()
         
-        logger.info(f"Task {task_id}: شروع پردازش برای پروژه {project_name} (worker PID={os.getpid()})")
+        logger.info(f"Task {task_id}: شروع پردازش برای پروژه {project_name}")
         
         # ایجاد دایرکتوری‌ها
         project_output_dir = get_project_output_dir(project_name)
@@ -884,7 +760,6 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
         extractor = data_analysis
         
         TaskManager.update_task(task_id, {'progress': 30})
-        gc.collect()  # free memory before heavy OCR
         
         # تنظیم الگوها
         if hasattr(extractor, 'set_patterns'):
@@ -911,7 +786,7 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
         
         TaskManager.update_task(task_id, {'progress': 40})
         
-        # پردازش فایل‌ها — این بخش طولانی‌ترین قسمت است
+        # پردازش فایل‌ها
         logger.info(f"Task {task_id}: شروع پردازش {len(pdf_paths)} فایل PDF")
         unmatched_excel_tags, unmatched_pdf_tags = extractor.run_with_annotated_pdf(
             pdf_paths=pdf_paths,
@@ -921,15 +796,10 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
         )
         pattern_unmatched_candidates = list(getattr(extractor, 'latest_pattern_unmatched_candidates', []) or [])
         pattern_unmatched_details = list(getattr(extractor, 'latest_pattern_unmatched_details', []) or [])
-        # 🆕 Warnings collected per-run (JB_NOT_FOUND, DUPLICATE_JB, DUPLICATE_TAG, PAGE_SKIPPED_MULTIPLE_JB)
-        latest_warnings = list(getattr(extractor, 'latest_warnings', []) or [])
         
         TaskManager.update_task(task_id, {'progress': 80})
         logger.info(f"Task {task_id}: پردازش PDF ها کامل شد")
         
-        # آزادسازی حافظه بعد از پردازش سنگین OCR
-        gc.collect()
-
         # ایجاد فایل تگ‌های تطبیق نیافته
         unmatched_excel_filename = generate_document_filename(project_name, "UnmatchedTags", "xlsx")
         unmatched_excel_path = os.path.join(project_output_dir, unmatched_excel_filename)
@@ -954,8 +824,6 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
                     'unmatched_pdf_tags': len(unmatched_pdf_tags),
                     'pattern_unmatched_candidates': len(pattern_unmatched_candidates),
                     'pattern_unmatched_details': len(pattern_unmatched_details),
-                    'warnings_count': len(latest_warnings),
-                    'warnings': latest_warnings,
                     'pdf_count': len(pdf_paths),
                     'pdf_names': [os.path.basename(p) for p in pdf_paths],
                     'pdf_types': getattr(extractor, 'document_types', {})
@@ -971,12 +839,6 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
                 pdf_path = os.path.join(annotated_pdf_dir, f)
                 output_files.append(pdf_path)
                 annotated_pdfs.append(pdf_path)
-        # 🆕 Add the dedicated Warnings Excel file if it was generated
-        warnings_excel_filename = "JB_Wiring_Diagram_Warnings.xlsx"
-        warnings_excel_path_local = os.path.join(annotated_pdf_dir, warnings_excel_filename)
-        if os.path.exists(warnings_excel_path_local):
-            output_files.append(warnings_excel_path_local)
-            logger.info(f"Task {task_id}: فایل هشدارها اضافه شد: {warnings_excel_filename}")
         
         TaskManager.update_task(task_id, {'progress': 90})
         
@@ -1013,8 +875,7 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
                     'report_path': report_path,
                     'zip_path': zip_path,
                     'download_url': download_url,
-                    'annotated_pdfs': annotated_pdfs,
-                    'warnings_excel_path': warnings_excel_path_local if os.path.exists(warnings_excel_path_local) else None
+                    'annotated_pdfs': annotated_pdfs
                 },
                 'results': {
                     'unmatched_excel_tags': unmatched_excel_tags,
@@ -1024,9 +885,7 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
                     'unmatched_excel_count': len(unmatched_excel_tags),
                     'unmatched_pdf_count': len(unmatched_pdf_tags),
                     'pattern_unmatched_count': len(pattern_unmatched_candidates),
-                    'pattern_unmatched_detail_count': len(pattern_unmatched_details),
-                    'warnings': latest_warnings,
-                    'warnings_count': len(latest_warnings)
+                    'pattern_unmatched_detail_count': len(pattern_unmatched_details)
                 },
                 'patterns_used': pattern_config
             }
@@ -1053,24 +912,15 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
             'progress': 100,
             'failed_at': datetime.now().isoformat()
         })
-    finally:
-        # Always stop heartbeat when task ends (success or failure)
-        stop_heartbeat(task_id)
-        # Final memory cleanup
-        gc.collect()
 
 
 def process_io_assignment_task(task_id, excel_path, project_name, config_overrides, username):
-    # Start heartbeat to protect against worker timeout/OOM
-    hb_stop = start_heartbeat(task_id)
     try:
         io_logger = get_io_assignment_logger(project_name, username)
         TaskManager.update_task(task_id, {
             'status': TaskStatus.PROCESSING,
             'progress': 10,
-            'started_at': datetime.now().isoformat(),
-            'last_heartbeat': datetime.now().isoformat(),
-            'worker_pid': os.getpid()
+            'started_at': datetime.now().isoformat()
         })
         append_task_log(task_id, "Task started")
         io_logger.info("Task %s started", task_id)
@@ -1265,10 +1115,6 @@ def process_io_assignment_task(task_id, excel_path, project_name, config_overrid
             'progress': 100,
             'failed_at': datetime.now().isoformat()
         })
-    finally:
-        # Always stop heartbeat when task ends (success or failure)
-        stop_heartbeat(task_id)
-        gc.collect()
 
 @app.route('/')
 def home():
@@ -1366,7 +1212,7 @@ def system_info():
 
 @app.route('/task-status/<task_id>', methods=['GET'])
 def get_task_status(task_id):
-    """دریافت وضعیت task — با stale detection خودکار"""
+    """دریافت وضعیت task"""
     try:
         if 'username' not in session:
             return jsonify({
@@ -1389,16 +1235,6 @@ def get_task_status(task_id):
                 'message': 'شما مجاز به مشاهده این task نیستید'
             }), 403
         
-        # ── STALE TASK DETECTION — DISABLED IN /task-status ──
-        # This was causing FALSE ALARMS: when client polls /task-status during
-        # heavy OCR processing, the heartbeat might be slightly delayed (GIL contention),
-        # and the task would be incorrectly marked as FAILED.
-        #
-        # Stale detection now ONLY runs in the background scheduler (every 5 min)
-        # with a 30-MINUTE threshold — only truly dead tasks (worker SIGKILL'd) get marked.
-        # The /task-status endpoint is now READ-ONLY (does not modify task state).
-        # ← stale detection removed — safe read-only status
-        
         return jsonify({
             'status': task.get('status', 'pending'),
             'progress': task.get('progress', 0),
@@ -1408,79 +1244,14 @@ def get_task_status(task_id):
             'project_id': task.get('project_id'),
             'project_name': task.get('project_name', ''),
             'pdf_count': task.get('pdf_count', 0),
-            'log': (task.get('log', []) or [])[-20:],  # FIX: Only return last 20 log entries (was returning ALL → 487KB response → socket timeout)
+            'log': task.get('log', []),
             'started_at': task.get('started_at'),
-            'completed_at': task.get('completed_at'),
-            'last_heartbeat': task.get('last_heartbeat'),
-            'worker_pid': task.get('worker_pid'),
-            'failure_reason': task.get('failure_reason')
+            'completed_at': task.get('completed_at')
         })
         
     except Exception as e:
         logger.error(f"Error getting task status: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
-
-@app.route('/admin/stale-tasks', methods=['POST'])
-def cleanup_stale_tasks():
-    """Admin endpoint to manually trigger stale task cleanup."""
-    if 'username' not in session:
-        return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
-    username = session.get('username')
-    if not _is_admin_username(username):
-        return jsonify({'status': 'error', 'message': 'Admin access required'}), 403
-    marked = mark_stale_tasks_as_failed()
-    return jsonify({
-        'status': 'success',
-        'stale_tasks_marked': marked,
-        'message': f'{marked} stale task(s) marked as failed'
-    })
-
-@app.route('/admin/task-health', methods=['GET'])
-def task_health():
-    """Health check endpoint showing active vs stale tasks."""
-    if 'username' not in session:
-        return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
-    username = session.get('username')
-    if not _is_admin_username(username):
-        return jsonify({'status': 'error', 'message': 'Admin access required'}), 403
-    
-    active = 0
-    stale = 0
-    completed = 0
-    failed = 0
-    pending = 0
-    try:
-        for filename in os.listdir(TASKS_DIR):
-            if not filename.endswith('.json') or filename.startswith('.'):
-                continue
-            task_id = filename[:-5]
-            task_data = FileTaskManager.get_task(task_id)
-            if not task_data:
-                continue
-            status = task_data.get('status')
-            if status == TaskStatus.COMPLETED:
-                completed += 1
-            elif status == TaskStatus.FAILED:
-                failed += 1
-            elif status == TaskStatus.PENDING:
-                pending += 1
-            elif status == TaskStatus.PROCESSING:
-                if is_task_stale(task_data):
-                    stale += 1
-                else:
-                    active += 1
-    except Exception as e:
-        logger.error(f"Error in task_health: {e}")
-    
-    return jsonify({
-        'status': 'success',
-        'active_processing': active,
-        'stale_processing': stale,
-        'pending': pending,
-        'completed': completed,
-        'failed': failed,
-        'total': active + stale + pending + completed + failed
-    })
 
 @app.route('/process', methods=['POST'])
 def process_files():
@@ -1667,8 +1438,6 @@ def api_process():
         )
         pattern_unmatched_candidates = list(getattr(extractor, 'latest_pattern_unmatched_candidates', []) or [])
         pattern_unmatched_details = list(getattr(extractor, 'latest_pattern_unmatched_details', []) or [])
-        # 🆕 Warnings collected per-run
-        latest_warnings = list(getattr(extractor, 'latest_warnings', []) or [])
         
         unmatched_excel_filename = generate_document_filename(project_name, "UnmatchedTags", "xlsx")
         unmatched_excel_path = os.path.join(project_output_dir, unmatched_excel_filename)
@@ -1684,10 +1453,6 @@ def api_process():
                 pdf_path = os.path.join(annotated_pdf_dir, f)
                 output_files.append(pdf_path)
                 annotated_pdfs.append(pdf_path)
-        # 🆕 Add the dedicated Warnings Excel file if it was generated
-        warnings_excel_path_local2 = os.path.join(annotated_pdf_dir, "JB_Wiring_Diagram_Warnings.xlsx")
-        if os.path.exists(warnings_excel_path_local2):
-            output_files.append(warnings_excel_path_local2)
         
         zip_path = create_zip_archive(project_name, output_files)
         download_url = get_download_url(zip_path)
@@ -1700,16 +1465,13 @@ def api_process():
                     "excel_path": output_excel_path,
                     "annotated_pdfs": annotated_pdfs,
                     "zip_path": zip_path,
-                    "download_url": download_url,
-                    "warnings_excel_path": warnings_excel_path_local2 if os.path.exists(warnings_excel_path_local2) else None
+                    "download_url": download_url
                 },
                 "results": {
                     "unmatched_pdf_tags": unmatched_pdf_tags,
                     "unmatched_excel_tags": unmatched_excel_tags,
                     "pattern_unmatched_candidates": pattern_unmatched_candidates,
-                    "pattern_unmatched_details": pattern_unmatched_details,
-                    "warnings": latest_warnings,
-                    "warnings_count": len(latest_warnings)
+                    "pattern_unmatched_details": pattern_unmatched_details
                 }
             }
         }
@@ -1805,187 +1567,6 @@ OUTPUT_DIRS = {
     "v1": "/home/devio/JB-outputs",
     "v2": "/home/devio/JB-outputs"
 }
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# SIEMENS MODE — lightweight tag-only matching for digital PDFs
-# ═══════════════════════════════════════════════════════════════════════════
-# This mode is intentionally separate from the Honeywell (JB/MC) pipeline.
-# It only takes an IO List + digital PDFs, finds tag matches in the PDF's
-# digital text layer, and draws bounding boxes. No OCR, no classifier, no
-# JB/MC patterns, no page filtering. See siemens_mode.py for full docs.
-try:
-    from siemens_mode import SiemensModeProcessor
-    _siemens_processor = None  # lazy singleton
-    def _get_siemens_processor():
-        global _siemens_processor
-        if _siemens_processor is None:
-            _siemens_processor = SiemensModeProcessor()
-        return _siemens_processor
-    logger.info("Siemens mode module loaded successfully")
-except Exception as _siemens_import_err:
-    logger.warning("Siemens mode module not available: %s", _siemens_import_err)
-    _get_siemens_processor = None
-
-
-@app.route('/api/process/siemens', methods=['POST'])
-def process_siemens_mode():
-    """
-    POST /api/process/siemens
-
-    Accepts multipart form data:
-      - pdf_files: one or more PDF files (digital PDFs only)
-      - excel_file: the IO List Excel file
-      - project_name: project name (used for organizing output directory)
-
-    Returns JSON:
-      {
-        "status": "success",
-        "result": { ... SiemensResult.to_dict() ... }
-      }
-    or:
-      { "status": "error", "message": "..." }
-    """
-    if 'username' not in session:
-        return jsonify({'status': 'error', 'message': 'لطفاً ابتدا وارد سیستم شوید'}), 401
-
-    if _get_siemens_processor is None:
-        return jsonify({
-            'status': 'error',
-            'message': 'سیستم Siemens mode در دسترس نیست — ماژول siemens_mode بارگذاری نشده'
-        }), 503
-
-    username = session.get('username')
-
-    try:
-        project_name = request.form.get('project_name', '').strip()
-        if not project_name:
-            return jsonify({'status': 'error', 'message': 'نام پروژه الزامی است'}), 400
-
-        pdf_files = request.files.getlist('pdf_files')
-        if not pdf_files or all(f.filename == '' for f in pdf_files):
-            return jsonify({'status': 'error', 'message': 'حداقل یک فایل PDF الزامی است'}), 400
-
-        excel_file = request.files.get('excel_file')
-        if not excel_file or excel_file.filename == '':
-            return jsonify({'status': 'error', 'message': 'فایل Excel الزامی است'}), 400
-
-        # Save uploaded files to temp locations
-        safe_project = re.sub(r'[^A-Za-z0-9_-]+', '_', project_name)[:50]
-        run_id = uuid.uuid4().hex[:8]
-        run_dir = os.path.join(BASE_OUTPUT_DIR, 'siemens_runs', f"{safe_project}_{run_id}")
-        os.makedirs(run_dir, exist_ok=True)
-
-        pdf_paths = []
-        for pdf in pdf_files:
-            fn = secure_filename(pdf.filename)
-            save_path = os.path.join(run_dir, fn)
-            pdf.save(save_path)
-            pdf_paths.append(save_path)
-
-        excel_filename = secure_filename(excel_file.filename)
-        excel_path = os.path.join(run_dir, excel_filename)
-        excel_file.save(excel_path)
-
-        output_pdf_dir = os.path.join(run_dir, 'annotated_pdfs')
-        output_excel_path = os.path.join(run_dir, f"siemens_match_report_{run_id}.xlsx")
-
-        logger.info(
-            "Siemens mode started: user=%s project=%s pdfs=%d excel=%s",
-            username, project_name, len(pdf_paths), excel_filename,
-            extra={'user': username}
-        )
-
-        # Run synchronously — for production you may want to push this to a
-        # background worker like the Honeywell mode does, but for digital
-        # PDFs (no OCR) it's typically very fast (1-5 seconds per 100 pages).
-        proc = _get_siemens_processor()
-        result = proc.process(
-            pdf_paths=pdf_paths,
-            excel_path=excel_path,
-            output_pdf_dir=output_pdf_dir,
-            output_excel_path=output_excel_path,
-            create_zip=True,
-            zip_path=os.path.join(run_dir, f"siemens_bundle_{run_id}.zip"),
-        )
-
-        result_dict = result.to_dict()
-        result_dict['run_dir'] = run_dir
-        result_dict['project_name'] = project_name
-        result_dict['username'] = username
-
-        logger.info(
-            "Siemens mode finished: project=%s matched=%d/%d (%.1f%%) duration=%.2fs",
-            project_name,
-            len(result.matched_tags),
-            result.total_io_tags,
-            (len(result.matched_tags) / result.total_io_tags * 100) if result.total_io_tags else 0,
-            result.duration_seconds,
-            extra={'user': username}
-        )
-
-        return jsonify({
-            'status': 'success',
-            'result': result_dict,
-        })
-
-    except Exception as exc:
-        logger.error("Siemens mode failed: %s", exc, exc_info=True)
-        return jsonify({
-            'status': 'error',
-            'message': f'خطا در پردازش: {exc}'
-        }), 500
-
-
-@app.route('/api/siemens/status', methods=['GET'])
-def siemens_mode_status():
-    """
-    GET /api/siemens/status — quick health check for the Siemens mode module.
-    Returns whether the module is loaded and ready to accept requests.
-    """
-    if 'username' not in session:
-        return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
-    return jsonify({
-        'status': 'success',
-        'available': _get_siemens_processor is not None,
-        'mode': 'siemens',
-        'description': 'Tag-only matching for digital PDFs — reuses DataAnalysisModule, no JB/MC patterns'
-    })
-
-
-@app.route('/api/siemens/download/<path:filename>', methods=['GET'])
-def siemens_download(filename):
-    """
-    Serve files from the Siemens mode output directory.
-    Unlike /download, this does NOT require the file to be registered in the
-    ExportArtifact DB table — it only checks the session.
-
-    The filename parameter is the path relative to BASE_OUTPUT_DIR/siemens_runs/.
-    For example: /api/siemens/download/myproject_abc123/annotated_pdfs/annotated_test.pdf
-    """
-    if 'username' not in session:
-        return jsonify({'error': 'Unauthorized'}), 401
-    username = session.get('username')
-
-    try:
-        # Security: resolve the path and verify it's under siemens_runs
-        siemens_base = os.path.join(BASE_OUTPUT_DIR, 'siemens_runs')
-        full_path = os.path.normpath(os.path.join(siemens_base, filename))
-        # Prevent directory traversal
-        if not full_path.startswith(siemens_base):
-            return jsonify({'error': 'Access denied'}), 403
-
-        if not os.path.exists(full_path) or not os.path.isfile(full_path):
-            return jsonify({'error': f'File not found: {filename}'}), 404
-
-        directory = os.path.dirname(full_path)
-        basename = os.path.basename(full_path)
-        logger.info(f"Siemens download: user={username} file={basename}")
-        return send_from_directory(directory, basename, as_attachment=True)
-    except Exception as e:
-        logger.error(f"Siemens download error: {e}", extra={'user': username})
-        return jsonify({'error': str(e)}), 500
-
 
 @app.route('/download', methods=['GET'])
 def download_file():
@@ -2233,29 +1814,15 @@ def delete_task(task_id):
 
 # cleanup function
 def cleanup_old_tasks():
-    """حذف task‌های قدیمی + تشخیص task‌های stale."""
+    """حذف task‌های قدیمی"""
     TaskManager.cleanup_old_tasks()
-    # Also detect and mark stale tasks (worker died from timeout/OOM)
-    try:
-        mark_stale_tasks_as_failed()
-    except Exception as e:
-        logger.error(f"Error in stale task cleanup: {e}")
 
 # اجرای cleanup هر ساعت
 import atexit
 from apscheduler.schedulers.background import BackgroundScheduler
 
 scheduler = BackgroundScheduler()
-# Old cleanup: every 2 hours
 scheduler.add_job(func=cleanup_old_tasks, trigger="interval", hours=2)
-# Stale task detection: every 60 seconds (catches worker deaths quickly)
-scheduler.add_job(
-    func=mark_stale_tasks_as_failed,
-    trigger="interval",
-    seconds=HEARTBEAT_CHECK_INTERVAL_SECONDS,
-    id='stale_task_detector',
-    name='Detect stale tasks (worker timeout/OOM)'
-)
 scheduler.start()
 
 # خاموش کردن scheduler هنگام خروج
