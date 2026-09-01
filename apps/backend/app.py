@@ -14,7 +14,16 @@ import tempfile
 import platform
 import shutil  
 from pathlib import Path
-import pytesseract
+# MIGRATION: pytesseract is no longer required (we use PaddleOCR).
+# The import is kept optional so the app doesn't crash if pytesseract
+# is not installed. The tesseract_path config below is also kept for
+# backward compatibility but is silently ignored by the new pipeline.
+try:
+    import pytesseract
+    _HAS_PYTESSERACT = True
+except ImportError:
+    pytesseract = None
+    _HAS_PYTESSERACT = False
 import time
 import zipfile
 from multiprocessing import Pool, cpu_count
@@ -95,11 +104,15 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 os.makedirs(BASE_OUTPUT_DIR, exist_ok=True)
 
 # تنظیم مسیر پیش‌فرض Tesseract بر اساس محیط اجرا
+# MIGRATION: this is kept for backward compat but is IGNORED by the new
+# PaddleOCR-based pipeline. tesseract_path is only used if you revert
+# to the legacy DataAnalysisModule.
 DEFAULT_TESSERACT_PATH = os.environ.get("TESSERACT_PATH", "/usr/local/bin/tesseract")
 
-os.environ["TESSDATA_PREFIX"] = "/usr/local/share/tessdata"
-os.environ["PATH"] = os.environ["PATH"] + ":/usr/local/bin"
-pytesseract.pytesseract.tesseract_cmd = "/usr/local/bin/tesseract"
+if _HAS_PYTESSERACT:
+    os.environ["TESSDATA_PREFIX"] = "/usr/local/share/tessdata"
+    os.environ["PATH"] = os.environ["PATH"] + ":/usr/local/bin"
+    pytesseract.pytesseract.tesseract_cmd = "/usr/local/bin/tesseract"
 
 PDF_CLASSIFIER_MODEL_PATH = os.environ.get(
     'PDF_CLASSIFIER_MODEL_PATH',
