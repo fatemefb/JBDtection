@@ -415,40 +415,10 @@ def to_json_safe(value):
 def get_platform_specific_extractor(tesseract_path=None, excel_path=None):
     """
     بر اساس سیستم عامل، کلاس مناسب استخراج کننده را برمی‌گرداند
+    MIGRATION: Now uses jb_detection.compat directly — no platform split needed.
     """
-    system = platform.system().lower()
-    
-    if system == 'linux':
-        try:
-            logger.info("استفاده از استخراج کننده مخصوص لینوکس با پشتیبانی از GPU و قابلیت لاگینگ")
-            return LoggedLinuxTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
-        except ImportError as e:
-            logger.warning(f"خطا در بارگذاری LoggedLinuxTagJBExtractor: {e}")
-            logger.info("استفاده از استخراج کننده عمومی با قابلیت لاگینگ")
-            return LoggedTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
-       
-    elif system == 'windows':
-        try:
-            logger.info("استفاده از استخراج کننده عمومی با قابلیت لاگینگ در ویندوز")
-            return LoggedTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
-        except ImportError as e:
-            logger.warning(f"خطا در بارگذاری استخراج کننده ویندوز: {e}")
-            logger.info("استفاده از استخراج کننده عمومی با قابلیت لاگینگ")
-            return LoggedTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
-    
-    elif system == 'darwin':  # macOS
-        try:
-            logger.info("استفاده از استخراج کننده عمومی با قابلیت لاگینگ در macOS")
-            return LoggedTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
-        except ImportError as e:
-            logger.warning(f"خطا در بارگذاری استخراج کننده macOS: {e}")
-            logger.info("استفاده از استخراج کننده عمومی با قابلیت لاگینگ")
-            return LoggedTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
-    
-    else:
-        logger.info(f"سیستم عامل ناشناخته '{system}'، استفاده از استخراج کننده عمومی با قابلیت لاگینگ")
-        return LoggedTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
-
+    from jb_detection.compat import TagJBExtractor
+    return TagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
 
 def _normalize_project_name_for_lookup(value: str) -> str:
     return re.sub(r'\s+', ' ', (value or '').strip()).lower()
