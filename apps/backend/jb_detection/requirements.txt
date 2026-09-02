@@ -1,0 +1,25 @@
+# ─────────────────────────────────────────────────────────────────────
+# JBDetection — Python dependencies
+#
+# Pin everything to versions known to work with PaddleOCR 2.10.0.
+# Install paddlepaddle FIRST (it must be present before paddleocr
+# imports), then the rest:
+#
+#     pip install -r requirements.txt
+#
+# For GPU support, replace paddlepaddle with paddlepaddle-gpu and set
+# JBDET_PADDLE_USE_GPU=true in the environment.
+# ─────────────────────────────────────────────────────────────────────
+
+paddlepaddle==2.6.2
+paddleocr==2.10.0
+numpy<2
+opencv-python==4.10.0.84
+Pillow==10.4.0
+PyMuPDF==1.26.7
+pdf2image==1.17.0
+pandas==2.2.3
+openpyxl==3.1.5
+python-Levenshtein==0.25.1
+reportlab==4.4.9
+setuptools<81

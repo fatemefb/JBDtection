@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control IntelliCraft</title>
+    <link rel="icon" href="{{ url_for('static', filename='images/favicon.png') }}" type="image/png">
+    <link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.png') }}" type="image/png">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/favicon.png') }}">
+    <link rel="name" href="{{ url_for('static', filename='images/JBD.png') }}" type="image/png">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/global.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&family=Vazirmatn:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="{{ url_for('static', filename='js/ui_preferences.js') }}"></script>
+</head>
+<body class="home-body">
+    <div class="home-shell">
+        <aside class="side-panel" id="sidePanel">
+            <div class="side-header">
+                <div class="brand">
+                    <img src="{{ url_for('static', filename='images/favicon.png') }}" alt="Control IntelliCraft" class="brand-logo">
+                    <div>
+                        <span id="nav-kicker" class="brand-kicker">Control IntelliCraft</span>
+                        <h1 id="nav-brand" class="brand-title">Control IntelliCraft</h1>
+                    </div>
+                </div>
+                <button class="icon-btn" id="collapseBtn" aria-label="Toggle menu">
+                    <i class="fas fa-bars"></i>
+                </button>
+            </div>
+            <nav class="side-nav">
+                <a class="nav-item active" href="/home">
+                    <i class="fas fa-house"></i>
+                    <span id="nav-home">خانه</span>
+                </a>
+                <a class="nav-item" href="/dashboard">
+                    <i class="fas fa-chart-line"></i>
+                    <span id="nav-jb">JBDetection Module</span>
+                </a>
+                <a class="nav-item" href="/io-assignment">
+                    <i class="fas fa-project-diagram"></i>
+                    <span id="nav-io">IO Assignment Module</span>
+                </a>
+                {% if is_admin_user %}
+                <a class="nav-item" href="/admin/users">
+                    <i class="fas fa-users"></i>
+                    <span id="nav-admin">User Management</span>
+                </a>
+                {% endif %}
+                <button class="nav-item disabled" type="button">
+                    <i class="fas fa-folder-open"></i>
+                    <span id="nav-reports">Reports</span>
+                </button>
+                <button class="nav-item disabled" type="button">
+                    <i class="fas fa-gear"></i>
+                    <span id="nav-settings">Settings</span>
+                </button>
+            </nav>
+            <div class="side-footer">
+                <div class="user-pill">
+                    <i class="fas fa-user"></i>
+                    <span>{{ username }}</span>
+                </div>
+                <a class="logout-link" href="/logout">
+                    <i class="fas fa-right-from-bracket"></i>
+                    <span id="nav-logout">خروج</span>
+                </a>
+            </div>
+        </aside>
+
+        <main class="home-main">
+            <header class="app-header home-app-header section-block full-screen-section" data-reveal>
+                <div class="intro-topbar">
+                    <div class="intro-brand">
+                        <img src="{{ url_for('static', filename='images/favicon.png') }}" alt="Control IntelliCraft" class="intro-logo">
+                        <span id="home-kicker">Control IntelliCraft</span>
+                    </div>
+                    <nav class="intro-nav-links">
+                        <a href="/home" id="intro-link-home">Home</a>
+                        <a href="/dashboard" id="intro-link-jb">JBDetection</a>
+                        <a href="/io-assignment" id="intro-link-io">IO Assignment</a>
+                        <a href="#" id="intro-link-docs">Docs</a>
+                    </nav>
+                    <div class="header-actions">
+                        <div class="lang-switch">
+                            <button id="faBtn" class="lang-btn active">فارسی</button>
+                            <button id="enBtn" class="lang-btn">English</button>
+                        </div>
+                        <div class="theme-switch">
+                            <button id="themeBtn" class="theme-btn"><i class="fas fa-moon"></i></button>
+                        </div>
+                    </div>
+                </div>
+                <div class="intro-hero">
+                    <h2 id="home-title">Control IntelliCraft</h2>
+                    <p id="home-subtitle">Integrated platform for JB detection and IO assignment workflows.</p>
+                </div>
+            </header>
+            <section class="system-intro section-block" data-reveal>
+                <div class="system-intro-inner">
+                    <span class="system-kicker">Integrated Engineering Runtime</span>
+                    <h2 class="system-title">
+                        JB Detection and IO Assignment
+                    </h2>
+                    <p class="system-desc">
+                        JB Detection processes source drawings and validates extracted tags.
+                        IO Assignment places validated tags into cabinet channels under configured constraints.
+                    </p>
+                </div>
+            </section>
+            <section class="module-strip module-strip-jb section-block full-screen-section" data-reveal>
+                <div class="module-copy">
+                    <span id="module-jb-chip" class="module-kicker">JBDetection Module</span>
+                    <h3 id="module-jb-title">JB Detection Module</h3>
+                    <p id="module-jb-desc">Process junction box drawings, extract instrument tags, and validate extracted records against configured IO references.</p>
+                    <p id="module-jb-note" class="module-note">Use this module when source data originates from field drawings and terminal schedules.</p>
+                    <a class="module-action" id="module-jb-action" href="/dashboard">Open JB Detection Module</a>
+                </div>
+                <button class="module-cube module-cube-jb" type="button" data-module="/dashboard" aria-label="JBDetection cube">
+                    <div class="module-cube-body">
+                        <div class="cube-face-main">
+                            <div class="mini-jbox" aria-hidden="true">
+                                <div class="jbox-door"></div>
+                                <div class="jbox-nameplate"></div>
+                                <div class="jbox-terminal-row"></div>
+                                <div class="jbox-gland jbox-gland-1"></div>
+                                <div class="jbox-gland jbox-gland-2"></div>
+                                <div class="jbox-gland jbox-gland-3"></div>
+                                <div class="jbox-gland jbox-gland-4"></div>
+                            </div>
+                            <span id="module-jb-meta1" class="cube-label">JB Detection</span>
+                            <span id="module-jb-meta2" class="cube-sub">OCR Extraction + Tag Validation</span>
+                        </div>
+                        <div class="cube-face-side">
+                            <span id="module-jb-side1" class="cube-side-title">Field Drawing Side</span>
+                            <span id="module-jb-side2" class="cube-side-sub">Terminal / Gland Layout</span>
+                        </div>
+                        <div class="cube-face-top" aria-hidden="true"></div>
+                        <div class="cube-face-side-alt" aria-hidden="true"></div>
+                        <div class="cube-face-back" aria-hidden="true"></div>
+                        <div class="cube-face-bottom" aria-hidden="true"></div>
+                    </div>
+                </button>
+            </section>
+
+            <section class="module-strip module-strip-io section-block full-screen-section" data-reveal>
+                <button class="module-cube module-cube-io" type="button" data-module="/io-assignment" aria-label="IO Assignment cube">
+                    <div class="module-cube-body">
+                        <div class="cube-face-main">
+                            <div class="mini-cabinet" aria-hidden="true">
+                                <div class="cabinet-door"></div>
+                                <div class="cabinet-handle"></div>
+                                <div class="cabinet-rail cabinet-rail-1"></div>
+                                <div class="cabinet-rail cabinet-rail-2"></div>
+                                <div class="cabinet-rail cabinet-rail-3"></div>
+                                <div class="cabinet-leds"></div>
+                            </div>
+                            <span id="module-io-meta1" class="cube-label">Marshaling Cabinet</span>
+                            <span id="module-io-meta2" class="cube-sub">Load Balance + Spare Plan</span>
+                        </div>
+                        <div class="cube-face-side">
+                            <span id="module-io-side1" class="cube-side-title">Cabinet Mapping Side</span>
+                            <span id="module-io-side2" class="cube-side-sub">Rails, Cards and Spare Capacity</span>
+                        </div>
+                        <div class="cube-face-top" aria-hidden="true"></div>
+                        <div class="cube-face-side-alt" aria-hidden="true"></div>
+                        <div class="cube-face-back" aria-hidden="true"></div>
+                        <div class="cube-face-bottom" aria-hidden="true"></div>
+                    </div>
+                </button>
+                <div class="module-copy">
+                    <span id="module-io-chip" class="module-kicker">IO Assignment Module</span>
+                    <h3 id="module-io-title">IO Assignment Module</h3>
+                    <p id="module-io-desc">Assign validated instrument tags to marshaling cabinet channels based on capacity constraints and spare policy.</p>
+                    <p id="module-io-note" class="module-note">Use this module when defining channel ownership, spare reservation, and cross-wiring outputs.</p>
+                    <a class="module-action" id="module-io-action" href="/io-assignment">Open IO Assignment Module</a>
+                </div>
+            </section>
+            <section class="catalog-section section-block full-screen-section" data-reveal>
+                <div class="catalog-card">
+
+                    <div class="catalog-content">
+                        <span class="module-kicker">
+                            Product Documentation
+                        </span>
+
+                        <h2>Control IntelliCraft Catalog</h2>
+
+                        <p>
+                            Browse the interactive digital catalog to explore the platform,
+                            architecture, modules and engineering capabilities.
+                        </p>
+
+                        <a href="https://flowpaper.com/app/flowpaper-zine-build/index.html?path=/Workspace/Control_IntelliCraft_Catalog/index.html?reload=1785921716670#page=1"
+                        class="catalog-btn fp-embed"
+                        lightbox="true">
+                            <i class="fas fa-book-open"></i>
+                            Open Interactive Catalog
+                        </a>
+
+                    </div>
+
+                    <div class="catalog-preview">
+                        <img src="{{ url_for('static', filename='images/catalog-cover.png') }}"
+                            alt="Catalog Cover">
+                    </div>
+
+                </div>
+            </section>
+
+            <script async defer src="https://cdn-online.flowpaper.com/zine/3.9.7/js/embed.min.js"></script>
+        </main>
+    </div>
+
+    <script>
+        const translations = {
+            fa: {
+                'home-kicker': 'Control IntelliCraft',
+                'home-title': 'Control IntelliCraft',
+                'home-subtitle': 'پلتفرم یکپارچه برای گردش کار JB Detection و IO Assignment.',
+                'intro-link-home': 'خانه',
+                'intro-link-jb': 'JBDetection',
+                'intro-link-io': 'IO Assignment',
+                'intro-link-docs': 'اسناد',
+                'module-jb-chip': 'ماژول JBDetection',
+                'module-jb-title': 'ماژول JB Detection',
+                'module-jb-desc': 'نقشه های Junction Box را پردازش کن، تگ های ابزاردقیق را استخراج کن و رکوردهای استخراج شده را با مراجع IO پیکربندی شده اعتبارسنجی کن.',
+                'module-jb-note': 'از این ماژول زمانی استفاده کن که داده مبنا از نقشه های فیلدی و برنامه ترمینال ها تامین می شود.',
+                'module-jb-meta1': 'JB Detection',
+                'module-jb-meta2': 'استخراج OCR + اعتبارسنجی تگ',
+                'module-jb-side1': 'سمت نقشه فیلدی',
+                'module-jb-side2': 'آرایش ترمینال / گلند',
+                'module-jb-action': 'ورود به ماژول JB Detection',
+                'module-io-chip': 'ماژول IO Assignment',
+                'module-io-title': 'ماژول IO Assignment',
+                'module-io-desc': 'تگ های ابزاردقیق تاییدشده را بر اساس محدودیت ظرفیت و سیاست Spare به کانال های کابینت مارشالینگ تخصیص بده.',
+                'module-io-note': 'از این ماژول برای تعریف مالکیت کانال، رزرو Spare و خروجی های کراس وایرینگ استفاده کن.',
+                'module-io-meta1': 'کابینت مارشالینگ',
+                'module-io-meta2': 'ظرفیت + سیاست Spare',
+                'module-io-side1': 'سمت تخصیص کانال',
+                'module-io-side2': 'ریل ها، کارت ها، ظرفیت رزرو',
+                'module-io-action': 'ورود به ماژول IO Assignment',
+                'nav-kicker': 'Control IntelliCraft',
+                'nav-brand': 'Control IntelliCraft',
+                'nav-home': 'خانه',
+                'nav-jb': 'ماژول JBDetection',
+                'nav-io': 'ماژول IO Assignment',
+                'nav-admin':'مدیریت کاربران',
+                'nav-reports': 'گزارش ها',
+                'nav-settings': 'تنظیمات',
+                'nav-logout': 'خروج'
+            },
+            en: {
+                'home-kicker': 'Control IntelliCraft',
+                'home-title': 'Control IntelliCraft',
+                'home-subtitle': 'Integrated platform for JB detection and IO assignment workflows.',
+                'intro-link-home': 'Home',
+                'intro-link-jb': 'JBDetection',
+                'intro-link-io': 'IO Assignment',
+                'intro-link-docs': 'Docs',
+                'module-jb-chip': 'JBDetection Module',
+                'module-jb-title': 'JB Detection Module',
+                'module-jb-desc': 'Process junction box drawings, extract instrument tags, and validate extracted records against configured IO references.',
+                'module-jb-note': 'Use this module when source data originates from field drawings and terminal schedules.',
+                'module-jb-meta1': 'JB Detection',
+                'module-jb-meta2': 'OCR Extraction + Tag Validation',
+                'module-jb-side1': 'Field Drawing Side',
+                'module-jb-side2': 'Terminal / Gland Layout',
+                'module-jb-action': 'Open JB Detection Module',
+                'module-io-chip': 'IO Assignment Module',
+                'module-io-title': 'IO Assignment Module',
+                'module-io-desc': 'Assign validated instrument tags to marshaling cabinet channels based on capacity constraints and spare policy.',
+                'module-io-note': 'Use this module when defining channel ownership, spare reservation, and cross-wiring outputs.',
+                'module-io-meta1': 'Marshaling Cabinet',
+                'module-io-meta2': 'Capacity + Spare Policy',
+                'module-io-side1': 'Channel Assignment Side',
+                'module-io-side2': 'Rails, Cards, Reserved Capacity',
+                'module-io-action': 'Open IO Assignment Module',
+                'nav-kicker': 'Control IntelliCraft',
+                'nav-brand': 'Control IntelliCraft',
+                'nav-home': 'Home',
+                'nav-jb': 'JBDetection Module',
+                'nav-io': 'IO Assignment Module',
+                'nav-admin': 'User Management',
+                'nav-reports': 'Reports',
+                'nav-settings': 'Settings',
+                'nav-logout': 'Logout'
+            }
+        };
+
+        const collapseBtn = document.getElementById('collapseBtn');
+        const sidePanel = document.getElementById('sidePanel');
+        const themeBtn = document.getElementById('themeBtn');
+        const faBtn = document.getElementById('faBtn');
+        const enBtn = document.getElementById('enBtn');
+        const moduleTriggers = document.querySelectorAll('[data-module]');
+        const initialState = window.JBDUI ? window.JBDUI.getState() : {
+            lang: localStorage.getItem('lang') || 'fa',
+            theme: localStorage.getItem('theme') || 'dark'
+        };
+        let currentLang = initialState.lang;
+        let currentTheme = initialState.theme;
+
+        function setLang(lang) {
+            document.documentElement.lang = lang;
+            document.documentElement.dir = lang === 'fa' ? 'rtl' : 'ltr';
+            faBtn.classList.toggle('active', lang === 'fa');
+            enBtn.classList.toggle('active', lang === 'en');
+            currentLang = lang;
+            document.title = translations[lang]['home-title'];
+
+            Object.keys(translations[lang]).forEach(key => {
+                const element = document.getElementById(key);
+                if (element) {
+                    element.textContent = translations[lang][key];
+                }
+            });
+
+            if (window.JBDUI) {
+                window.JBDUI.setLang(lang);
+            } else {
+                localStorage.setItem('lang', lang);
+            }
+        }
+
+        function setTheme(theme) {
+            document.body.classList.remove('light', 'dark');
+            document.body.classList.add(theme);
+            themeBtn.innerHTML = theme === 'dark' ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
+            const logoImg = document.querySelector('.brand img');
+            const logoImg2 = document.querySelector('.intro-brand img');
+
+            if (logoImg) logoImg.src = theme === 'dark' ? '/static/images/favicon.png' : '/static/images/favicon2.png';
+            if (logoImg2) logoImg2.src = theme === 'dark' ? '/static/images/favicon.png' : '/static/images/favicon2.png';
+
+            currentTheme = theme;
+            if (window.JBDUI) {
+                window.JBDUI.setTheme(theme);
+            } else {
+                localStorage.setItem('theme', theme);
+            }
+        }
+
+        collapseBtn.addEventListener('click', () => {
+            if (window.JBDUI) {
+                window.JBDUI.toggleMenuCollapsed();
+            } else {
+                sidePanel.classList.toggle('collapsed');
+                document.body.classList.toggle('menu-collapsed');
+            }
+        });
+
+        faBtn.addEventListener('click', () => setLang('fa'));
+        enBtn.addEventListener('click', () => setLang('en'));
+
+        themeBtn.addEventListener('click', () => {
+            currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            setTheme(currentTheme);
+        });
+
+        // Smooth-scroll fallback for in-page anchors and same-page Home links.
+        const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const smoothScrollLinks = document.querySelectorAll('a[href^="#"], a[href="/home"]');
+        if (!prefersReducedMotion && smoothScrollLinks.length) {
+            smoothScrollLinks.forEach(link => {
+                link.addEventListener('click', (event) => {
+                    const href = link.getAttribute('href');
+                    if (!href) {
+                        return;
+                    }
+
+                    if (href === '/home' && window.location.pathname === '/home') {
+                        event.preventDefault();
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                        return;
+                    }
+
+                    if (href.startsWith('#')) {
+                        const target = document.querySelector(href);
+                        if (target) {
+                            event.preventDefault();
+                            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                    }
+                });
+            });
+        }
+
+        if (moduleTriggers && moduleTriggers.length) {
+            moduleTriggers.forEach(trigger => {
+                trigger.addEventListener('click', () => {
+                    const target = trigger.getAttribute('data-module');
+                    if (target) {
+                        window.location.href = target;
+                    }
+                });
+            });
+        }
+
+        const revealItems = document.querySelectorAll('[data-reveal]');
+        if (revealItems.length) {
+            revealItems.forEach(el => el.classList.add('reveal'));
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('reveal-in');
+                        observer.unobserve(entry.target);
+                    }
+                });
+            }, { threshold: 0.2, rootMargin: '0px 0px -10% 0px' });
+            revealItems.forEach(el => observer.observe(el));
+        }
+
+        setTheme(currentTheme);
+        setLang(currentLang);
+        if (window.JBDUI) {
+            window.JBDUI.applyMenuState();
+        }
+
+        window.addEventListener('storage', (event) => {
+            if (event.key === 'lang' || event.key === 'theme') {
+                const state = window.JBDUI ? window.JBDUI.getState() : {
+                    lang: localStorage.getItem('lang') || 'fa',
+                    theme: localStorage.getItem('theme') || 'dark'
+                };
+                if (state.theme !== currentTheme) {
+                    setTheme(state.theme);
+                }
+                if (state.lang !== currentLang) {
+                    setLang(state.lang);
+                }
+            }
+        });
+    </script>
+</body>
+</html>
