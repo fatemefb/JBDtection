@@ -4,6 +4,7 @@ import os
 import re
 import gc
 import json
+import logging
 import math
 import numpy as np
 import pandas as pd
@@ -28,7 +29,13 @@ import time
 import zipfile
 from multiprocessing import Pool, cpu_count
 import subprocess  
-import tkinter as tk
+# MIGRATION: tkinter is a GUI library not available in Docker/production
+# environments. It was only used for file dialogs (desktop mode) which are
+# not needed in the web-based deployment. The imports are made optional.
+try:
+    import tkinter as tk  # type: ignore
+except ImportError:
+    tk = None
 import sys
 import uuid
 import threading
@@ -44,7 +51,10 @@ if parent_dir not in sys.path:
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 
-from tkinter import filedialog 
+try:
+    from tkinter import filedialog  # type: ignore  # optional — desktop-only
+except ImportError:
+    filedialog = None
 from logger_config import get_logger, LoggerMixin
 from TagJBExtractorLogger import LoggedTagJBExtractor
 from LinuxTagJBExtractorLogger import LoggedLinuxTagJBExtractor

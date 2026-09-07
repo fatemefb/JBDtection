@@ -1,3 +1,24 @@
+# ═══════════════════════════════════════════════════════════════════════
+# JBDetection — Docker Compose (GPU-only production)
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Gunicorn worker strategy (SINGLE GPU)
+# --------------------------------------
+# PaddleOCR loads a multi-hundred-MB model into GPU memory. Spawning
+# multiple independent gunicorn workers on a single GPU would:
+#   1. Duplicate the model N times in GPU memory (OOM risk).
+#   2. Serialize CUDA kernel launches anyway (single GPU context).
+#   3. Multiply first-request latency (each worker initialises lazily).
+#
+# Strategy:
+#   • 1 gunicorn worker (preload_app=True so the OCR model loads ONCE)
+#   • Multiple threads handle concurrent HTTP requests
+#   • PaddleOCR's internal thread-lock serialises the actual OCR calls
+#     (PaddleOCR 2.10.0 is NOT thread-safe — see detector.py:_call_lock)
+#
+# Tune JBDET_OCR_THREADS to control OCR concurrency (default: 1).
+# ═══════════════════════════════════════════════════════════════════════
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -19,17 +40,13 @@ services:
       retries: 10
     networks:
       - vakav_net
-    deploy:
-      resources:
-        limits:
-          memory: 1G
 
   jbdetection_v1:
     container_name: jbdetection_v1
     build:
       context: ../..
       dockerfile: apps/backend/Dockerfile
-    image: jbdetection-image-v1:${IMAGE_TAG}
+    image: jbdetection-image-v1:${IMAGE_TAG:-latest}
     ports:
       - "5000:5000"
     volumes:
@@ -42,11 +59,12 @@ services:
       - DATABASE_URL=postgresql+psycopg2://vakav:vakav_strong_password_change_me@postgres:5432/vakav
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-      - GUNICORN_TIMEOUT=7200
-      - GUNICORN_GRACEFUL_TIMEOUT=7200
-      - TF_FORCE_GPU_ALLOW_GROWTH=true
-      - TF_CPP_MIN_LOG_LEVEL=2
-      - OMP_NUM_THREADS=2
+      # PaddleOCR crash workaround (PaddlePaddle 2.6.x on Python 3.12+)
+      - LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libz.so.1
+      # GPU validation — set to 1 to allow CPU fallback (for testing without GPU).
+      # Remove this line for production GPU deployment.
+      - JBDET_ALLOW_CPU=1
+    # GPU passthrough — requires NVIDIA Container Toolkit on the host.
     gpus: all
     runtime: nvidia
     user: "1000:1000"
@@ -61,15 +79,21 @@ services:
         condition: service_healthy
     networks:
       - vakav_net
+    # Gunicorn: 1 worker, multiple threads (single-GPU strategy).
+    # --preload loads the OCR model ONCE in the master process and
+    # shares it with the worker (saves GPU memory + startup time).
+    # If --preload causes issues with the lazy TextDetector singleton,
+    # remove it — the singleton will then init on first request.
     command: >
       gunicorn apps.backend.app:app
         -b 0.0.0.0:5000
         --workers=1
         --threads=4
-        --timeout=72000
-        --graceful-timeout=7200
+        --timeout=3600
+        --graceful-timeout=3600
         --keep-alive=5
-        --max-requests=0
+        --max-requests=500
+        --max-requests-jitter=50
         --worker-class=gthread
         --log-level=info
         --access-logfile=-
@@ -78,7 +102,12 @@ services:
       resources:
         limits:
           cpus: '2'
-          memory: 20G
+          memory: 8G
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   jbdetection_test:
     container_name: jbdetection_test
@@ -93,16 +122,12 @@ services:
       - ./logs_test:/home/devio/JB-logs
     environment:
       - PYTHONPATH=/app
-      - FLASK_ENV=production
+      - FLASK_ENV=development
       - TZ=Asia/Tehran
       - DATABASE_URL=postgresql+psycopg2://vakav:vakav_strong_password_change_me@postgres:5432/vakav
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
-      - GUNICORN_TIMEOUT=72000
-      - GUNICORN_GRACEFUL_TIMEOUT=7200
-      - TF_FORCE_GPU_ALLOW_GROWTH=true
-      - TF_CPP_MIN_LOG_LEVEL=2
-      - OMP_NUM_THREADS=1
+      - LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libz.so.1
     gpus: all
     runtime: nvidia
     user: "1000:1000"
@@ -121,20 +146,23 @@ services:
       gunicorn apps.backend.app:app
         -b 0.0.0.0:5000
         --workers=1
-        --threads=4
-        --timeout=72000
-        --graceful-timeout=7200
+        --threads=2
+        --timeout=3600
+        --graceful-timeout=3600
         --keep-alive=5
-        --max-requests=0
+        --max-requests=200
+        --max-requests-jitter=20
         --worker-class=gthread
-        --log-level=info
+        --log-level=debug
         --access-logfile=-
         --error-logfile=-
     deploy:
       resources:
-        limits:
-          cpus: '1'
-          memory: 8G
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
 volumes:
   postgres_data:
