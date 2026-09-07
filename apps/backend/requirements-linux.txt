@@ -14,8 +14,11 @@
 #   ✗ opencv-python-headless — removed (opencv-python is enough)
 #   ✗ RapidFuzz          — removed (we use python-Levenshtein only)
 #
-# Install order matters! PaddlePaddle MUST be installed before PaddleOCR:
+# PaddlePaddle is installed by the Dockerfile from the CUDA 11.8 wheel index
+# before this file is installed. Keeping it out of this file prevents pip from
+# replacing the GPU wheel with the CPU package.
 #
+#     pip install paddlepaddle==2.6.2
 #     pip install -r requirements-linux.txt
 #
 # For GPU support, replace `paddlepaddle` with `paddlepaddle-gpu`:
@@ -26,8 +29,7 @@
 # Tested with Python 3.12 + the versions below. All conflicts resolved.
 # ═══════════════════════════════════════════════════════════════════════
 
-# ── OCR Engine (install paddlepaddle BEFORE paddleocr) ──────────────
-paddlepaddle==2.6.2
+# ── OCR Engine (PaddlePaddle is installed by the image build) ──────
 paddleocr==2.10.0
 
 # ── Image / PDF Processing ───────────────────────────────────────────

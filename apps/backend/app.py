@@ -28,7 +28,6 @@ import time
 import zipfile
 from multiprocessing import Pool, cpu_count
 import subprocess  
-import tkinter as tk
 import sys
 import uuid
 import threading
@@ -44,7 +43,6 @@ if parent_dir not in sys.path:
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 
-from tkinter import filedialog 
 from logger_config import get_logger, LoggerMixin
 from TagJBExtractorLogger import LoggedTagJBExtractor
 from LinuxTagJBExtractorLogger import LoggedLinuxTagJBExtractor
