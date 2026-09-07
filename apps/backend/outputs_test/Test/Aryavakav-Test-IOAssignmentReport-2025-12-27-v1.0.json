@@ -1,0 +1,17 @@
+{
+  "project_name": "Test",
+  "processing_date": "2025-12-27T13:49:57.647810",
+  "user": "admin",
+  "task_id": "56d21362-c086-498a-adc7-5b90220cc411",
+  "summary": {
+    "total_active": 792,
+    "total_hot_spares": 162,
+    "total_spares": 70,
+    "total_signals": 1024,
+    "expected_hot_spares": 159,
+    "hot_spare_compliance": 101.9,
+    "overall_spare_capacity": 22.7,
+    "cabinet_count": 12,
+    "jb_count": 137
+  }
+}

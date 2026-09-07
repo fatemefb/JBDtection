@@ -1,0 +1,171 @@
+2026-01-04 07:20:06,078 - INFO - Logger initialized. Log file: /home/devio/JB-outputs/logs/general/2026-01-04/app_2026-01-04.log
+2026-01-04 10:00:47,025 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:00:51,267 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 10:00:55,423 - INFO - کاربر admin به صفحه خانه دسترسی پیدا کرد
+2026-01-04 10:01:04,653 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 10:01:06,697 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:09:23,938 - INFO - Logger initialized. Log file: /home/devio/JB-outputs/logs/general/2026-01-04/app_2026-01-04.log
+2026-01-04 10:09:24,291 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:09:36,461 - INFO - کاربر admin به صفحه خانه دسترسی پیدا کرد
+2026-01-04 10:09:38,569 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:09:41,892 - INFO - کاربر admin به صفحه خانه دسترسی پیدا کرد
+2026-01-04 10:09:44,351 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:09:46,372 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 10:09:50,213 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:10:33,756 - INFO - کاربر admin به صفحه خانه دسترسی پیدا کرد
+2026-01-04 10:10:35,614 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:10:38,149 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 10:10:40,261 - INFO - کاربر admin به صفحه خانه دسترسی پیدا کرد
+2026-01-04 10:10:43,944 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:11:41,158 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 10:14:37,467 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:14:38,520 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:14:40,333 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 10:17:11,997 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:17:22,000 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 10:19:09,947 - INFO - Logger initialized. Log file: /home/devio/JB-outputs/logs/general/2026-01-04/app_2026-01-04.log
+2026-01-04 10:19:10,017 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 10:19:14,098 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:23:04,609 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 10:24:02,670 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:24:12,533 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 10:25:13,298 - INFO - IO Assignment upload saved: /tmp/io_af9d820735104e8ea3a6a9d6bd28b20f_input_IOAssignment_2.xlsx
+2026-01-04 10:25:13,299 - INFO - Task 3fef9c09-f54a-4ee6-8617-38c9c0570c29 created successfully
+2026-01-04 10:25:13,300 - INFO - Task 3fef9c09-f54a-4ee6-8617-38c9c0570c29 updated: status=N/A, progress=N/A%
+2026-01-04 10:25:13,301 - INFO - Task 3fef9c09-f54a-4ee6-8617-38c9c0570c29 updated: status=processing, progress=10%
+2026-01-04 10:25:13,303 - INFO - Task 3fef9c09-f54a-4ee6-8617-38c9c0570c29 updated: status=N/A, progress=N/A%
+2026-01-04 10:25:13,305 - INFO - Task 3fef9c09-f54a-4ee6-8617-38c9c0570c29 updated: status=N/A, progress=N/A%
+2026-01-04 10:25:13,306 - INFO - Task 3fef9c09-f54a-4ee6-8617-38c9c0570c29 updated: status=N/A, progress=35%
+2026-01-04 10:25:13,307 - INFO - Task 3fef9c09-f54a-4ee6-8617-38c9c0570c29 updated: status=N/A, progress=N/A%
+2026-01-04 10:25:15,796 - INFO - Task 3fef9c09-f54a-4ee6-8617-38c9c0570c29 updated: status=N/A, progress=75%
+2026-01-04 10:25:15,797 - INFO - Task 3fef9c09-f54a-4ee6-8617-38c9c0570c29 updated: status=N/A, progress=N/A%
+2026-01-04 10:25:15,866 - INFO - Task 3fef9c09-f54a-4ee6-8617-38c9c0570c29 updated: status=N/A, progress=N/A%
+2026-01-04 10:25:15,868 - INFO - Task 3fef9c09-f54a-4ee6-8617-38c9c0570c29 updated: status=N/A, progress=90%
+2026-01-04 10:25:15,869 - INFO - Task 3fef9c09-f54a-4ee6-8617-38c9c0570c29 updated: status=N/A, progress=N/A%
+2026-01-04 10:25:15,879 - INFO - Task 3fef9c09-f54a-4ee6-8617-38c9c0570c29 updated: status=N/A, progress=N/A%
+2026-01-04 10:25:15,883 - INFO - Task 3fef9c09-f54a-4ee6-8617-38c9c0570c29 updated: status=completed, progress=100%
+2026-01-04 10:25:15,884 - INFO - IO Assignment Task 3fef9c09-f54a-4ee6-8617-38c9c0570c29: پردازش با موفقیت تکمیل شد
+2026-01-04 10:25:15,888 - INFO - Task 3fef9c09-f54a-4ee6-8617-38c9c0570c29 updated: status=N/A, progress=N/A%
+2026-01-04 10:30:21,115 - INFO - Logger initialized. Log file: /home/devio/JB-outputs/logs/general/2026-01-04/app_2026-01-04.log
+2026-01-04 10:30:21,168 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:30:21,169 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:30:32,312 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 10:30:44,765 - INFO - کاربر admin به صفحه خانه دسترسی پیدا کرد
+2026-01-04 10:31:00,497 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:31:04,450 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 10:31:07,492 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:31:20,257 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 10:31:22,423 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:31:25,843 - INFO - کاربر admin به صفحه خانه دسترسی پیدا کرد
+2026-01-04 10:31:27,264 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:31:33,066 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 10:32:55,355 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:34:12,456 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 10:34:16,814 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:38:31,266 - INFO - Logger initialized. Log file: /home/devio/JB-outputs/logs/general/2026-01-04/app_2026-01-04.log
+2026-01-04 10:38:31,322 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:38:38,848 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 10:38:41,540 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:42:29,112 - INFO - Logger initialized. Log file: /home/devio/JB-outputs/logs/general/2026-01-04/app_2026-01-04.log
+2026-01-04 10:42:29,200 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:42:32,127 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 10:42:34,193 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:42:40,485 - INFO - کاربر admin به صفحه خانه دسترسی پیدا کرد
+2026-01-04 10:42:42,646 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 10:42:44,930 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:44:56,708 - INFO - کاربر admin به صفحه خانه دسترسی پیدا کرد
+2026-01-04 10:44:59,624 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 10:45:02,113 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:49:37,229 - INFO - Logger initialized. Log file: /home/devio/JB-outputs/logs/general/2026-01-04/app_2026-01-04.log
+2026-01-04 10:49:37,288 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:49:39,225 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 10:49:46,446 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:49:47,985 - INFO - کاربر admin به صفحه خانه دسترسی پیدا کرد
+2026-01-04 10:50:01,034 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:50:08,803 - INFO - کاربر admin به صفحه خانه دسترسی پیدا کرد
+2026-01-04 10:52:40,707 - INFO - Logger initialized. Log file: /home/devio/JB-outputs/logs/general/2026-01-04/app_2026-01-04.log
+2026-01-04 10:52:40,822 - INFO - کاربر admin به صفحه خانه دسترسی پیدا کرد
+2026-01-04 10:52:44,433 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 10:52:46,144 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 10:53:17,008 - INFO - IO Assignment upload saved: /tmp/io_8afda49c6c4a42848bc0aac9e0dd6bd0_input_IOAssignment_2.xlsx
+2026-01-04 10:53:17,010 - ERROR - Error creating task b4862cee-68d5-4a4a-8dec-b051b3f4ade6: [Errno 28] No space left on device
+2026-01-04 10:53:17,011 - WARNING - Task b4862cee-68d5-4a4a-8dec-b051b3f4ade6 file not found
+2026-01-04 10:53:17,016 - WARNING - Task b4862cee-68d5-4a4a-8dec-b051b3f4ade6 file not found
+2026-01-04 10:53:17,017 - WARNING - Task b4862cee-68d5-4a4a-8dec-b051b3f4ade6 file not found
+2026-01-04 10:53:17,020 - ERROR - IO Assignment Task b4862cee-68d5-4a4a-8dec-b051b3f4ade6: خطا در پردازش - [Errno 28] No space left on device: '/home/devio/JB-outputs/NGL_2'
+2026-01-04 10:53:17,028 - ERROR - Traceback (most recent call last):
+  File "/app/apps/backend/app.py", line 551, in process_io_assignment_task
+    project_output_dir = get_project_output_dir(project_name)
+  File "/app/apps/backend/utils/file_naming.py", line 50, in get_project_output_dir
+    return ensure_directory_exists(project_dir)
+  File "/app/apps/backend/utils/file_naming.py", line 32, in ensure_directory_exists
+    os.makedirs(directory_path, exist_ok=True)
+  File "/usr/lib/python3.8/os.py", line 223, in makedirs
+    mkdir(name, mode)
+OSError: [Errno 28] No space left on device: '/home/devio/JB-outputs/NGL_2'
+
+2026-01-04 10:53:17,029 - WARNING - Task b4862cee-68d5-4a4a-8dec-b051b3f4ade6 file not found
+2026-01-04 10:53:17,030 - WARNING - Task b4862cee-68d5-4a4a-8dec-b051b3f4ade6 file not found
+2026-01-04 12:16:54,112 - INFO - IO Assignment upload saved: /tmp/io_142fa29751e84e958dcdf207744a0e9e_input_IOAssignment_2.xlsx
+2026-01-04 12:16:54,113 - INFO - Task 354a29fb-11d5-466e-876d-28705bb8b32b created successfully
+2026-01-04 12:16:54,114 - INFO - Task 354a29fb-11d5-466e-876d-28705bb8b32b updated: status=N/A, progress=N/A%
+2026-01-04 12:16:54,116 - INFO - Task 354a29fb-11d5-466e-876d-28705bb8b32b updated: status=processing, progress=10%
+2026-01-04 12:16:54,120 - INFO - Task 354a29fb-11d5-466e-876d-28705bb8b32b updated: status=N/A, progress=N/A%
+2026-01-04 12:16:54,121 - INFO - Task 354a29fb-11d5-466e-876d-28705bb8b32b updated: status=N/A, progress=N/A%
+2026-01-04 12:16:54,122 - INFO - Task 354a29fb-11d5-466e-876d-28705bb8b32b updated: status=N/A, progress=35%
+2026-01-04 12:16:54,126 - INFO - Task 354a29fb-11d5-466e-876d-28705bb8b32b updated: status=N/A, progress=N/A%
+2026-01-04 12:16:56,491 - INFO - Task 354a29fb-11d5-466e-876d-28705bb8b32b updated: status=N/A, progress=75%
+2026-01-04 12:16:56,492 - INFO - Task 354a29fb-11d5-466e-876d-28705bb8b32b updated: status=N/A, progress=N/A%
+2026-01-04 12:16:56,567 - INFO - Task 354a29fb-11d5-466e-876d-28705bb8b32b updated: status=N/A, progress=N/A%
+2026-01-04 12:16:56,568 - INFO - Task 354a29fb-11d5-466e-876d-28705bb8b32b updated: status=N/A, progress=90%
+2026-01-04 12:16:56,570 - INFO - Task 354a29fb-11d5-466e-876d-28705bb8b32b updated: status=N/A, progress=N/A%
+2026-01-04 12:16:56,583 - INFO - Task 354a29fb-11d5-466e-876d-28705bb8b32b updated: status=N/A, progress=N/A%
+2026-01-04 12:16:56,588 - INFO - Task 354a29fb-11d5-466e-876d-28705bb8b32b updated: status=completed, progress=100%
+2026-01-04 12:16:56,593 - INFO - Task 354a29fb-11d5-466e-876d-28705bb8b32b updated: status=N/A, progress=N/A%
+2026-01-04 12:24:59,188 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 12:25:04,250 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 12:25:07,791 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 12:26:31,881 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 12:26:34,710 - INFO - کاربر admin به صفحه خانه دسترسی پیدا کرد
+2026-01-04 12:26:38,741 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 12:26:42,183 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 12:26:46,831 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 12:30:20,348 - INFO - Logger initialized. Log file: /home/devio/JB-outputs/logs/general/2026-01-04/app_2026-01-04.log
+2026-01-04 12:30:20,458 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 12:30:22,029 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 12:30:25,959 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 12:30:27,670 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 12:30:30,694 - INFO - کاربر admin به صفحه خانه دسترسی پیدا کرد
+2026-01-04 12:30:33,590 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 12:30:55,537 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 12:30:59,494 - INFO - کاربر admin به صفحه خانه دسترسی پیدا کرد
+2026-01-04 12:31:02,498 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 12:31:04,114 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 12:35:14,860 - INFO - Logger initialized. Log file: /home/devio/JB-outputs/logs/general/2026-01-04/app_2026-01-04.log
+2026-01-04 12:35:14,910 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 12:35:28,669 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 12:35:31,774 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 12:35:34,374 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 12:35:36,925 - INFO - کاربر admin به صفحه خانه دسترسی پیدا کرد
+2026-01-04 12:35:39,091 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 12:35:42,188 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 12:37:07,189 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 12:37:13,999 - INFO - کاربر admin به صفحه خانه دسترسی پیدا کرد
+2026-01-04 12:37:29,446 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 12:51:36,506 - INFO - Logger initialized. Log file: /home/devio/JB-outputs/logs/general/2026-01-04/app_2026-01-04.log
+2026-01-04 12:51:36,562 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 12:52:01,921 - INFO - کاربر admin به صفحه خانه دسترسی پیدا کرد
+2026-01-04 12:52:05,582 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 12:57:39,315 - INFO - Logger initialized. Log file: /home/devio/JB-outputs/logs/general/2026-01-04/app_2026-01-04.log
+2026-01-04 12:57:39,429 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 13:02:39,934 - INFO - Logger initialized. Log file: /home/devio/JB-outputs/logs/general/2026-01-04/app_2026-01-04.log
+2026-01-04 13:02:40,027 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 13:08:29,161 - INFO - Logger initialized. Log file: /home/devio/JB-outputs/logs/general/2026-01-04/app_2026-01-04.log
+2026-01-04 13:08:45,831 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 13:14:34,039 - INFO - Logger initialized. Log file: /home/devio/JB-outputs/logs/general/2026-01-04/app_2026-01-04.log
+2026-01-04 13:16:20,883 - INFO - Logger initialized. Log file: /home/devio/JB-outputs/logs/general/2026-01-04/app_2026-01-04.log
+2026-01-04 13:16:23,960 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 13:25:29,865 - INFO - Logger initialized. Log file: /home/devio/JB-outputs/logs/general/2026-01-04/app_2026-01-04.log
+2026-01-04 13:25:31,340 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2026-01-04 13:39:40,846 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2026-01-04 13:39:43,351 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد

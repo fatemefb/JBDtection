@@ -1,0 +1,17 @@
+{
+  "project_name": "NGL_2",
+  "processing_date": "2026-01-04T12:16:56.565507",
+  "user": "admin",
+  "task_id": "354a29fb-11d5-466e-876d-28705bb8b32b",
+  "summary": {
+    "total_active": 792,
+    "total_hot_spares": 162,
+    "total_spares": 70,
+    "total_signals": 1024,
+    "expected_hot_spares": 159,
+    "hot_spare_compliance": 101.9,
+    "overall_spare_capacity": 22.7,
+    "cabinet_count": 12,
+    "jb_count": 137
+  }
+}

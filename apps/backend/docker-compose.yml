@@ -1,0 +1,144 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: vakav_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vakav
+      POSTGRES_USER: vakav
+      POSTGRES_PASSWORD: vakav_strong_password_change_me
+      TZ: Asia/Tehran
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vakav -d vakav"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - vakav_net
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  jbdetection_v1:
+    container_name: jbdetection_v1
+    build:
+      context: ../..
+      dockerfile: apps/backend/Dockerfile
+    image: jbdetection-image-v1:${IMAGE_TAG}
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./outputs_v1:/home/devio/JB-outputs
+      - ./logs_v1:/home/devio/JB-logs
+    environment:
+      - PYTHONPATH=/app
+      - FLASK_ENV=production
+      - TZ=Asia/Tehran
+      - DATABASE_URL=postgresql+psycopg2://vakav:vakav_strong_password_change_me@postgres:5432/vakav
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - GUNICORN_TIMEOUT=7200
+      - GUNICORN_GRACEFUL_TIMEOUT=7200
+      - TF_FORCE_GPU_ALLOW_GROWTH=true
+      - TF_CPP_MIN_LOG_LEVEL=2
+      - OMP_NUM_THREADS=2
+    gpus: all
+    runtime: nvidia
+    user: "1000:1000"
+    cap_add:
+      - SYS_ADMIN
+      - DAC_READ_SEARCH
+    security_opt:
+      - apparmor:unconfined
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - vakav_net
+    command: >
+      gunicorn apps.backend.app:app
+        -b 0.0.0.0:5000
+        --workers=1
+        --threads=4
+        --timeout=72000
+        --graceful-timeout=7200
+        --keep-alive=5
+        --max-requests=0
+        --worker-class=gthread
+        --log-level=info
+        --access-logfile=-
+        --error-logfile=-
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 20G
+
+  jbdetection_test:
+    container_name: jbdetection_test
+    build:
+      context: ../..
+      dockerfile: apps/backend/Dockerfile
+    image: jbdetection-image-test:${IMAGE_TAG:-test}
+    ports:
+      - "5001:5000"
+    volumes:
+      - ./outputs_test:/home/devio/JB-outputs
+      - ./logs_test:/home/devio/JB-logs
+    environment:
+      - PYTHONPATH=/app
+      - FLASK_ENV=production
+      - TZ=Asia/Tehran
+      - DATABASE_URL=postgresql+psycopg2://vakav:vakav_strong_password_change_me@postgres:5432/vakav
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - GUNICORN_TIMEOUT=72000
+      - GUNICORN_GRACEFUL_TIMEOUT=7200
+      - TF_FORCE_GPU_ALLOW_GROWTH=true
+      - TF_CPP_MIN_LOG_LEVEL=2
+      - OMP_NUM_THREADS=1
+    gpus: all
+    runtime: nvidia
+    user: "1000:1000"
+    cap_add:
+      - SYS_ADMIN
+      - DAC_READ_SEARCH
+    security_opt:
+      - apparmor:unconfined
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - vakav_net
+    command: >
+      gunicorn apps.backend.app:app
+        -b 0.0.0.0:5000
+        --workers=1
+        --threads=4
+        --timeout=72000
+        --graceful-timeout=7200
+        --keep-alive=5
+        --max-requests=0
+        --worker-class=gthread
+        --log-level=info
+        --access-logfile=-
+        --error-logfile=-
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 8G
+
+volumes:
+  postgres_data:
+
+networks:
+  vakav_net:
+    driver: bridge

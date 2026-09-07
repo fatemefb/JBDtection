@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+    {% set asset_v = "20260221-2" %}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Management — Control IntelliCraft</title>
+    <link rel="icon" href="{{ url_for('static', filename='images/favicon.png', v=asset_v) }}" type="image/png">
+    <link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.png', v=asset_v) }}" type="image/png">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/favicon.png', v=asset_v) }}">
+    <link rel="name" href="{{ url_for('static', filename='images/JBD.png', v=asset_v) }}" type="image/png">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/global.css', v=asset_v) }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="{{ url_for('static', filename='js/ui_preferences.js', v=asset_v) }}"></script>
+    <style>
+        /* ═══════════════════════════════════════════════════════════════════════════
+           ADMIN USERS PAGE — custom styles
+           NOTE: We deliberately avoid the .modal class (defined globally as
+           position:fixed; inset:0) and use .admin-modal-overlay + .admin-modal
+           instead, so the dialog doesn't conflict with the global modal system.
+           ═══════════════════════════════════════════════════════════════════════════ */
+
+        /* ── Users table ─────────────────────────────────────────────────────── */
+        .users-container { padding: 0 24px 32px; }
+
+        .data-table.users-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--bg-card);
+            border-radius: var(--r-md);
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+        .data-table.users-table th {
+            background: var(--bg-soft);
+            color: var(--text);
+            padding: 14px 16px;
+            text-align: start;
+            font-weight: 600;
+            font-size: .88rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .data-table.users-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text);
+            font-size: .9rem;
+            vertical-align: middle;
+        }
+        .data-table.users-table tr:hover td { background: rgba(44,224,207,0.04); }
+        .data-table.users-table .empty-row td {
+            text-align: center;
+            padding: 40px;
+            color: var(--muted);
+        }
+
+        .self-tag {
+            display: inline-block;
+            margin-inline-start: 6px;
+            padding: 1px 8px;
+            background: rgba(44,224,207,.12);
+            color: var(--accent);
+            border: 1px solid rgba(44,224,207,.35);
+            border-radius: var(--r-pill);
+            font-size: .72rem;
+            font-weight: 600;
+        }
+
+        /* ── Role badges ─────────────────────────────────────────────────────── */
+        .role-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: var(--r-pill);
+            font-size: .74rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .role-admin    { background: rgba(245,180,0,.15);  color: var(--warning); border: 1px solid var(--warning); }
+        .role-engineer { background: rgba(44,224,207,.15); color: var(--accent);  border: 1px solid var(--accent); }
+        .role-viewer   { background: rgba(43,179,224,.15); color: var(--info);    border: 1px solid var(--info); }
+
+        /* ── Status badges ───────────────────────────────────────────────────── */
+        .status-active   { color: var(--success); font-weight: 600; }
+        .status-inactive { color: var(--danger);  font-weight: 600; }
+
+        /* ── Action buttons ──────────────────────────────────────────────────── */
+        .ghost-btn.tiny {
+            padding: 5px 10px;
+            border: 1px solid var(--border);
+            background: var(--bg-soft);
+            color: var(--text);
+            border-radius: var(--r-xs);
+            cursor: pointer;
+            font-size: .78rem;
+            font-family: inherit;
+            margin-inline-end: 4px;
+            transition: all .2s ease;
+        }
+        .ghost-btn.tiny:hover { border-color: var(--accent); color: var(--accent); }
+        .ghost-btn.tiny:disabled { opacity: .4; cursor: not-allowed; }
+
+        /* ═══════════════════════════════════════════════════════════════════════════
+           MODAL — use admin-modal-overlay/admin-modal to avoid collision with
+           the global .modal class (which is position:fixed; inset:0).
+           ═══════════════════════════════════════════════════════════════════════════ */
+        .admin-modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,.60);
+            backdrop-filter: blur(4px);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .admin-modal-overlay.active { display: flex; }
+
+        .admin-modal {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--r-lg);
+            padding: 28px;
+            width: 100%;
+            max-width: 480px;
+            box-shadow: var(--shadow-hard);
+            color: var(--text);
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .admin-modal h2 {
+            margin: 0 0 20px 0;
+            color: var(--text);
+            font-size: 1.25rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .admin-modal h2 i { color: var(--accent); }
+
+        .modal-field { margin-bottom: 16px; }
+        .modal-field label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 600;
+            color: var(--text);
+            font-size: .85rem;
+        }
+        .modal-field input[type="text"],
+        .modal-field input[type="email"],
+        .modal-field input[type="password"],
+        .modal-field select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: var(--r-xs);
+            background: var(--bg-soft);
+            color: var(--text);
+            font-family: inherit;
+            font-size: .9rem;
+            box-sizing: border-box;
+            transition: border-color .2s ease;
+        }
+        .modal-field input:focus,
+        .modal-field select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        .modal-field input:disabled {
+            opacity: .6;
+            cursor: not-allowed;
+        }
+        .modal-field select {
+            cursor: pointer;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239fb4d7' stroke-width='3'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: left 12px center;
+            padding-left: 32px;
+        }
+        .modal-hint {
+            font-size: .75rem;
+            color: var(--muted);
+            margin-top: 4px;
+            line-height: 1.5;
+        }
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 24px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+        }
+        .modal-btn {
+            padding: 9px 18px;
+            border: 1px solid var(--border);
+            background: var(--bg-soft);
+            color: var(--text);
+            border-radius: var(--r-xs);
+            cursor: pointer;
+            font-family: inherit;
+            font-size: .88rem;
+            font-weight: 500;
+            transition: all .2s ease;
+        }
+        .modal-btn:hover { border-color: var(--accent); }
+        .modal-btn.primary {
+            background: var(--accent);
+            color: var(--bg);
+            border-color: var(--accent);
+            font-weight: 600;
+        }
+        .modal-btn.primary:hover { filter: brightness(1.05); }
+        .modal-btn.danger {
+            background: var(--danger);
+            color: #fff;
+            border-color: var(--danger);
+            font-weight: 600;
+        }
+        .modal-btn.danger:hover { filter: brightness(1.05); }
+
+        /* ── Toast notification ──────────────────────────────────────────────── */
+        .notification {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 24px;
+            border-radius: var(--r-sm);
+            color: #fff;
+            font-weight: 600;
+            font-size: .88rem;
+            z-index: 3000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity .3s ease, transform .3s ease;
+            box-shadow: var(--shadow-mid);
+        }
+        .notification.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .notification.success { background: var(--success); }
+        .notification.error   { background: var(--danger); }
+    </style>
+</head>
+<body class="home-body io-body jb-body admin-users">
+    <div class="home-shell">
+        <aside class="side-panel" id="sidePanel">
+            <div class="side-header">
+                <div class="brand">
+                    <img src="{{ url_for('static', filename='images/favicon.png') }}" alt="Control IntelliCraft" class="brand-logo">
+                    <div>
+                        <span id="nav-kicker" class="brand-kicker">Control IntelliCraft</span>
+                        <h1 id="nav-brand" class="brand-title">Control IntelliCraft</h1>
+                    </div>
+                </div>
+                <button class="icon-btn" id="collapseBtn" aria-label="Toggle menu">
+                    <i class="fas fa-bars"></i>
+                </button>
+            </div>
+            <nav class="side-nav">
+                <a class="nav-item" href="/home">
+                    <i class="fas fa-house"></i>
+                    <span id="nav-home">Home</span>
+                </a>
+                <a class="nav-item" href="/dashboard">
+                    <i class="fas fa-chart-line"></i>
+                    <span id="nav-jb">JBDetection Module</span>
+                </a>
+                <a class="nav-item" href="/io-assignment">
+                    <i class="fas fa-project-diagram"></i>
+                    <span id="nav-io">IO Assignment Module</span>
+                </a>
+                {% if is_admin_user %}
+                <a class="nav-item active" href="/admin/users">
+                    <i class="fas fa-users"></i>
+                    <span id="nav-admin">User Management</span>
+                </a>
+                {% endif %}
+                <button class="nav-item disabled" type="button">
+                    <i class="fas fa-folder-open"></i>
+                    <span id="nav-reports">Reports</span>
+                </button>
+                <button class="nav-item disabled" type="button">
+                    <i class="fas fa-gear"></i>
+                    <span id="nav-settings">Settings</span>
+                </button>
+            </nav>
+            <div class="side-footer">
+                <div class="user-pill">
+                    <i class="fas fa-user"></i>
+                    <span>{{ username }}</span>
+                </div>
+                <a class="logout-link" href="/logout">
+                    <i class="fas fa-right-from-bracket"></i>
+                    <span id="nav-logout">Logout</span>
+                </a>
+            </div>
+        </aside>
+
+        <main class="home-main io-main">
+            <header class="io-header">
+                <div class="header-row">
+                    <div class="header-stack">
+                        <span id="au-kicker" class="header-kicker">Admin Panel</span>
+                        <h2 id="au-title"><i class="fas fa-users"></i> User Management</h2>
+                        <p id="au-subtitle">Create, edit, and delete system users; manage roles and access permissions.</p>
+                    </div>
+                    <div class="header-actions">
+                        <div class="icon-group">
+                            <button class="icon-btn" id="settingsBtn" title="Settings" aria-label="Settings">
+                                <i class="fas fa-gear"></i>
+                            </button>
+                            <button class="icon-btn" id="notifyBtn" title="Notifications" aria-label="Notifications">
+                                <i class="fas fa-bell"></i>
+                            </button>
+                        </div>
+                        <div class="lang-switch">
+                            <button id="faBtn" class="lang-btn">فارسی</button>
+                            <button id="enBtn" class="lang-btn active">English</button>
+                        </div>
+                        <div class="theme-switch">
+                            <button id="themeBtn" class="theme-btn"><i class="fas fa-moon"></i></button>
+                        </div>
+                        <button class="primary-btn small" id="addUserBtn" onclick="openCreateModal()">
+                            <i class="fas fa-user-plus"></i> <span id="btn-add-user">Add User</span>
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <div class="dashboard users-container">
+                <section class="panel">
+                    <h2 class="section-heading">
+                        <i class="fas fa-list"></i>
+                        <span id="au-list-title">User List</span>
+                    </h2>
+                    <div class="table-wrapper">
+                        <table class="data-table users-table" id="usersTable">
+                            <thead>
+                                <tr>
+                                    <th id="th-username">Username</th>
+                                    <th id="th-displayname">Display Name</th>
+                                    <th id="th-role">Role</th>
+                                    <th id="th-email">Email</th>
+                                    <th id="th-status">Status</th>
+                                    <th id="th-actions">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="usersTableBody">
+                                <tr class="empty-row"><td colspan="6" id="loading-text">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- ═══ Modal: Create/Edit User (uses admin-modal to avoid .modal collision) ═══ -->
+    <div class="admin-modal-overlay" id="userModal">
+        <div class="admin-modal">
+            <h2 id="modalTitle"><i class="fas fa-user-plus"></i> <span id="modal-title-text">Add New User</span></h2>
+            <input type="hidden" id="modalMode" value="create">
+            <input type="hidden" id="modalOriginalUsername" value="">
+
+            <div class="modal-field">
+                <label for="modalUsername" id="lbl-username">Username *</label>
+                <input type="text" id="modalUsername" required>
+                <div class="modal-hint" id="modalUsernameHint">Username used to log into the system</div>
+            </div>
+
+            <div class="modal-field">
+                <label for="modalDisplayName" id="lbl-displayname">Display Name</label>
+                <input type="text" id="modalDisplayName" placeholder="e.g. Engineer Ahmadi">
+            </div>
+
+            <div class="modal-field">
+                <label for="modalEmail" id="lbl-email">Email</label>
+                <input type="email" id="modalEmail" placeholder="user@example.com">
+            </div>
+
+            <div class="modal-field">
+                <label for="modalRole" id="lbl-role">Role *</label>
+                <select id="modalRole">
+                    <option value="viewer" id="opt-viewer">Viewer (read-only)</option>
+                    <option value="engineer" selected id="opt-engineer">Engineer (run processes)</option>
+                    <option value="admin" id="opt-admin">Admin (full management)</option>
+                </select>
+                <div class="modal-hint" id="role-hint-container">
+                    <strong>Viewer:</strong> <span id="hint-viewer">View projects and outputs only</span><br>
+                    <strong>Engineer:</strong> <span id="hint-engineer">Run PDF and IO Assignment processes; sees own projects only</span><br>
+                    <strong>Admin:</strong> <span id="hint-admin">See all projects + manage users</span>
+                </div>
+            </div>
+
+            <div class="modal-field">
+                <label for="modalPassword" id="lbl-password">Password *</label>
+                <input type="password" id="modalPassword" required>
+                <div class="modal-hint" id="modalPasswordHint">At least 6 characters</div>
+            </div>
+
+            <div class="modal-field" id="modalActiveField" style="display:none;">
+                <label>
+                    <input type="checkbox" id="modalActive" checked>
+                    <span id="lbl-active">Account Active</span>
+                </label>
+                <div class="modal-hint" id="lbl-active-hint">If disabled, the user cannot log in</div>
+            </div>
+
+            <div class="modal-actions">
+                <button class="modal-btn" id="btn-cancel" onclick="closeModal()">Cancel</button>
+                <button class="modal-btn primary" id="modalSaveBtn" onclick="saveUser()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ Modal: Delete Confirmation ═══ -->
+    <div class="admin-modal-overlay" id="deleteModal">
+        <div class="admin-modal" style="max-width: 380px;">
+            <h2><i class="fas fa-exclamation-triangle" style="color: var(--danger);"></i> <span id="delete-title">Confirm Delete</span></h2>
+            <p style="color: var(--text); margin: 16px 0; line-height: 1.6;">
+                <span id="delete-confirm-msg">Are you sure you want to delete user "</span><strong id="deleteUsername"></strong><span id="delete-confirm-msg2">"? This action cannot be undone.</span>
+            </p>
+            <div class="modal-actions">
+                <button class="modal-btn" id="btn-cancel-delete" onclick="closeDeleteModal()">Cancel</button>
+                <button class="modal-btn danger" id="deleteConfirmBtn" onclick="confirmDelete()">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="notification" id="toast"></div>
+
+    <script>
+        // ═══════════════════════════════════════════════════════════════════════════
+        // TRANSLATIONS — English (default) + Persian (toggle)
+        // ═══════════════════════════════════════════════════════════════════════════
+        const TRANSLATIONS = {
+            en: {
+                'nav-home':       'Home',
+                'nav-jb':         'JBDetection Module',
+                'nav-io':         'IO Assignment Module',
+                'nav-admin':      'User Management',
+                'nav-reports':    'Reports',
+                'nav-settings':   'Settings',
+                'nav-logout':     'Logout',
+
+                'au-kicker':      'Admin Panel',
+                'au-title':       'User Management',
+                'au-subtitle':    'Create, edit, and delete system users; manage roles and access permissions.',
+                'btn-add-user':   'Add User',
+
+                'au-list-title':  'User List',
+
+                'th-username':    'Username',
+                'th-displayname': 'Display Name',
+                'th-role':        'Role',
+                'th-email':       'Email',
+                'th-status':      'Status',
+                'th-actions':     'Actions',
+
+                'loading-text':   'Loading...',
+                'empty-text':     'No users found',
+
+                'status-active':    'Active',
+                'status-inactive':  'Inactive',
+
+                'btn-edit':       'Edit',
+                'btn-delete':     'Delete',
+                'self-tag':       '(you)',
+
+                'modal-title-create':  'Add New User',
+                'modal-title-edit':    'Edit User: ',
+                'lbl-username':        'Username *',
+                'lbl-displayname':     'Display Name',
+                'lbl-email':           'Email',
+                'lbl-role':            'Role *',
+                'lbl-password':        'Password *',
+                'lbl-active':          'Account Active',
+                'lbl-active-hint':     'If disabled, the user cannot log in',
+                'modalUsernameHint':   'Username used to log into the system',
+                'modalPasswordHint-create': 'At least 6 characters',
+                'modalPasswordHint-edit':   'Leave blank to keep the current password',
+                'hint-viewer':         'View projects and outputs only',
+                'hint-engineer':       'Run PDF and IO Assignment processes; sees own projects only',
+                'hint-admin':          'See all projects + manage users',
+                'opt-viewer':          'Viewer (read-only)',
+                'opt-engineer':        'Engineer (run processes)',
+                'opt-admin':           'Admin (full management)',
+                'btn-cancel':          'Cancel',
+                'btn-save':            'Save',
+
+                'delete-title':        'Confirm Delete',
+                'delete-confirm-msg':  'Are you sure you want to delete user "',
+                'delete-confirm-msg2': '"? This action cannot be undone.',
+                'btn-cancel-delete':   'Cancel',
+                'btn-delete-confirm':  'Delete',
+
+                'toast-user-saved':      'Saved successfully',
+                'toast-user-deleted':    'Deleted successfully',
+                'toast-load-error':      'Error loading users: ',
+                'toast-save-error':      'Error: ',
+                'toast-delete-error':    'Error: ',
+                'toast-user-not-found':  'User not found',
+                'toast-username-pwd-req': 'Username and password are required',
+                'toast-pwd-too-short':   'Password must be at least 6 characters',
+                'toast-general-error':   'Error',
+            },
+            fa: {
+                'nav-home':       'خانه',
+                'nav-jb':         'ماژول JBDetection',
+                'nav-io':         'ماژول IO Assignment',
+                'nav-admin':      'مدیریت کاربران',
+                'nav-reports':    'گزارش‌ها',
+                'nav-settings':   'تنظیمات',
+                'nav-logout':     'خروج',
+
+                'au-kicker':      'پنل مدیریت',
+                'au-title':       'مدیریت کاربران',
+                'au-subtitle':    'ایجاد، ویرایش و حذف کاربران سیستم و مدیریت نقش‌ها و دسترسی‌ها.',
+                'btn-add-user':   'افزودن کاربر',
+
+                'au-list-title':  'فهرست کاربران',
+
+                'th-username':    'نام کاربری',
+                'th-displayname': 'نام نمایشی',
+                'th-role':        'نقش',
+                'th-email':       'ایمیل',
+                'th-status':      'وضعیت',
+                'th-actions':     'عملیات',
+
+                'loading-text':   'در حال بارگذاری...',
+                'empty-text':     'هیچ کاربری یافت نشد',
+
+                'status-active':    'فعال',
+                'status-inactive':  'غیرفعال',
+
+                'btn-edit':       'ویرایش',
+                'btn-delete':     'حذف',
+                'self-tag':       '(شما)',
+
+                'modal-title-create':  'افزودن کاربر جدید',
+                'modal-title-edit':    'ویرایش کاربر: ',
+                'lbl-username':        'نام کاربری *',
+                'lbl-displayname':     'نام نمایشی',
+                'lbl-email':           'ایمیل',
+                'lbl-role':            'نقش *',
+                'lbl-password':        'رمز عبور *',
+                'lbl-active':          'حساب فعال',
+                'lbl-active-hint':     'اگر غیرفعال باشد، کاربر نمی‌تواند وارد شود',
+                'modalUsernameHint':   'نام کاربری برای ورود به سیستم',
+                'modalPasswordHint-create': 'حداقل ۶ کاراکتر',
+                'modalPasswordHint-edit':   'اگر نمی‌خواهید رمز را تغییر دهید، خالی بگذارید',
+                'hint-viewer':         'فقط مشاهده‌ی پروژه‌ها و خروجی‌ها',
+                'hint-engineer':       'اجرای پردازش PDF و IO Assignment؛ فقط پروژه‌های خودش',
+                'hint-admin':          'دیدن همه‌ی پروژه‌ها + مدیریت کاربران',
+                'opt-viewer':          'Viewer (فقط مشاهده)',
+                'opt-engineer':        'Engineer (اجرای پردازش)',
+                'opt-admin':           'Admin (مدیریت کامل)',
+                'btn-cancel':          'انصراف',
+                'btn-save':            'ذخیره',
+
+                'delete-title':        'تأیید حذف',
+                'delete-confirm-msg':  'آیا از حذف کاربر "',
+                'delete-confirm-msg2': '" مطمئن هستید؟ این عملیات قابل بازگشت نیست.',
+                'btn-cancel-delete':   'انصراف',
+                'btn-delete-confirm':  'حذف',
+
+                'toast-user-saved':      'ذخیره شد',
+                'toast-user-deleted':    'حذف شد',
+                'toast-load-error':      'خطا در بارگذاری کاربران: ',
+                'toast-save-error':      'خطا: ',
+                'toast-delete-error':    'خطا: ',
+                'toast-user-not-found':  'کاربر یافت نشد',
+                'toast-username-pwd-req': 'نام کاربری و رمز عبور الزامی است',
+                'toast-pwd-too-short':   'رمز عبور باید حداقل ۶ کاراکتر باشد',
+                'toast-general-error':   'خطا',
+            }
+        };
+
+        let currentUsername = '{{ username|default("") }}';
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // LANGUAGE & THEME HELPERS
+        // ═══════════════════════════════════════════════════════════════════════════
+        function getCurrentLang() {
+            try {
+                if (window.JBDUI && JBDUI.getState) {
+                    return JBDUI.getState().lang || 'en';
+                }
+            } catch (e) {}
+            // Fallback: read directly from localStorage (default 'en' for this page)
+            const stored = localStorage.getItem('lang');
+            return (stored === 'fa' || stored === 'en') ? stored : 'en';
+        }
+
+        function getCurrentTheme() {
+            try {
+                if (window.JBDUI && JBDUI.getState) {
+                    return JBDUI.getState().theme || 'dark';
+                }
+            } catch (e) {}
+            const stored = localStorage.getItem('theme');
+            return (stored === 'dark' || stored === 'light') ? stored : 'dark';
+        }
+
+        function t(key) {
+            const lang = getCurrentLang();
+            return (TRANSLATIONS[lang] && TRANSLATIONS[lang][key]) || TRANSLATIONS.en[key] || key;
+        }
+
+        // Update the theme button icon based on the CURRENT theme.
+        // Called on load, on theme toggle, and on language change.
+        function updateThemeIcon() {
+            const themeBtn = document.getElementById('themeBtn');
+            if (!themeBtn) return;
+            const theme = getCurrentTheme();
+            // When dark → show moon (current state). When light → show sun.
+            // Many users expect: clicking the button shows what you'll switch TO.
+            // We follow the convention: icon shows the CURRENT theme.
+            //   dark theme  → moon icon
+            //   light theme → sun icon
+            themeBtn.innerHTML = (theme === 'light')
+                ? '<i class="fas fa-sun"></i>'
+                : '<i class="fas fa-moon"></i>';
+            const logoImg = document.querySelector('.brand img');
+
+            if (logoImg) logoImg.src = theme === 'dark' ? '/static/images/favicon.png' : '/static/images/favicon2.png';
+        }
+
+        // Apply translations to all elements with matching IDs
+        function applyTranslations() {
+            const lang = getCurrentLang();
+            const dict = TRANSLATIONS[lang] || TRANSLATIONS.en;
+
+            // Update <html> lang and dir attributes
+            document.documentElement.lang = lang;
+            document.documentElement.dir = (lang === 'fa') ? 'rtl' : 'ltr';
+
+            // Update every element whose id matches a translation key.
+            // We preserve leading <i class="fas"> icons by re-adding them.
+            for (const key in dict) {
+                const el = document.getElementById(key);
+                if (!el) continue;
+
+                const icon = el.querySelector('i.fas, i.far, i.fab');
+                if (icon && el.children.length === 1) {
+                    // Element contains only an icon + text — replace text only
+                    el.innerHTML = '';
+                    el.appendChild(icon);
+                    el.appendChild(document.createTextNode(' ' + dict[key]));
+                } else {
+                    el.textContent = dict[key];
+                }
+            }
+
+            // Update language toggle button states
+            const faBtn = document.getElementById('faBtn');
+            const enBtn = document.getElementById('enBtn');
+            if (faBtn) faBtn.classList.toggle('active', lang === 'fa');
+            if (enBtn) enBtn.classList.toggle('active', lang === 'en');
+
+            // Update theme icon
+            updateThemeIcon();
+
+            // Refresh the user table to re-apply translations on dynamic content
+            if (document.getElementById('usersTableBody')) {
+                loadUsers();
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // EVENT BINDINGS (must run after DOM is ready)
+        // ═══════════════════════════════════════════════════════════════════════════
+        document.addEventListener('DOMContentLoaded', () => {
+            const themeBtn   = document.getElementById('themeBtn');
+            const faBtn      = document.getElementById('faBtn');
+            const enBtn      = document.getElementById('enBtn');
+            const collapseBtn = document.getElementById('collapseBtn');
+
+            if (collapseBtn) {
+                collapseBtn.addEventListener('click', () => {
+                    if (window.JBDUI) JBDUI.toggleMenuCollapsed();
+                });
+            }
+            if (faBtn) {
+                faBtn.addEventListener('click', () => {
+                    if (window.JBDUI) JBDUI.setLang('fa');
+                    applyTranslations();
+                });
+            }
+            if (enBtn) {
+                enBtn.addEventListener('click', () => {
+                    if (window.JBDUI) JBDUI.setLang('en');
+                    applyTranslations();
+                });
+            }
+            if (themeBtn) {
+                themeBtn.addEventListener('click', () => {
+                    // Toggle theme between dark and light
+                    const current = getCurrentTheme();
+                    const next = (current === 'dark') ? 'light' : 'dark';
+                    if (window.JBDUI) {
+                        JBDUI.setTheme(next);
+                    } else {
+                        localStorage.setItem('theme', next);
+                        document.body.classList.remove('dark', 'light');
+                        document.body.classList.add(next);
+                    }
+                    // Update icon immediately
+                    updateThemeIcon();
+                });
+            }
+
+            // Sync if another tab changes the theme/lang
+            window.addEventListener('storage', applyTranslations);
+
+            // Apply translations on first load (after JBDUI has initialized)
+            applyTranslations();
+            // Set the correct theme icon on first load
+            updateThemeIcon();
+            // Load the users table
+            loadUsers();
+        });
+
+        function setTheme(theme) {
+            document.body.classList.remove('light', 'dark');
+            document.body.classList.add(theme);
+            themeBtn.innerHTML = theme === 'dark' ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
+            const logoImg = document.querySelector('.brand img');
+
+            if (logoImg) logoImg.src = theme === 'dark' ? '/static/images/favicon.png' : '/static/images/favicon2.png';
+
+            currentTheme = theme;
+            if (window.JBDUI) {
+                window.JBDUI.setTheme(theme);
+            } else {
+                localStorage.setItem('theme', theme);
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // ADMIN USERS LOGIC
+        // ═══════════════════════════════════════════════════════════════════════════
+        async function loadUsers() {
+            try {
+                const resp = await fetch('/api/admin/users', {credentials: 'same-origin'});
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const data = await resp.json();
+                if (data.status !== 'success') throw new Error(data.message || 'failed');
+
+                const tbody = document.getElementById('usersTableBody');
+                if (!data.users || data.users.length === 0) {
+                    tbody.innerHTML = `<tr class="empty-row"><td colspan="6">${t('empty-text')}</td></tr>`;
+                    return;
+                }
+
+                tbody.innerHTML = data.users.map(u => {
+                    const roleClass = 'role-' + u.role;
+                    const roleLabel = {admin: 'Admin', engineer: 'Engineer', viewer: 'Viewer'}[u.role] || u.role;
+                    const statusClass = u.is_active ? 'status-active' : 'status-inactive';
+                    const statusLabel = u.is_active ? t('status-active') : t('status-inactive');
+                    const isSelf = u.username === currentUsername;
+                    const editBtnText = t('btn-edit');
+                    const deleteBtnText = t('btn-delete');
+                    const selfTag = isSelf ? `<span class="self-tag">${t('self-tag')}</span>` : '';
+                    return `
+                        <tr>
+                            <td><strong>${u.username}</strong>${selfTag}</td>
+                            <td>${u.display_name || '-'}</td>
+                            <td><span class="role-badge ${roleClass}">${roleLabel}</span></td>
+                            <td>${u.email || '-'}</td>
+                            <td><span class="${statusClass}">${statusLabel}</span></td>
+                            <td>
+                                <button class="ghost-btn tiny" onclick="openEditModal('${u.username}')"><i class="fas fa-edit"></i> ${editBtnText}</button>
+                                <button class="ghost-btn tiny" onclick="openDeleteModal('${u.username}')" ${isSelf ? 'disabled' : ''}><i class="fas fa-trash"></i> ${deleteBtnText}</button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (err) {
+                showToast(t('toast-load-error') + err.message, 'error');
+            }
+        }
+
+        function openCreateModal() {
+            document.getElementById('modalTitle').innerHTML = `<i class="fas fa-user-plus"></i> ${t('modal-title-create')}`;
+            document.getElementById('modalMode').value = 'create';
+            document.getElementById('modalOriginalUsername').value = '';
+            document.getElementById('modalUsername').value = '';
+            document.getElementById('modalUsername').disabled = false;
+            document.getElementById('modalDisplayName').value = '';
+            document.getElementById('modalEmail').value = '';
+            document.getElementById('modalRole').value = 'engineer';
+            document.getElementById('modalPassword').value = '';
+            document.getElementById('modalPassword').required = true;
+            document.getElementById('modalPasswordHint').textContent = t('modalPasswordHint-create');
+            document.getElementById('modalActiveField').style.display = 'none';
+            document.getElementById('userModal').classList.add('active');
+        }
+
+        async function openEditModal(username) {
+            try {
+                const resp = await fetch('/api/admin/users', {credentials: 'same-origin'});
+                const data = await resp.json();
+                const user = data.users.find(u => u.username === username);
+                if (!user) { showToast(t('toast-user-not-found'), 'error'); return; }
+
+                document.getElementById('modalTitle').innerHTML = `<i class="fas fa-user-pen"></i> ${t('modal-title-edit')}${username}`;
+                document.getElementById('modalMode').value = 'edit';
+                document.getElementById('modalOriginalUsername').value = username;
+                document.getElementById('modalUsername').value = username;
+                document.getElementById('modalUsername').disabled = true;
+                document.getElementById('modalDisplayName').value = user.display_name || '';
+                document.getElementById('modalEmail').value = user.email || '';
+                document.getElementById('modalRole').value = user.role;
+                document.getElementById('modalPassword').value = '';
+                document.getElementById('modalPassword').required = false;
+                document.getElementById('modalPasswordHint').textContent = t('modalPasswordHint-edit');
+                document.getElementById('modalActive').checked = user.is_active;
+                document.getElementById('modalActiveField').style.display = '';
+                document.getElementById('userModal').classList.add('active');
+            } catch (err) {
+                showToast(t('toast-save-error') + err.message, 'error');
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('userModal').classList.remove('active');
+        }
+
+        async function saveUser() {
+            const mode = document.getElementById('modalMode').value;
+            const originalUsername = document.getElementById('modalOriginalUsername').value;
+            const payload = {
+                username: document.getElementById('modalUsername').value.trim(),
+                display_name: document.getElementById('modalDisplayName').value.trim(),
+                email: document.getElementById('modalEmail').value.trim(),
+                role: document.getElementById('modalRole').value,
+                password: document.getElementById('modalPassword').value,
+            };
+
+            if (!payload.username || !payload.password) {
+                showToast(t('toast-username-pwd-req'), 'error');
+                return;
+            }
+            if (mode === 'create' && payload.password.length < 6) {
+                showToast(t('toast-pwd-too-short'), 'error');
+                return;
+            }
+
+            if (mode === 'edit') {
+                payload.active = document.getElementById('modalActive').checked;
+            }
+
+            try {
+                const url = mode === 'create' ? '/api/admin/users' : '/api/admin/users/' + encodeURIComponent(originalUsername);
+                const method = mode === 'create' ? 'POST' : 'PUT';
+                const resp = await fetch(url, {
+                    method: method,
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload),
+                    credentials: 'same-origin',
+                });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    showToast(data.message || t('toast-user-saved'), 'success');
+                    closeModal();
+                    loadUsers();
+                } else {
+                    showToast(data.message || t('toast-general-error'), 'error');
+                }
+            } catch (err) {
+                showToast(t('toast-save-error') + err.message, 'error');
+            }
+        }
+
+        function openDeleteModal(username) {
+            document.getElementById('deleteUsername').textContent = username;
+            document.getElementById('deleteConfirmBtn').dataset.username = username;
+            document.getElementById('deleteModal').classList.add('active');
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('deleteModal').classList.remove('active');
+        }
+
+        async function confirmDelete() {
+            const username = document.getElementById('deleteConfirmBtn').dataset.username;
+            try {
+                const resp = await fetch('/api/admin/users/' + encodeURIComponent(username), {
+                    method: 'DELETE',
+                    credentials: 'same-origin',
+                });
+                const data = await resp.json();
+                if (data.status === 'success') {
+                    showToast(data.message || t('toast-user-deleted'), 'success');
+                    closeDeleteModal();
+                    loadUsers();
+                } else {
+                    showToast(data.message || t('toast-general-error'), 'error');
+                }
+            } catch (err) {
+                showToast(t('toast-delete-error') + err.message, 'error');
+            }
+        }
+
+        let toastTimer = null;
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'notification ' + type + ' show';
+            if (toastTimer) clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => { toast.className = 'notification ' + type; }, 3000);
+        }
+
+        // Close modal when clicking on the overlay (outside the dialog)
+        document.getElementById('userModal').addEventListener('click', (e) => {
+            if (e.target.id === 'userModal') closeModal();
+        });
+        document.getElementById('deleteModal').addEventListener('click', (e) => {
+            if (e.target.id === 'deleteModal') closeDeleteModal();
+        });
+
+        // Close modals on Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeModal();
+                closeDeleteModal();
+            }
+        });
+    </script>
+</body>
+</html>

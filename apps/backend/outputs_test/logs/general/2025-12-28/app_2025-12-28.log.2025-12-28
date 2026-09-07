@@ -1,0 +1,41 @@
+2025-12-28 09:06:56,555 - INFO - Logger initialized. Log file: /home/devio/JB-outputs/logs/general/2025-12-28/app_2025-12-28.log
+2025-12-28 12:27:49,750 - INFO - Logger initialized. Log file: /home/devio/JB-outputs/logs/general/2025-12-28/app_2025-12-28.log
+2025-12-28 12:35:00,076 - INFO - Logger initialized. Log file: /home/devio/JB-outputs/logs/general/2025-12-28/app_2025-12-28.log
+2025-12-28 12:52:10,528 - INFO - Logger initialized. Log file: /home/devio/JB-outputs/logs/general/2025-12-28/app_2025-12-28.log
+2025-12-28 12:52:23,458 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2025-12-28 12:52:26,122 - INFO - IO Assignment upload saved: /tmp/io_4df83cc4141b4de5b556f0f36a059a77_input_IOAssignment_2.xlsx
+2025-12-28 12:52:26,125 - INFO - Task 29a12c02-11c4-49ab-b857-c1525004509b created successfully
+2025-12-28 12:52:26,128 - INFO - Task 29a12c02-11c4-49ab-b857-c1525004509b updated: status=N/A, progress=N/A%
+2025-12-28 12:52:26,135 - INFO - Task 29a12c02-11c4-49ab-b857-c1525004509b updated: status=processing, progress=10%
+2025-12-28 12:52:26,137 - INFO - Task 29a12c02-11c4-49ab-b857-c1525004509b updated: status=N/A, progress=N/A%
+2025-12-28 12:52:26,139 - INFO - Task 29a12c02-11c4-49ab-b857-c1525004509b updated: status=N/A, progress=N/A%
+2025-12-28 12:52:26,141 - INFO - Task 29a12c02-11c4-49ab-b857-c1525004509b updated: status=N/A, progress=35%
+2025-12-28 12:52:26,143 - INFO - Task 29a12c02-11c4-49ab-b857-c1525004509b updated: status=N/A, progress=N/A%
+2025-12-28 12:52:28,851 - INFO - Task 29a12c02-11c4-49ab-b857-c1525004509b updated: status=N/A, progress=75%
+2025-12-28 12:52:28,852 - INFO - Task 29a12c02-11c4-49ab-b857-c1525004509b updated: status=N/A, progress=N/A%
+2025-12-28 12:52:28,945 - INFO - Task 29a12c02-11c4-49ab-b857-c1525004509b updated: status=N/A, progress=N/A%
+2025-12-28 12:52:28,946 - INFO - Task 29a12c02-11c4-49ab-b857-c1525004509b updated: status=N/A, progress=90%
+2025-12-28 12:52:28,948 - INFO - Task 29a12c02-11c4-49ab-b857-c1525004509b updated: status=N/A, progress=N/A%
+2025-12-28 12:52:28,961 - INFO - Task 29a12c02-11c4-49ab-b857-c1525004509b updated: status=N/A, progress=N/A%
+2025-12-28 12:52:28,966 - INFO - Task 29a12c02-11c4-49ab-b857-c1525004509b updated: status=completed, progress=100%
+2025-12-28 12:52:28,967 - INFO - IO Assignment Task 29a12c02-11c4-49ab-b857-c1525004509b: پردازش با موفقیت تکمیل شد
+2025-12-28 12:52:28,972 - INFO - Task 29a12c02-11c4-49ab-b857-c1525004509b updated: status=N/A, progress=N/A%
+2025-12-28 12:52:47,838 - INFO - کاربر admin درخواست دانلود فایل Aryavakav-Test-IOAssignment-2025-12-28-v1.0.xlsx را ارسال کرد
+2025-12-28 13:01:01,634 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2025-12-28 13:01:06,940 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2025-12-28 13:01:08,694 - INFO - کاربر admin به صفحه خانه دسترسی پیدا کرد
+2025-12-28 13:01:11,758 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2025-12-28 13:57:44,542 - INFO - کاربر admin به صفحه خانه دسترسی پیدا کرد
+2025-12-28 13:57:47,684 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2025-12-28 13:57:49,321 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2025-12-28 13:58:09,956 - INFO - کاربر admin به داشبورد دسترسی پیدا کرد
+2025-12-28 13:58:22,714 - INFO - کاربر admin به IO Assignment دسترسی پیدا کرد
+2025-12-28 14:39:59,346 - INFO - کاربر admin به صفحه خانه دسترسی پیدا کرد
+2025-12-28 14:52:10,586 - INFO - Task 1ec7a9d1-58ac-4b48-80cc-ab4c15c06784 deleted
+2025-12-28 14:52:10,592 - INFO - Task 341e0db9-2633-4d33-adb0-f6a4f7caf88d deleted
+2025-12-28 14:52:10,602 - INFO - Task 56d21362-c086-498a-adc7-5b90220cc411 deleted
+2025-12-28 14:52:10,611 - INFO - Task 9b17169b-d1b8-49ec-bfd6-cb3e7ee8b0f8 deleted
+2025-12-28 14:52:10,618 - INFO - Task e3a94fdb-36e4-4946-970e-03bc1e159ae8 deleted
+2025-12-28 14:52:10,627 - INFO - Task 13448ffd-8625-4283-b74f-04453c77aa9a deleted
+2025-12-28 14:52:10,636 - INFO - Task 4b0334a8-efcd-41cb-af13-ff8c090af27b deleted
+2025-12-28 14:52:10,637 - INFO - Cleaned up 7 old task(s)

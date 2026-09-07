@@ -1,0 +1,69 @@
+{
+  "status": "completed",
+  "progress": 100,
+  "task_id": "4b0334a8-efcd-41cb-af13-ff8c090af27b",
+  "project_name": "Test",
+  "username": "admin",
+  "task_type": "io_assignment",
+  "created_at": "2025-12-27T13:10:32.584982",
+  "log": [
+    {
+      "timestamp": "2025-12-27T13:10:32.586848",
+      "message": "Task queued"
+    },
+    {
+      "timestamp": "2025-12-27T13:10:32.590834",
+      "message": "Task started"
+    },
+    {
+      "timestamp": "2025-12-27T13:10:32.595029",
+      "message": "Output directory: /home/devio/JB-outputs/Test"
+    },
+    {
+      "timestamp": "2025-12-27T13:10:32.599275",
+      "message": "Running IO Assignment engine"
+    },
+    {
+      "timestamp": "2025-12-27T13:10:34.746644",
+      "message": "Engine finished, building summaries"
+    },
+    {
+      "timestamp": "2025-12-27T13:10:34.794336",
+      "message": "Report saved: /home/devio/JB-outputs/Test/Aryavakav-Test-IOAssignmentReport-2025-12-27-v1.0.json"
+    },
+    {
+      "timestamp": "2025-12-27T13:10:34.797221",
+      "message": "Creating ZIP package"
+    },
+    {
+      "timestamp": "2025-12-27T13:10:34.810302",
+      "message": "ZIP created: /home/devio/JB-outputs/Test/Aryavakav-Test-IOAssignment-2025-12-27-v1.0_v2.zip"
+    }
+  ],
+  "started_at": "2025-12-27T13:10:32.589134",
+  "completed_at": "2025-12-27T13:10:34.811906",
+  "result": {
+    "output_files": {
+      "excel_path": "/home/devio/JB-outputs/Test/Aryavakav-Test-IOAssignment-2025-12-27-v1.0.xlsx",
+      "report_path": "/home/devio/JB-outputs/Test/Aryavakav-Test-IOAssignmentReport-2025-12-27-v1.0.json",
+      "zip_path": "/home/devio/JB-outputs/Test/Aryavakav-Test-IOAssignment-2025-12-27-v1.0_v2.zip",
+      "download_url": "/downloads/Test/Aryavakav-Test-IOAssignment-2025-12-27-v1.0_v2.zip"
+    },
+    "summary": {
+      "total_active": 792,
+      "total_hot_spares": 162,
+      "total_spares": 70,
+      "total_signals": 1024,
+      "expected_hot_spares": 159,
+      "hot_spare_compliance": 101.9,
+      "overall_spare_capacity": 22.7,
+      "cabinet_count": 12,
+      "jb_count": 137
+    },
+    "cabinets": [
+      {
+        "cabinet_id": "IS-A-01R",
+        "cabinet_type": "Type 1",
+        "direction": "REAR",
+        "limiting_factor": "PERCENT_PER_BOARD Pool (100.0%)",
+        "rail_used": 
