@@ -103,23 +103,52 @@ class TextDetector:
         with self._init_lock:
             if self._ocr is not None:
                 return
-            # Preload libz globally to fix PaddlePaddle 2.6.x crash on
-            # Python 3.12+ where the bundled zlib conflicts with the
-            # system one (symptom: "free(): invalid pointer" SIGABRT).
+
+            # ── 1. Preload libz (workaround for PaddlePaddle 2.6.x on
+            #        Python 3.12+ "free(): invalid pointer" SIGABRT).
             try:
                 import ctypes
                 ctypes.CDLL("libz.so.1", mode=ctypes.RTLD_GLOBAL)
             except Exception:
-                pass  # Not all systems have libz.so.1
+                pass  # Not all systems have libz.so.1 (e.g. musl-based)
 
+            # ── 2. Validate GPU BEFORE initializing PaddleOCR.
+            #        In production this raises GPUEnvironmentError if
+            #        the GPU is unavailable, preventing the silent CPU
+            #        fallback that PaddleOCR's check_gpu() would otherwise
+            #        perform.
+            from .gpu_validation import validate_gpu_environment, GPUEnvironmentError
+            try:
+                gpu_env = validate_gpu_environment()
+                logger.info(
+                    "GPU validation: PASS (device=%s, gpu=%s, cuda=%s)",
+                    gpu_env.device, gpu_env.gpu_name, gpu_env.cuda_version,
+                )
+            except GPUEnvironmentError:
+                # Re-raise — production policy is enforced by gpu_validation.
+                raise
+            except Exception as exc:
+                # Defensive: if gpu_validation itself broke, do not proceed.
+                raise DetectorError(
+                    f"GPU validation raised an unexpected error: {exc}"
+                ) from exc
+
+            # ── 3. Import PaddleOCR.
             try:
                 from paddleocr import PaddleOCR  # type: ignore
             except Exception as exc:  # pragma: no cover
                 raise DetectorError(
                     f"Failed to import paddleocr.PaddleOCR: {exc}. "
-                    f"Install with: pip install paddleocr paddlepaddle"
+                    f"Install with: pip install paddleocr paddlepaddle-gpu"
                 ) from exc
 
+            # ── 4. Initialize PaddleOCR.
+            #        PaddleOCR 2.10.0 API: `use_gpu` is a kwarg (default True)
+            #        and is still supported. We pass it explicitly so the
+            #        intent is clear, then we VERIFY below that PaddleOCR's
+            #        internal check_gpu() did not silently downgrade us to
+            #        CPU (which is what happens when the GPU build is
+            #        installed but no CUDA device is visible).
             logger.info(
                 "Initializing PaddleOCR(use_angle_cls=%s, lang=%s, "
                 "show_log=%s, use_gpu=%s)",
@@ -137,7 +166,26 @@ class TextDetector:
                 raise DetectorError(
                     f"PaddleOCR initialization failed: {exc}"
                 ) from exc
-            logger.info("PaddleOCR instance ready.")
+
+            # ── 5. Verify PaddleOCR did NOT silently fall back to CPU.
+            #        PaddleOCR's check_gpu() sets params.use_gpu = False
+            #        if paddle.device.get_device() == "cpu" — which would
+            #        mean the GPU is not actually being used despite our
+            #        explicit use_gpu=True request.
+            actual_use_gpu = getattr(self._ocr, "params", None)
+            if actual_use_gpu is not None:
+                actual_use_gpu_flag = getattr(actual_use_gpu, "use_gpu", None)
+                if (
+                    self._config.paddle_use_gpu is True
+                    and actual_use_gpu_flag is False
+                ):
+                    raise DetectorError(
+                        "PaddleOCR silently fell back to CPU despite use_gpu=True. "
+                        "This means the GPU is not actually being used. "
+                        "Check that paddlepaddle-gpu is installed and CUDA is visible."
+                    )
+
+            logger.info("PaddleOCR instance ready (GPU-validated).")
 
     # ── Public API ─────────────────────────────────────────────────
     def detect(self, image: np.ndarray) -> List[OcrDetection]:

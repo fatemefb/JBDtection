@@ -28,6 +28,7 @@ import time
 import zipfile
 from multiprocessing import Pool, cpu_count
 import subprocess  
+import tkinter as tk
 import sys
 import uuid
 import threading
@@ -43,6 +44,7 @@ if parent_dir not in sys.path:
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 
+from tkinter import filedialog 
 from logger_config import get_logger, LoggerMixin
 from TagJBExtractorLogger import LoggedTagJBExtractor
 from LinuxTagJBExtractorLogger import LoggedLinuxTagJBExtractor
@@ -120,6 +122,96 @@ PDF_CLASSIFIER_LABELS_PATH = os.environ.get(
     'PDF_CLASSIFIER_LABELS_PATH',
     os.path.join(BASE_DIR, 'modules', 'labels.txt')
 )
+
+# ═══════════════════════════════════════════════════════════════════════
+# PRODUCTION GPU VALIDATION (executed at module import time)
+# ═══════════════════════════════════════════════════════════════════════
+# JBDetection is a GPU-only production service. The startup sequence
+# validates that PaddlePaddle GPU is installed AND a CUDA-capable GPU
+# is actually visible to the runtime. If validation fails, the process
+# aborts with a clear error — there is NO silent CPU fallback in
+# production.
+#
+# To bypass for LOCAL DEVELOPMENT ONLY (not for production), set:
+#     export JBDET_ALLOW_CPU=1
+# ═══════════════════════════════════════════════════════════════════════
+def _run_startup_gpu_validation():
+    """Run the production GPU validation sequence at app startup.
+
+    Prints clear startup logs and aborts the process if the GPU
+    policy is violated. Safe to call before Flask is initialised.
+    """
+    startup_logger = logging.getLogger("jb_detection.startup")
+    startup_logger.info("=" * 60)
+    startup_logger.info("JBDetection starting...")
+    startup_logger.info("OCR Engine: PaddleOCR")
+    try:
+        import paddle
+        startup_logger.info("PaddlePaddle: %s", paddle.__version__)
+    except Exception as exc:
+        startup_logger.error("PaddlePaddle: NOT INSTALLED (%s)", exc)
+    try:
+        import paddleocr
+        startup_logger.info("PaddleOCR: %s", paddleocr.__version__)
+    except Exception as exc:
+        startup_logger.error("PaddleOCR: NOT INSTALLED (%s)", exc)
+
+    # Preload libz (PaddlePaddle 2.6.x / Python 3.12+ crash workaround)
+    try:
+        import ctypes
+        ctypes.CDLL("libz.so.1", mode=ctypes.RTLD_GLOBAL)
+    except Exception:
+        pass
+
+    try:
+        from jb_detection.gpu_validation import (
+            validate_gpu_environment, GPUEnvironmentError,
+        )
+        env = validate_gpu_environment()
+        startup_logger.info("GPU validation: PASS")
+        startup_logger.info("CUDA available: %s", env.compiled_with_cuda)
+        startup_logger.info("Device: %s", env.device)
+        startup_logger.info("GPU: %s", env.gpu_name or "(unknown)")
+        startup_logger.info("GPU tensor op: %s",
+                            "OK" if env.tensor_op_ok else "FAILED")
+    except GPUEnvironmentError as exc:
+        startup_logger.error("GPU validation: FAILED")
+        startup_logger.error("%s", exc)
+        # In production, abort. In dev (JBDET_ALLOW_CPU=1), gpu_validation
+        # logs a warning and returns — so we will not reach this branch
+        # in dev mode.
+        print("\n" + "=" * 60, file=sys.stderr)
+        print("FATAL: GPU validation failed — production policy violated.",
+              file=sys.stderr)
+        print("JBDetection requires a CUDA-capable GPU in production.",
+              file=sys.stderr)
+        print("There is NO silent CPU fallback.", file=sys.stderr)
+        print("To bypass for local development ONLY:", file=sys.stderr)
+        print("    export JBDET_ALLOW_CPU=1", file=sys.stderr)
+        print("=" * 60 + "\n", file=sys.stderr)
+        sys.exit(1)
+    except Exception as exc:
+        startup_logger.error("GPU validation raised unexpected error: %s", exc)
+        print(f"\nFATAL: GPU validation crashed: {exc}\n", file=sys.stderr)
+        sys.exit(1)
+
+    startup_logger.info("OCR initialization: deferred to first request")
+    startup_logger.info("Startup validation: PASS")
+    startup_logger.info("=" * 60)
+
+
+# Run the validation sequence at module import time (when gunicorn
+# imports `apps.backend.app`).
+_run_startup_gpu_validation()
+
+# Cache the GPU environment snapshot for the health endpoint.
+def _get_gpu_env_snapshot():
+    """Return a cached GPU environment snapshot (no re-validation)."""
+    try:
+        from jb_detection.gpu_validation import validate_gpu_environment
+        return validate_gpu_environment().to_dict()
+    except Exception as exc:
+        return {"gpu_validation": "ERROR", "errors": [str(exc)]}
 
 # کاربران مجاز
 VALID_USERS = {
@@ -413,10 +505,40 @@ def to_json_safe(value):
 def get_platform_specific_extractor(tesseract_path=None, excel_path=None):
     """
     بر اساس سیستم عامل، کلاس مناسب استخراج کننده را برمی‌گرداند
-    MIGRATION: Now uses jb_detection.compat directly — no platform split needed.
     """
-    from jb_detection.compat import TagJBExtractor
-    return TagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
+    system = platform.system().lower()
+    
+    if system == 'linux':
+        try:
+            logger.info("استفاده از استخراج کننده مخصوص لینوکس با پشتیبانی از GPU و قابلیت لاگینگ")
+            return LoggedLinuxTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
+        except ImportError as e:
+            logger.warning(f"خطا در بارگذاری LoggedLinuxTagJBExtractor: {e}")
+            logger.info("استفاده از استخراج کننده عمومی با قابلیت لاگینگ")
+            return LoggedTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
+       
+    elif system == 'windows':
+        try:
+            logger.info("استفاده از استخراج کننده عمومی با قابلیت لاگینگ در ویندوز")
+            return LoggedTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
+        except ImportError as e:
+            logger.warning(f"خطا در بارگذاری استخراج کننده ویندوز: {e}")
+            logger.info("استفاده از استخراج کننده عمومی با قابلیت لاگینگ")
+            return LoggedTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
+    
+    elif system == 'darwin':  # macOS
+        try:
+            logger.info("استفاده از استخراج کننده عمومی با قابلیت لاگینگ در macOS")
+            return LoggedTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
+        except ImportError as e:
+            logger.warning(f"خطا در بارگذاری استخراج کننده macOS: {e}")
+            logger.info("استفاده از استخراج کننده عمومی با قابلیت لاگینگ")
+            return LoggedTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
+    
+    else:
+        logger.info(f"سیستم عامل ناشناخته '{system}'، استفاده از استخراج کننده عمومی با قابلیت لاگینگ")
+        return LoggedTagJBExtractor(tesseract_path=tesseract_path, excel_path=excel_path)
+
 
 def _normalize_project_name_for_lookup(value: str) -> str:
     return re.sub(r'\s+', ' ', (value or '').strip()).lower()
@@ -769,6 +891,16 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
         
         # پردازش فایل‌ها
         logger.info(f"Task {task_id}: شروع پردازش {len(pdf_paths)} فایل PDF")
+
+        # Enable structured extraction logging (JSONL) for this task
+        try:
+            from jb_detection.extraction_logger import enable_jsonl_log
+            extraction_log_path = os.path.join(project_output_dir, 'extraction_log.jsonl')
+            enable_jsonl_log(extraction_log_path)
+            logger.info(f"Task {task_id}: Extraction logging enabled → {extraction_log_path}")
+        except Exception as e:
+            logger.debug(f"Extraction logging not available: {e}")
+
         unmatched_excel_tags, unmatched_pdf_tags = extractor.run_with_annotated_pdf(
             pdf_paths=pdf_paths,
             excel_path=excel_path,
@@ -777,7 +909,24 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
         )
         pattern_unmatched_candidates = list(getattr(extractor, 'latest_pattern_unmatched_candidates', []) or [])
         pattern_unmatched_details = list(getattr(extractor, 'latest_pattern_unmatched_details', []) or [])
-        
+
+        # Disable extraction logging (flush to file)
+        try:
+            from jb_detection.extraction_logger import disable_jsonl_log
+            disable_jsonl_log()
+        except Exception:
+            pass
+
+        # Log extraction summary
+        try:
+            proc_stats = extractor.get_processing_stats()
+            logger.info(f"Task {task_id}: Extraction complete — Tags={proc_stats.get('total_tags', 0)}, "
+                        f"JBs={proc_stats.get('total_jbs', 0)}, MCs={proc_stats.get('total_mcs', 0)}, "
+                        f"Spares={len(proc_stats.get('total_spares', []) if isinstance(proc_stats.get('total_spares'), list) else [proc_stats.get('total_spares', 0)])}, "
+                        f"Detections={proc_stats.get('total_detections', 0)}")
+        except Exception:
+            pass
+
         TaskManager.update_task(task_id, {'progress': 80})
         logger.info(f"Task {task_id}: پردازش PDF ها کامل شد")
         

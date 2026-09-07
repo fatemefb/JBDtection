@@ -51,17 +51,18 @@ logger = logging.getLogger("jb_detection.facade")
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
 
-# ── Optional PDF classifier import ──────────────────────────────────────
-# Same try/except chain as the original — keeps the facade working
-# even when the classifier backend isn't installed.
+# ── Legacy PDF classifier — INTENTIONALLY REMOVED ─────────────────────
+# The old architecture used a Keras CNN (tensorflow-gpu) to classify
+# PDFs as "diagrams" vs "tables". That classifier is no longer a
+# direct dependency of JBDetection — the new pipeline auto-detects
+# digital vs scanned PDFs natively via PyMuPDF (see
+# `pdf_type_detector.py`).
+#
+# `set_classifier()` is kept as a no-op for backward compatibility
+# with `app.py`, but it does NOT load any Keras model. The constructor
+# arguments `classifier_model_path` / `classifier_labels_path` on
+# `DataAnalysis` are also accepted but ignored.
 _PDFClassifierClass = None
-try:
-    from pdf_classifier import PDFClassifier as _PDFClassifierClass  # type: ignore
-except ImportError:
-    try:
-        from PDFClassifier import PDFClassifier as _PDFClassifierClass  # type: ignore
-    except ImportError:
-        _PDFClassifierClass = None
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -832,30 +833,27 @@ class DataAnalysis:
         self._load_classifier()
 
     def _load_classifier(self) -> None:
-        if _PDFClassifierClass is None:
-            logger.warning(
-                "PDFClassifier backend unavailable; document type detection disabled."
-            )
-            return
-        if (not os.path.exists(self.classifier_model_path)
-                or not os.path.exists(self.classifier_labels_path)):
-            logger.warning(
-                "PDFClassifier assets missing; document type detection disabled: %s, %s",
-                self.classifier_model_path, self.classifier_labels_path,
-            )
-            return
-        try:
-            self.classifier = _PDFClassifierClass(
-                model_path=self.classifier_model_path,
-                labels_path=self.classifier_labels_path,
-            )
-            if hasattr(self.extractor, "set_classifier"):
-                self.extractor.set_classifier(self.classifier)
-            logger.info("DataAnalysis initialized with PDFClassifier: %s",
-                         self.classifier_model_path)
-        except Exception as exc:
-            logger.error("Failed to initialize PDFClassifier: %s", exc)
-            self.classifier = None
+        """Legacy Keras PDF classifier — intentionally disabled.
+
+        The old architecture used a Keras CNN (tensorflow-gpu) to
+        classify PDFs as "diagrams" vs "tables". That classifier has
+        been removed from the dependency tree (no more tensorflow /
+        keras direct deps). The new pipeline auto-detects digital vs
+        scanned PDFs natively via PyMuPDF (see
+        :mod:`jb_detection.pdf_type_detector`).
+
+        This method is kept as a no-op so that callers using the
+        legacy ``DataAnalysis(extractor, classifier_model_path=...)``
+        constructor signature do not break. The constructor arguments
+        are accepted but silently ignored.
+        """
+        # _PDFClassifierClass is always None now — no model is loaded.
+        self.classifier = None
+        logger.info(
+            "PDFClassifier intentionally disabled — using native "
+            "digital/scanned auto-detection (classifier_model_path=%s ignored)",
+            self.classifier_model_path,
+        )
 
     def detect_pdf_type(self, pdf_path: str) -> str:
         if self.classifier is None:

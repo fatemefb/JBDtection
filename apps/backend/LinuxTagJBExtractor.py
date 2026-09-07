@@ -21,27 +21,14 @@ if current_dir not in sys.path:
     sys.path.append(current_dir)
 from apps.backend.utils.file_utils import standardize_path, copy_to_output_paths, ensure_directory_exists, verify_file_exists_with_retries
 
-# Check for GPU support
-try:
-    import tensorflow as tf
-    TF_AVAILABLE = True
-    
-    # بررسی وضعیت GPU به روش امن
-    gpus = tf.config.list_physical_devices('GPU')
-    if gpus:
-        gpu_info = f"Found {len(gpus)} GPU(s): {gpus}"
-        print(f"GPU detected: {gpu_info}")
-    else:
-        print("No GPU detected, using CPU only.")
-        
-except (ImportError, AttributeError, TypeError) as e:
-    TF_AVAILABLE = False
-    print(f"TensorFlow not available or error initializing: {e}")
-    
+# MIGRATION: TensorFlow is no longer a direct dependency of JBDetection.
+# GPU detection is now handled by jb_detection.compat (via PaddlePaddle).
+# The TensorFlow import block below is INTENTIONALLY REMOVED — keeping it
+# would print a misleading "TensorFlow not available" warning at startup.
+
 # MIGRATION: switched from DataAnalysisModule to jb_detection.compat.
 # The compat layer already provides GPU detection (gpu_available, gpu_type,
-# cuda_device_count) via PaddlePaddle — the TensorFlow-based GPU detection
-# below is kept as a legacy fallback but is no longer the primary path.
+# cuda_device_count) via PaddlePaddle.
 # To revert: change back to `from DataAnalysisModule import TagJBExtractor`
 try:
     from jb_detection.compat import TagJBExtractor
@@ -87,9 +74,16 @@ class LinuxTagJBExtractor(TagJBExtractor):
             if nvidia_smi.returncode == 0:
                 self.gpu_available = True
                 self.gpu_type = "NVIDIA"
-                if TF_AVAILABLE:
-                    self.cuda_device_count = len(tf.config.list_physical_devices('GPU'))
-                    logger.info(f"NVIDIA GPU detected with {self.cuda_device_count} CUDA devices")
+                # MIGRATION: Use PaddlePaddle for CUDA device count instead of TF
+                try:
+                    import paddle
+                    if paddle.is_compiled_with_cuda():
+                        self.cuda_device_count = paddle.device.cuda.device_count()
+                    else:
+                        self.cuda_device_count = 1
+                except Exception:
+                    self.cuda_device_count = 1
+                logger.info(f"NVIDIA GPU detected with {self.cuda_device_count} CUDA devices")
             else:
                 logger.info("No NVIDIA GPU detected")
 
@@ -158,20 +152,17 @@ class LinuxTagJBExtractor(TagJBExtractor):
         self.use_gpu = True
         logger.info(f"GPU processing enabled: {self.gpu_type}")
 
-        if self.gpu_type == "NVIDIA" and TF_AVAILABLE:
-            try:
-                physical_devices = tf.config.list_physical_devices('GPU')
-                for device in physical_devices:
-                    tf.config.experimental.set_memory_growth(device, True)
-                logger.info(f"TensorFlow configured to use {len(physical_devices)} NVIDIA GPUs")
-            except Exception as e:
-                logger.error(f"Error configuring TensorFlow for GPU: {e}")
+        # MIGRATION: TensorFlow GPU config removed — PaddlePaddle handles GPU.
+        # The TF memory growth code is no longer needed since we don't use TF.
 
         try:
             if self.gpu_type == "NVIDIA":
                 cv2.setUseOptimized(True)
-                cv2.cuda.setDevice(0)
-                logger.info("OpenCV configured to use NVIDIA GPU")
+                try:
+                    cv2.cuda.setDevice(0)
+                    logger.info("OpenCV configured to use NVIDIA GPU")
+                except Exception as e:
+                    logger.debug(f"OpenCV CUDA device set failed: {e}")
             elif self.gpu_type in ["AMD", "Intel"]:
                 cv2.setUseOptimized(True)
                 logger.info(f"OpenCV optimizations enabled for {self.gpu_type} GPU")

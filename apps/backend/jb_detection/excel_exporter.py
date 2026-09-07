@@ -550,6 +550,22 @@ class ExcelExporter:
                     break
 
         inter_tag_col = self._config.excel_intermediate_tag_column
+        # If the configured column name doesn't exist in the intermediate
+        # Excel, try common alternatives (including the actual column
+        # name "Tag/SPARE" used by INTERMEDIATE_COLUMNS).
+        if inter_tag_col not in intermediate_df.columns:
+            for alt in ("Tag/SPARE", "Tag No", "Tag", "Tag No.", "tag", "TAG"):
+                if alt in intermediate_df.columns:
+                    inter_tag_col = alt
+                    break
+            else:
+                logger.error(
+                    "Intermediate Excel does not contain tag column '%s'. "
+                    "Available columns: %s",
+                    self._config.excel_intermediate_tag_column,
+                    intermediate_df.columns.tolist(),
+                )
+                return pd.DataFrame(), [], []
 
         # Build UPPER → original-case maps
         inter_upper_to_orig = {

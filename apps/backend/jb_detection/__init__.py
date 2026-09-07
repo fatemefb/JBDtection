@@ -58,6 +58,32 @@ from .pdf_type_detector import PdfTypeDetector, PdfType
 from .digital_text_extractor import DigitalTextExtractor
 from .unified_pdf_processor import UnifiedPdfProcessor
 
+# GPU validation (production policy enforcement)
+from .gpu_validation import (
+    GPUEnvironment,
+    GPUEnvironmentError,
+    validate_gpu_environment,
+)
+
+# Extraction logger (structured logging for all stages)
+from .extraction_logger import (
+    DetectionRecord,
+    log_extraction,
+    log_raw_extraction,
+    log_final_summary,
+    enable_jsonl_log,
+    disable_jsonl_log,
+)
+
+# Pattern configuration (pluggable, LLM-friendly)
+from .pattern_config import (
+    PatternSet,
+    get_active_patterns,
+    inject_patterns,
+    reset_patterns_to_default,
+    WIRE_COLOR_PATTERN,
+)
+
 # Visualization
 from .annotator import PDFAnnotator
 
@@ -100,6 +126,10 @@ __all__ = [
     "PdfType",
     "DigitalTextExtractor",
     "UnifiedPdfProcessor",
+    # GPU validation
+    "GPUEnvironment",
+    "GPUEnvironmentError",
+    "validate_gpu_environment",
     # Visualization
     "PDFAnnotator",
     # Facade (optional)

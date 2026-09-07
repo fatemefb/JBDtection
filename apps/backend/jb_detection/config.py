@@ -31,10 +31,15 @@ class Config:
     """
 
     # ── PaddleOCR ──────────────────────────────────────────────────
+    # Production policy: GPU is mandatory. The default is True; at
+    # startup validate_gpu_environment() enforces this and aborts if
+    # the GPU is unavailable. Set to False ONLY for local development
+    # (and even then, prefer JBDET_ALLOW_CPU=1 to keep the policy
+    # explicit).
     paddle_use_angle_cls: bool = True
     paddle_lang: str = "en"
     paddle_show_log: bool = False
-    paddle_use_gpu: bool = False
+    paddle_use_gpu: bool = True
     paddle_min_confidence: float = 0.30
 
     # ── PDF rendering ─────────────────────────────────────────────
@@ -68,8 +73,12 @@ class Config:
     match_use_confusion_pairs: bool = True
 
     # ── Excel ──────────────────────────────────────────────────────
+    # IO List tag column (user-provided Excel)
     excel_io_list_tag_column: str = "Tag No"
-    excel_intermediate_tag_column: str = "Tag No"
+    # Intermediate Excel tag column — this MUST match the actual column
+    # name in INTERMEDIATE_COLUMNS (see excel_exporter.py:40).
+    # The column is "Tag/SPARE" (not "Tag No").
+    excel_intermediate_tag_column: str = "Tag/SPARE"
 
     # ── Visualization ─────────────────────────────────────────────
     # Bounding-box colors (BGR tuples) for each category.
@@ -179,37 +188,45 @@ INSTRUMENT_PREFIXES: List[str] = [
     "YIC", "YIT", "YS", "YSD", "YSL",
 ]
 
-# Tag pattern: matches typical instrument tags like TE-5223, PT-1014-A, FCV-101.
+# Tag pattern: matches ISA-5.1 instrument tags like TE-5223, PT-1014-A, FCV-101.
 # Two-three letter prefix, hyphen, digits, optional suffix.
 # NOTE: group(1) captures the full tag (required by PatternMatcher.match()).
 TAG_PATTERN: re.Pattern = re.compile(
-    r"([A-Z]{1,4}[-_]?\d{2,6}(?:[-_]?[A-Z])?)",
+    r"\b([A-Z]{2,5}-\d{2,4}(?:-\d{1,4})?(?:-[A-Z])?)\b",
     re.IGNORECASE,
 )
 
-# JB pattern: "JB" prefix + digits (default when no user examples given).
+# JB pattern: "JB" prefix + optional letters + digits (e.g. JB-DIA-100-001)
 JB_PATTERN: re.Pattern = re.compile(
-    r"^JB[-_]?\d{1,6}$",
+    r"\b(JB[-_]?[A-Z]*[-_]?\d{1,6}(?:[-_]?\d{1,4})?)\b",
     re.IGNORECASE,
 )
 
-# MC pattern: "MC" prefix + digits (default when no user examples given).
+# MC pattern: "MC" prefix + optional letters + digits (e.g. MC-DIA-100-001)
 MC_PATTERN: re.Pattern = re.compile(
-    r"^MC[-_]?\d{1,6}$",
+    r"\b(MC[-_]?[A-Z]*[-_]?\d{1,6}(?:[-_]?\d{1,4})?)\b",
     re.IGNORECASE,
 )
 
-# SPARE pattern: the word "SPARE" (optionally with a number).
+# SPARE pattern: the word "SPARE" or "SP" (optionally with a number).
 SPARE_PATTERN: re.Pattern = re.compile(
-    r"\bSPARE(?:\s*\d+)?\b",
+    r"\b(SPARE|SP|Spare)(?:\s*\d+)?\b",
     re.IGNORECASE,
 )
 
-# Cable pattern: multi-segment codes like "NC-0-1-2-C-3-BL".
-# At least 3 hyphen-separated segments, with at least one digit segment.
+# Cable pattern: TIGHTENED — was the root cause of tag misclassification.
+# Only matches cable specifications with known prefixes (FRT, NC, CBL, etc.)
+# or with explicit units (mm², Px, pair, core).
 # NOTE: group(1) captures the full cable code (required by PatternMatcher.match()).
 CABLE_PATTERN: re.Pattern = re.compile(
-    r"([A-Z]{1,3}\d{0,3}(?:[-_][A-Z0-9]{1,4}){2,})",
+    r"\b((?:FRT|NC|CBL|CAB|WIR)[-_][A-Z0-9]{1,6}(?:[-_][A-Z0-9]{1,6})*"
+    r"(?:\.\d+)?(?:mm²|mm2|Px|PR|CR|pair|core)?)\b",
+    re.IGNORECASE,
+)
+
+# Wire color pattern: BK01, WT02, RD03, etc. (NOT tags!)
+WIRE_COLOR_PATTERN: re.Pattern = re.compile(
+    r"^(BK|WT|RD|BL|GN|YL|BR|GR|OG|PK|PR|WH|GY)\d{1,4}$",
     re.IGNORECASE,
 )
 
@@ -264,6 +281,7 @@ __all__ = [
     "MC_PATTERN",
     "SPARE_PATTERN",
     "CABLE_PATTERN",
+    "WIRE_COLOR_PATTERN",
     "OCR_CONFUSION_PAIRS",
     "STOP_WORDS",
 ]

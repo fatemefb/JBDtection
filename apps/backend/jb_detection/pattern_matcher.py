@@ -30,8 +30,10 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 from .config import (
     CABLE_PATTERN, INSTRUMENT_PREFIXES, JB_PATTERN, MC_PATTERN,
     SPARE_PATTERN, STOP_WORDS, TAG_PATTERN,
+    WIRE_COLOR_PATTERN,
 )
 from .models import JBDetectionResult, OcrDetection, TagMatchInfo
+from .extraction_logger import log_extraction
 
 logger = logging.getLogger("jb_detection.pattern_matcher")
 
@@ -276,12 +278,13 @@ class PatternMatcher:
         if self._is_spare_token(t):
             return True
 
-        # Cable codes (NC-0-1-2-C-3-BL)
+        # Cable codes — ONLY the tight cable pattern (with unit prefixes).
+        # The old pattern was so loose it matched "FIT-100-14" as a cable!
         if self._is_cable_token(t):
             return True
 
-        # Wire color codes (BK01, WT12, RD03, …)
-        if re.fullmatch(r"(BK|WT|RD|BL|GN|YL|BR|GR|OG|PK|PR)\d{1,4}", t):
+        # Wire color codes (BK01, WT12, RD03, …) — use WIRE_COLOR_PATTERN.
+        if WIRE_COLOR_PATTERN.match(t):
             return True
 
         # Pure numbers (terminal numbers, page numbers)
@@ -492,6 +495,13 @@ class PatternMatcher:
                         bbox=det.bbox,
                         reason="JB identifier",
                     )
+                    log_extraction(
+                        "classification",
+                        page=0, source="",
+                        text=text, bbox=det.bbox, confidence=det.confidence,
+                        category="JB", reason="matched JB_PATTERN",
+                        pattern_name="JB_PATTERN", pattern_match=jb_id,
+                    )
                 continue
 
             # ── MC ───────────────────────────────────────────────
@@ -501,17 +511,22 @@ class PatternMatcher:
                 mc_id = _normalize_code_token(mc_id)
                 if mc_id:
                     mc_identifiers.add(mc_id)
-                # MC tokens might also contain a cable description —
-                # fall through to cable check below.
-
-            # ── Cable description ────────────────────────────────
-            cable_match = self.cable_regex.search(text)
-            if cable_match:
-                cable_desc = cable_match.group(1).upper()
-                if cable_desc:
-                    cable_descriptions.append(cable_desc)
-                    raw_cable_descriptions.append(text_upper)
-                # A cable code is not a tag — skip the tag branch.
+                    # Store MC in tag_match_info so the annotator can draw it
+                    tag_match_info[mc_id] = TagMatchInfo(
+                        match_type="MC",
+                        score=det.confidence,
+                        ocr_text=text,
+                        matched_tag=mc_id,
+                        bbox=det.bbox,
+                        reason="MC identifier",
+                    )
+                    log_extraction(
+                        "classification",
+                        page=0, source="",
+                        text=text, bbox=det.bbox, confidence=det.confidence,
+                        category="MC", reason="matched MC_PATTERN",
+                        pattern_name="MC_PATTERN", pattern_match=mc_id,
+                    )
                 continue
 
             # ── SPARE ────────────────────────────────────────────
@@ -532,9 +547,20 @@ class PatternMatcher:
                     bbox=det.bbox,
                     reason="SPARE identifier",
                 )
+                log_extraction(
+                    "classification",
+                    page=0, source="",
+                    text=text, bbox=det.bbox, confidence=det.confidence,
+                    category="SPARE", reason="matched SPARE_PATTERN",
+                    pattern_name="SPARE_PATTERN", pattern_match=spare_id,
+                )
                 continue
 
-            # ── Tag (instrument tag) ─────────────────────────────
+            # ── Tag (instrument tag) — checked BEFORE cable! ─────
+            # CRITICAL: the old order checked cable BEFORE tag, which
+            # caused "FIT-100-14" to be misclassified as a cable.
+            # The new order checks tag first, so instrument tags are
+            # always captured before the cable fallback.
             if self._looks_like_tag(text):
                 # Try to extract the canonical tag from the text
                 tag_match = self.tag_regex.search(text)
@@ -560,6 +586,57 @@ class PatternMatcher:
                     matched_tag="",
                     bbox=det.bbox,
                     reason="Awaiting IO List match",
+                )
+                log_extraction(
+                    "classification",
+                    page=0, source="",
+                    text=text, bbox=det.bbox, confidence=det.confidence,
+                    category="Tag", reason="matched TAG_PATTERN",
+                    pattern_name="TAG_PATTERN", pattern_match=tag,
+                )
+                continue
+
+            # ── Cable description (checked AFTER tag) ─────────────
+            # Only tokens that did NOT look like tags reach here.
+            cable_match = self.cable_regex.search(text)
+            if cable_match:
+                cable_desc = cable_match.group(1).upper()
+                if cable_desc:
+                    cable_descriptions.append(cable_desc)
+                    raw_cable_descriptions.append(text_upper)
+                    # Store the cable's position so the annotator can
+                    # draw a bounding box for it.
+                    tags_with_positions.append({
+                        "tag": cable_desc,
+                        "y": det.bbox[1],
+                        "x": det.bbox[0],
+                    })
+                    tag_match_info[cable_desc] = TagMatchInfo(
+                        match_type="Cable",
+                        score=det.confidence,
+                        ocr_text=text,
+                        matched_tag=cable_desc,
+                        bbox=det.bbox,
+                        reason="Cable description",
+                    )
+                    log_extraction(
+                        "classification",
+                        page=0, source="",
+                        text=text, bbox=det.bbox, confidence=det.confidence,
+                        category="Cable", reason="matched CABLE_PATTERN",
+                        pattern_name="CABLE_PATTERN", pattern_match=cable_desc,
+                    )
+                continue
+
+            # ── Unknown (did not match any category) ───────────────
+            # Log it so the LLM agent can later learn new patterns.
+            if len(text) >= 3:
+                log_extraction(
+                    "classification",
+                    page=0, source="",
+                    text=text, bbox=det.bbox, confidence=det.confidence,
+                    category="Unknown",
+                    reason="did not match any pattern (JB/MC/Tag/Cable/SPARE)",
                 )
 
         # ── Number tags + spares by position ─────────────────────

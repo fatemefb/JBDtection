@@ -250,8 +250,10 @@ class TagJBExtractor:
         self.document_nature_by_path: Dict[str, str] = {}
         self.page_results: Dict[int, Any] = {}
 
-        # ── GPU info (lazy) ────────────────────────────────────────
+        # ── GPU info (lazy, settable for legacy compat) ─────────────
         self._gpu_info: Optional[Tuple[bool, str, int]] = None
+        self._gpu_override: Optional[Tuple[bool, str, int]] = None
+        self.use_gpu: bool = False  # legacy attribute (LinuxTagJBExtractor)
 
         # ── If an excel_path was supplied, eagerly build the tag matcher ──
         if excel_path and os.path.exists(excel_path):
@@ -262,24 +264,65 @@ class TagJBExtractor:
                     "Failed to build tag vectors from %s: %s", excel_path, exc,
                 )
 
-    # ── GPU properties (legacy API) ───────────────────────────────
+    # ── GPU properties (legacy API, settable for LinuxTagJBExtractor compat) ──
     @property
     def gpu_available(self) -> bool:
+        if self._gpu_override is not None:
+            return self._gpu_override[0]
         if self._gpu_info is None:
             self._gpu_info = _get_gpu_info()
         return self._gpu_info[0]
 
+    @gpu_available.setter
+    def gpu_available(self, value: bool) -> None:
+        """Allow legacy code (e.g. LinuxTagJBExtractor) to override GPU detection."""
+        if self._gpu_override is None:
+            # Initialize override with current detected values
+            if self._gpu_info is None:
+                try:
+                    self._gpu_info = _get_gpu_info()
+                except Exception:
+                    self._gpu_info = (False, "None", 0)
+            self._gpu_override = list(self._gpu_info)
+        self._gpu_override[0] = bool(value)
+
     @property
     def gpu_type(self) -> str:
+        if self._gpu_override is not None:
+            return self._gpu_override[1]
         if self._gpu_info is None:
             self._gpu_info = _get_gpu_info()
         return self._gpu_info[1]
 
+    @gpu_type.setter
+    def gpu_type(self, value: str) -> None:
+        if self._gpu_override is None:
+            if self._gpu_info is None:
+                try:
+                    self._gpu_info = _get_gpu_info()
+                except Exception:
+                    self._gpu_info = (False, "None", 0)
+            self._gpu_override = list(self._gpu_info)
+        self._gpu_override[1] = str(value)
+
     @property
     def cuda_device_count(self) -> int:
+        if self._gpu_override is not None:
+            return self._gpu_override[2]
         if self._gpu_info is None:
             self._gpu_info = _get_gpu_info()
         return self._gpu_info[2]
+
+    @cuda_device_count.setter
+    def cuda_device_count(self, value: int) -> None:
+        if self._gpu_override is None:
+            if self._gpu_info is None:
+                try:
+                    self._gpu_info = _get_gpu_info()
+                except Exception:
+                    self._gpu_info = (False, "None", 0)
+            self._gpu_override = list(self._gpu_info)
+        self._gpu_override[2] = int(value)
 
     # ── GPU toggle (legacy API, no-ops) ───────────────────────────
     def enable_gpu(self) -> None:
@@ -289,6 +332,18 @@ class TagJBExtractor:
     def disable_gpu(self) -> None:
         """Legacy method — the new pipeline uses config.paddle_use_gpu."""
         logger.info("disable_gpu() called — set config.paddle_use_gpu=False instead")
+
+    # ── Legacy _compile_regex_patterns (no-op, patterns compiled by PatternMatcher) ──
+    def _compile_regex_patterns(self) -> None:
+        """Legacy method — regex patterns are now compiled by PatternMatcher.
+
+        This is a no-op kept for backward compatibility with LinuxTagJBExtractor.
+        """
+        # Patterns are already compiled in self._pattern_matcher
+        # Mirror them onto self for legacy attribute access
+        self.jb_regex = self._pattern_matcher.jb_regex
+        self.mc_regex = self._pattern_matcher.mc_regex
+        self.spare_regex = self._pattern_matcher.spare_regex
 
     # ── Classifier injection (legacy API, no-op) ──────────────────
     def set_classifier(self, classifier: Any) -> None:
@@ -968,8 +1023,8 @@ class TagJBExtractor:
         """
         try:
             self._excel_exporter.create_unmatched_excel(
-                ocr_only_tags=unmatched_pdf_tags,
-                io_only_tags=unmatched_excel_tags,
+                unmatched_pdf_tags=unmatched_pdf_tags,
+                unmatched_io_tags=unmatched_excel_tags,
                 output_path=output_path,
             )
             logger.info("Unmatched tags Excel saved: %s", output_path)
@@ -1078,45 +1133,26 @@ class DataAnalysis:
         self._load_classifier()
 
     def _load_classifier(self) -> None:
-        """Try to load the optional Keras PDF classifier.
+        """Legacy Keras PDF classifier — intentionally disabled.
 
-        If unavailable, document type detection falls back to the
-        unified processor's native digital/scanned detection.
+        The old architecture used a Keras CNN (tensorflow-gpu) to
+        classify PDFs as "diagrams" vs "tables". That classifier has
+        been removed from the dependency tree (no more tensorflow /
+        keras direct deps). The new pipeline auto-detects digital vs
+        scanned PDFs natively via PyMuPDF (see
+        :mod:`jb_detection.pdf_type_detector`).
+
+        This method is kept as a no-op so that callers using the
+        legacy ``DataAnalysis(extractor, classifier_model_path=...)``
+        constructor signature do not break. The constructor arguments
+        are accepted but silently ignored.
         """
-        try:
-            from pdf_classifier import PDFClassifier  # type: ignore
-        except ImportError:
-            try:
-                from PDFClassifier import PDFClassifier  # type: ignore
-            except ImportError:
-                logger.info(
-                    "PDFClassifier backend unavailable; document type "
-                    "detection will use native digital/scanned auto-detection."
-                )
-                return
-
-        if (not os.path.exists(self.classifier_model_path)
-                or not os.path.exists(self.classifier_labels_path)):
-            logger.warning(
-                "PDFClassifier assets missing: %s, %s — using native detection",
-                self.classifier_model_path, self.classifier_labels_path,
-            )
-            return
-
-        try:
-            self.classifier = PDFClassifier(
-                model_path=self.classifier_model_path,
-                labels_path=self.classifier_labels_path,
-            )
-            if hasattr(self.extractor, "set_classifier"):
-                self.extractor.set_classifier(self.classifier)
-            logger.info(
-                "DataAnalysis initialized with PDFClassifier: %s",
-                self.classifier_model_path,
-            )
-        except Exception as exc:
-            logger.error("Failed to initialize PDFClassifier: %s", exc)
-            self.classifier = None
+        self.classifier = None
+        logger.info(
+            "PDFClassifier intentionally disabled — using native "
+            "digital/scanned auto-detection (classifier_model_path=%s ignored)",
+            self.classifier_model_path,
+        )
 
     def detect_pdf_type(self, pdf_path: str) -> str:
         """Detect PDF type (returns 'diagrams' or 'table').

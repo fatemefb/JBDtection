@@ -197,58 +197,105 @@ class PDFAnnotator:
     ) -> Dict[str, int]:
         """Draw bounding boxes on a single page.
 
-        Returns counts per category.
+        Uses ``tag_match_info`` as the single source of truth for ALL
+        categories (JB, MC, Tag, SPARE). The ``match_type`` field on
+        each :class:`TagMatchInfo` determines the color:
+
+        - ``JB``       → blue
+        - ``MC``       → (not stored in tag_match_info; drawn from mc_identifiers)
+        - ``exact`` / ``similar`` / ``unmatched`` → green (Tag)
+        - ``SPARE``    → gray
+
+        Cables are drawn from ``cable_descriptions`` (they don't have
+        tag_match_info entries — their bboxes are stored separately
+        in the raw OCR data).
         """
         import fitz  # type: ignore
 
         counts = {"tags": 0, "jbs": 0, "mcs": 0, "cables": 0, "spares": 0}
 
-        # ── Tags (green) ────────────────────────────────────────────
-        for tag, info in result.tag_match_info.items():
+        # ── Iterate tag_match_info — single source of truth ──────
+        # This dict contains JB, MC, SPARE, and Tag entries, each
+        # with its own bbox and match_type.
+        for key, info in result.tag_match_info.items():
             bbox = info.bbox
-            if bbox and bbox != (0, 0, 0, 0):
-                rect = self._bbox_to_rect(bbox, scale)
-                self._draw_box(page, rect, CATEGORY_COLORS_RGB["tag"],
-                               label=self._tag_label(tag, info, tag_to_number))
+            if not bbox or bbox == (0, 0, 0, 0):
+                continue
+
+            rect = self._bbox_to_rect(bbox, scale)
+            match_type = info.match_type.upper()
+
+            if match_type == "JB":
+                color = CATEGORY_COLORS_RGB["jb"]
+                label = str(key)
+                counts["jbs"] += 1
+            elif match_type == "MC":
+                color = CATEGORY_COLORS_RGB["mc"]
+                label = str(key)
+                counts["mcs"] += 1
+            elif match_type == "SPARE":
+                color = CATEGORY_COLORS_RGB["spare"]
+                label = str(key)
+                counts["spares"] += 1
+            else:
+                # exact / similar / unmatched → Tag (green)
+                color = CATEGORY_COLORS_RGB["tag"]
+                label = self._tag_label(str(key), info, tag_to_number)
                 counts["tags"] += 1
 
-        # ── JBs (blue) ─────────────────────────────────────────────
+            self._draw_box(page, rect, color, label=label)
+
+        # ── JBs not in tag_match_info (fallback) ────────────────
         for jb in result.jb_identifiers:
+            if jb in result.tag_match_info:
+                continue  # already drawn above
             pos = result.tag_positions.get(jb)
             if pos:
                 rect = self._pos_to_rect(pos, scale)
                 self._draw_box(page, rect, CATEGORY_COLORS_RGB["jb"], label=str(jb))
                 counts["jbs"] += 1
 
-        # ── MCs (orange) ──────────────────────────────────────────
+        # ── MC identifiers not in tag_match_info (fallback) ──────
+        # Some MC identifiers may not have tag_match_info entries
+        # (e.g. if the MC was detected but not stored). Draw them
+        # from tag_positions if available.
         for mc in result.mc_identifiers:
+            if mc in result.tag_match_info:
+                continue  # already drawn above
             pos = result.tag_positions.get(mc)
             if pos:
                 rect = self._pos_to_rect(pos, scale)
                 self._draw_box(page, rect, CATEGORY_COLORS_RGB["mc"], label=str(mc))
                 counts["mcs"] += 1
 
-        # ── Cables (yellow) ────────────────────────────────────────
+        # ── Cables (yellow) ──────────────────────────────────────
+        # Cables are now stored in tag_match_info with match_type="Cable"
+        # and are drawn by the main loop above. This fallback handles
+        # any cables that somehow didn't get a tag_match_info entry.
         for cable in result.cable_descriptions:
-            # Cables don't have positions in tag_positions; use tag_positions
-            # if available, otherwise skip drawing (text-only).
+            if cable in result.tag_match_info:
+                continue  # already drawn above
             pos = result.tag_positions.get(cable)
             if pos:
                 rect = self._pos_to_rect(pos, scale)
-                self._draw_box(page, rect, CATEGORY_COLORS_RGB["cable"], label="CABLE")
+                self._draw_box(page, rect, CATEGORY_COLORS_RGB["cable"], label=str(cable)[:20])
                 counts["cables"] += 1
 
-        # ── SPAREs (gray) ──────────────────────────────────────────
-        for spare in result.spare_identifiers:
-            # Find position from spare_positions if available
-            spare_pos = None
-            for sp in result.spare_positions:
-                if isinstance(sp, dict) and sp.get("text", "").upper() == str(spare).upper():
-                    spare_pos = sp.get("position")
-                    break
-            if spare_pos:
-                rect = self._pos_to_rect(spare_pos, scale)
-                self._draw_box(page, rect, CATEGORY_COLORS_RGB["spare"], label=str(spare))
+        # ── SPAREs not in tag_match_info (fallback) ─────────────
+        # Some spares may not have tag_match_info entries.
+        for sp in result.spare_positions:
+            if not isinstance(sp, dict):
+                continue
+            spare_text = sp.get("spare", sp.get("text", ""))
+            if not spare_text:
+                continue
+            if spare_text.upper() in {k.upper() for k in result.tag_match_info.keys()
+                                       if result.tag_match_info[k].match_type.upper() == "SPARE"}:
+                continue  # already drawn above
+            pos = (sp.get("y", 0), sp.get("x", 0))
+            if pos != (0, 0):
+                rect = self._pos_to_rect(pos, scale)
+                self._draw_box(page, rect, CATEGORY_COLORS_RGB["spare"], label=str(spare_text))
                 counts["spares"] += 1
 
         return counts
@@ -294,7 +341,11 @@ class PDFAnnotator:
         color: tuple,
         label: Optional[str] = None,
     ) -> None:
-        """Draw a colored rectangle + optional label on the page."""
+        """Draw a colored rectangle + optional label on the page.
+
+        The label is placed INSIDE the box (top-left corner) to avoid
+        being clipped at the top of the page.
+        """
         import fitz  # type: ignore
 
         # Draw the rectangle (1.5 point border, no fill)
@@ -306,14 +357,15 @@ class PDFAnnotator:
             overlay=True,
         )
 
-        # Draw the label above the box
+        # Draw the label INSIDE the box (top-left corner)
         if label:
-            label_point = fitz.Point(rect.x0, rect.y0 - 2)
+            # Place label just inside the top-left corner of the box
+            label_point = fitz.Point(rect.x0 + 2, rect.y0 + 8)
             try:
                 page.insert_text(
                     label_point,
-                    str(label)[:50],  # Truncate long labels
-                    fontsize=6,
+                    str(label)[:40],  # Truncate long labels
+                    fontsize=5,
                     color=color,
                     overlay=True,
                 )
