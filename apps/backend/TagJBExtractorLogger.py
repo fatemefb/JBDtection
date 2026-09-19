@@ -91,29 +91,30 @@ class LoggedTagJBExtractor(LoggerMixin, TagJBExtractor):
             self.logger.error(f"Error in extract_from_image: {e}")
             raise
             
-    def create_annotated_pdf(self, pdf_path, output_pdf_path):
+    def create_annotated_pdf(self, pdf_path, output_pdf_path, **kwargs):
         """
         ایجاد PDF حاشیه‌نویسی شده با ثبت لاگ
         
         Args:
             pdf_path: مسیر فایل PDF ورودی
             output_pdf_path: مسیر فایل PDF خروجی
+            **kwargs: پارامترهای اضافی (مثل all_pdf_results) که به super پاس داده می‌شود
             
         Returns:
             دیکشنری شماره‌گذاری تگ‌ها
         """
         self.logger.info(f"Creating annotated PDF: {pdf_path} -> {output_pdf_path}")
-        result = super().create_annotated_pdf(pdf_path, output_pdf_path)
+        result = super().create_annotated_pdf(pdf_path, output_pdf_path, **kwargs)
         self.logger.info(f"Created annotated PDF with {len(result)} tagged elements")
         return result
     
-    def run_with_annotated_pdf(self, pdf_paths, excel_path, output_excel_path, output_pdf_dir):
+    def run_with_annotated_pdf(self, pdf_paths, excel_path, output_excel_path, output_pdf_dir, **kwargs):
         self.logger.info(f"Running full process with annotated PDFs")
         self.logger.info(f"Input: {len(pdf_paths)} PDFs, Excel: {excel_path}")
         self.logger.info(f"Output: Excel: {output_excel_path}, PDF dir: {output_pdf_dir}")
         
         result = super().run_with_annotated_pdf(
-            pdf_paths, excel_path, output_excel_path, output_pdf_dir
+            pdf_paths, excel_path, output_excel_path, output_pdf_dir, **kwargs
         )
         
         unmatched_excel_tags, unmatched_pdf_tags = result

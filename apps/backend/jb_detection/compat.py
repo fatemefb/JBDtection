@@ -852,6 +852,18 @@ class TagJBExtractor:
                         all_pdf_tags.update(pr.tags)
                         all_pdf_ocr_tags.update(pr.all_ocr_tags)
                         master_tag_numbers.update(pr.tag_to_number)
+                        # CRITICAL: update self.all_tags etc. so get_processing_stats() works
+                        self.all_tags.update(pr.tags)
+                        self.all_jbs.update(pr.jb_identifiers)
+                        self.all_mcs.update(pr.mc_identifiers)
+                        self.all_spares.extend(pr.spare_identifiers)
+                        for info in pr.tag_match_info.values():
+                            if info.match_type == "exact":
+                                self.exact_matches += 1
+                                self.matched_tags.add(info.matched_tag)
+                            elif info.match_type == "similar":
+                                self.similar_matches += 1
+                                self.matched_tags.add(info.matched_tag)
 
                     output_pdf_path = os.path.join(
                         output_pdf_dir, f"annotated_{pdf_filename}"

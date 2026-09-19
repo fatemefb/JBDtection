@@ -1,0 +1,74 @@
+# ═══════════════════════════════════════════════════════════════════════
+# JBDetection — Base Requirements
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Tested with: Python 3.8 (Ubuntu 20.04) + PaddlePaddle 2.6.2 + PaddleOCR 2.10.0
+# All version pins below are confirmed to have Python 3.8 wheels.
+# ═══════════════════════════════════════════════════════════════════════
+
+# ── OCR Engine ──
+paddleocr==2.10.0
+
+# ── Image / PDF Processing ──
+opencv-python==4.10.0.84
+Pillow==10.4.0
+PyMuPDF==1.24.11
+pdf2image==1.17.0
+
+# ── Data Processing ──
+numpy<2.0
+pandas==2.0.3
+openpyxl==3.1.5
+
+# ── String Matching ──
+python-Levenshtein==0.25.1
+
+# ── PDF Report Generation ──
+reportlab==4.4.9
+
+# ── Web Framework ──
+Flask==3.0.3
+Flask-Cors==4.0.1
+Werkzeug==3.0.6
+gunicorn==23.0.0
+Jinja2==3.1.6
+itsdangerous==2.2.0
+click==8.1.8
+blinker==1.8.2
+MarkupSafe==2.1.5
+pydantic==2.8.2
+
+# ── Async Task Scheduling ──
+APScheduler==3.10.4
+
+# ── Database ──
+SQLAlchemy==2.0.36
+alembic==1.13.3
+psycopg2-binary==2.9.9
+python-dotenv==1.0.1
+
+# ── System / Logging / Utils ──
+psutil==7.0.0
+colorama==0.4.6
+rich==14.0.0
+Pygments==2.19.2
+
+# ── Date / Time ──
+python-dateutil==2.9.0.post0
+pytz==2025.2
+tzdata==2025.2
+
+# ── Networking ──
+requests==2.32.4
+certifi==2025.7.14
+charset-normalizer==3.4.2
+urllib3==2.2.3
+idna==3.10
+
+# ── File Handling ──
+filelock==3.16.1
+fsspec==2023.6.0
+et_xmlfile==2.0.0
+
+# ── Build tool ──
+setuptools<81

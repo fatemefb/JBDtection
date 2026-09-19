@@ -98,23 +98,24 @@ class LoggedLinuxTagJBExtractor(LoggerMixin, LinuxTagJBExtractor):
         
         return result
     
-    def create_annotated_pdf(self, pdf_path, output_pdf_path):
+    def create_annotated_pdf(self, pdf_path, output_pdf_path, **kwargs):
         """
         ایجاد PDF حاشیه‌نویسی شده با ثبت لاگ
         
         Args:
             pdf_path: مسیر فایل PDF ورودی
             output_pdf_path: مسیر فایل PDF خروجی
+            **kwargs: پارامترهای اضافی (مثل all_pdf_results) که به super پاس داده می‌شود
             
         Returns:
             دیکشنری شماره‌گذاری تگ‌ها
         """
         self.logger.info(f"Creating annotated PDF: {pdf_path} -> {output_pdf_path}")
-        result = super().create_annotated_pdf(pdf_path, output_pdf_path)
+        result = super().create_annotated_pdf(pdf_path, output_pdf_path, **kwargs)
         self.logger.info(f"Created annotated PDF with {len(result)} tagged elements")
         return result
     
-    def run_with_annotated_pdf(self, pdf_paths, excel_path, output_excel_path, output_pdf_dir):
+    def run_with_annotated_pdf(self, pdf_paths, excel_path, output_excel_path, output_pdf_dir, **kwargs):
         """
         اجرای کامل پردازش با PDF های حاشیه‌نویسی شده
         
@@ -138,7 +139,7 @@ class LoggedLinuxTagJBExtractor(LoggerMixin, LinuxTagJBExtractor):
         self.logger.info(f"مسیر خروجی PDF: {output_pdf_dir}")
         
         # اجرای متد اصلی
-        result = super().run_with_annotated_pdf(pdf_paths, excel_path, output_excel_path, output_pdf_dir)
+        result = super().run_with_annotated_pdf(pdf_paths, excel_path, output_excel_path, output_pdf_dir, **kwargs)
         
         # ثبت نتایج
         if isinstance(result, tuple) and len(result) == 2:

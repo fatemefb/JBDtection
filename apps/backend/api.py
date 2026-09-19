@@ -126,7 +126,46 @@ def handle_exception(exc):
 
 @api_bp.route("/status", methods=["GET"])
 def api_status():
-    return jsonify({"status": "ok"}), 200
+    """Health endpoint — exposes safe runtime information.
+
+    Returns the OCR engine, device (gpu/cpu), Paddle/PaddleOCR versions,
+    and GPU availability. No sensitive infrastructure information is
+    exposed.
+
+    If the service is configured as GPU-only and the GPU becomes
+    unavailable at runtime, the status reflects that.
+    """
+    payload = {
+        "status": "ok",
+        "ocr_engine": "paddleocr",
+    }
+
+    # Best-effort GPU info — never let health endpoint crash.
+    try:
+        from jb_detection.gpu_validation import validate_gpu_environment
+        env = validate_gpu_environment()
+        payload.update({
+            "device": "gpu" if env.ok else "cpu",
+            "gpu_available": env.ok,
+            "paddle_version": env.paddle_version,
+            "paddleocr_version": env.paddleocr_version,
+            "compiled_with_cuda": env.compiled_with_cuda,
+            "gpu_name": env.gpu_name,
+            "gpu_count": env.gpu_count,
+            "cuda_version": env.cuda_version,
+            "gpu_validation": "PASS" if env.ok else "FAIL",
+        })
+        if not env.ok:
+            payload["status"] = "degraded"
+            payload["errors"] = env.errors
+    except Exception as exc:
+        # If gpu_validation itself raised (production policy enforced),
+        # the app would not have started — but defensively expose it.
+        payload["status"] = "error"
+        payload["gpu_validation"] = "ERROR"
+        payload["errors"] = [str(exc)]
+
+    return jsonify(payload), 200
 
 
 @api_bp.route("/projects", methods=["POST"])

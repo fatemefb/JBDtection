@@ -930,10 +930,21 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
         # Log extraction summary
         try:
             proc_stats = extractor.get_processing_stats()
-            logger.info(f"Task {task_id}: Extraction complete — Tags={proc_stats.get('total_tags', 0)}, "
+            total_tags = proc_stats.get('total_tags', 0)
+            total_detections = proc_stats.get('total_detections', 0)
+            logger.info(f"Task {task_id}: Extraction complete — Tags={total_tags}, "
                         f"JBs={proc_stats.get('total_jbs', 0)}, MCs={proc_stats.get('total_mcs', 0)}, "
-                        f"Spares={len(proc_stats.get('total_spares', []) if isinstance(proc_stats.get('total_spares'), list) else [proc_stats.get('total_spares', 0)])}, "
-                        f"Detections={proc_stats.get('total_detections', 0)}")
+                        f"Detections={total_detections}")
+            
+            # ── CRITICAL: If OCR completely failed (0 detections), fail the task ──
+            if total_detections == 0:
+                error_msg = (f"OCR produced 0 detections — this likely means OCR failed. "
+                             f"Check: (1) PaddleOCR model cache permissions, "
+                             f"(2) GPU availability, (3) PDF is not corrupted.")
+                logger.error(f"Task {task_id}: {error_msg}")
+                raise RuntimeError(error_msg)
+        except RuntimeError:
+            raise  # Re-raise the RuntimeError to be caught by the outer handler
         except Exception:
             pass
 

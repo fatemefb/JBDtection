@@ -318,33 +318,57 @@ class PatternMatcher:
     ) -> Dict[str, int]:
         """Number tags and SPAREs by vertical position (top→bottom).
 
-        Same algorithm as the original ``assign_tag_numbers_by_position``:
-        combine tags + spares, sort by ``(y, x)``, assign 1-based numbers.
-        SPARE ids are generated as ``f"{spare_examples}_{idx+1}"``.
+        Tags are numbered 1, 2, 3, ... from top of page.
+        SPAREs are numbered separately continuing after the last tag number.
         """
         all_items: List[Dict[str, Any]] = []
+        
+        # Tags first
         for item in tags_with_positions:
+            tag_name = str(item.get("tag", ""))
+            # Skip cables — they shouldn't be numbered as tags
+            if self._is_cable_token(tag_name):
+                continue
             all_items.append({
-                "name": str(item.get("tag", "")),
+                "name": tag_name,
                 "y_position": int(item.get("y", 0)),
                 "x_position": int(item.get("x", 0)),
                 "type": "tag",
             })
+        
+        # Sort tags by position (top→bottom, left→right)
+        all_items.sort(key=lambda x: (x["y_position"], x["x_position"]))
+        
+        # Assign numbers 1, 2, 3, ...
+        tag_to_number: Dict[str, int] = {}
+        tag_num = 1
+        for item in all_items:
+            if item["type"] == "tag":
+                # Only assign if not already assigned (avoid duplicates)
+                if item["name"] not in tag_to_number:
+                    tag_to_number[item["name"]] = tag_num
+                    tag_num += 1
+        
+        # SPAREs — numbered separately, continuing after tags
         if spare_identifiers_with_positions:
-            spare_prefix = (self.spare_examples or "SPARE").strip().upper()
+            spare_items = []
             for idx, item in enumerate(spare_identifiers_with_positions):
-                spare_id = f"{spare_prefix}_{idx + 1}"
-                all_items.append({
-                    "name": spare_id,
+                spare_text = str(item.get("spare", item.get("text", "SPARE")))
+                spare_items.append({
+                    "name": spare_text,
                     "y_position": int(item.get("y", 0)),
                     "x_position": int(item.get("x", 0)),
                     "type": "spare",
-                    "original_text": str(item.get("spare", "SPARE")),
                 })
-        if not all_items:
-            return {}
-        all_items.sort(key=lambda x: (x["y_position"], x["x_position"]))
-        return {item["name"]: idx for idx, item in enumerate(all_items, start=1)}
+            spare_items.sort(key=lambda x: (x["y_position"], x["x_position"]))
+            
+            spare_num = tag_num  # Continue after last tag number
+            for item in spare_items:
+                if item["name"] not in tag_to_number:
+                    tag_to_number[item["name"]] = spare_num
+                    spare_num += 1
+        
+        return tag_to_number
 
     # ── Best-MC / Best-Cable selection ─────────────────────────────
     def select_best_cable_description(self, cable_descriptions: List[str]) -> str:
