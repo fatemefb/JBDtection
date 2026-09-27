@@ -36,6 +36,7 @@ in pixel coordinates at the render DPI. We convert:
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -105,29 +106,58 @@ class DigitalTextExtractor:
 
         scale = dpi / 72.0
         detections: List[OcrDetection] = []
+        spans = [
+            span
+            for block in text_dict.get("blocks", [])
+            if block.get("type", 0) == 0
+            for line in block.get("lines", [])
+            for span in line.get("spans", [])
+        ]
 
-        for block in text_dict.get("blocks", []):
-            if block.get("type", 0) != 0:  # 0 = text block, 1 = image block
+        # Some PDFs omit a usable ToUnicode map and expose character codes
+        # 29 below the glyphs they render. Detect this per font so ordinary
+        # spans on the same page keep their original text.
+        font_text: Dict[str, List[str]] = defaultdict(list)
+        for span in spans:
+            font_text[span.get("font", "")].append(span.get("text", ""))
+        shifted_fonts = set()
+        for font, parts in font_text.items():
+            raw = "".join(parts)
+            controls = sum(ord(char) < 32 for char in raw)
+            if len(raw) < 20 or controls < 3 or controls / len(raw) < 0.10:
+                continue
+            decoded = self._decode_shifted_text(raw)
+            if sum(char.isprintable() for char in decoded) / len(decoded) > 0.95:
+                shifted_fonts.add(font)
+        if shifted_fonts:
+            logger.info("Decoding shifted PDF text for fonts: %s", sorted(shifted_fonts))
+
+        for span in spans:
+            raw_text = span.get("text", "")
+            if span.get("font", "") in shifted_fonts:
+                text = self._decode_shifted_text(raw_text).strip()
+            else:
+                text = raw_text.strip()
+            if not text:
                 continue
 
-            for line in block.get("lines", []):
-                for span in line.get("spans", []):
-                    text = span.get("text", "").strip()
-                    if not text:
-                        continue
+            bbox_pts = span.get("bbox")  # (x0, y0, x1, y1) in points
+            if not bbox_pts or len(bbox_pts) != 4:
+                continue
 
-                    bbox_pts = span.get("bbox")  # (x0, y0, x1, y1) in points
-                    if not bbox_pts or len(bbox_pts) != 4:
-                        continue
-
-                    detection = self._build_detection(text, bbox_pts, scale)
-                    if detection is not None:
-                        detections.append(detection)
+            detection = self._build_detection(text, bbox_pts, scale)
+            if detection is not None:
+                detections.append(detection)
 
         # Sort in reading order: top→bottom, left→right.
         detections.sort(key=lambda d: (d.bbox[1], d.bbox[0]))
         logger.debug("Extracted %d text spans from page (digital)", len(detections))
         return detections
+
+    @staticmethod
+    def _decode_shifted_text(text: str) -> str:
+        """Recover ASCII glyphs from PDFs whose character codes are offset by 29."""
+        return "".join(chr(ord(char) + 29) if ord(char) <= 97 else char for char in text)
 
     def extract_from_page_words(
         self,

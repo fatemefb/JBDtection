@@ -111,3 +111,7 @@ apps/backend/outputs_test/NGL/Aryavakav-NGL-IOAssignment-2026-01-04-v1.0.zip
 apps/backend/outputs_test/NGL/Aryavakav-NGL-IOAssignmentReport-2026-01-04-v1.0.json
 
 apps/backend/build_artifacts/paddle/paddlepaddle_gpu-0.0.0-cp38-cp38-linux_x86_64.whl
+
+graphify-out/
+AGENTS.md
+.codex
