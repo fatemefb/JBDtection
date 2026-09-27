@@ -936,11 +936,14 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
                         f"JBs={proc_stats.get('total_jbs', 0)}, MCs={proc_stats.get('total_mcs', 0)}, "
                         f"Detections={total_detections}")
             
-            # ── CRITICAL: If OCR completely failed (0 detections), fail the task ──
+            # Both native PDF text extraction and OCR produce detections.
             if total_detections == 0:
-                error_msg = (f"OCR produced 0 detections — this likely means OCR failed. "
-                             f"Check: (1) PaddleOCR model cache permissions, "
-                             f"(2) GPU availability, (3) PDF is not corrupted.")
+                if proc_stats.get("pages_scanned", 0):
+                    error_msg = ("Scanned PDF processing produced 0 detections. "
+                                 "Check PaddleOCR, GPU availability, and the PDF input.")
+                else:
+                    error_msg = ("PDF processing produced 0 detections via native text "
+                                 "extraction. Check the PDF input.")
                 logger.error(f"Task {task_id}: {error_msg}")
                 raise RuntimeError(error_msg)
         except RuntimeError:

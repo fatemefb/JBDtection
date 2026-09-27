@@ -7,20 +7,21 @@
 # Usage:
 #   ./deploy.sh              # deploy locally (no Docker)
 #   ./deploy.sh --docker     # deploy with Docker Compose
-#   ./deploy.sh --gpu        # deploy locally with GPU support
+#   ./deploy.sh --gpu        # deploy locally with the validated K80 GPU build
 #
 # This script:
 #   1. Verifies Python version
 #   2. Creates a virtual environment
-#   3. Installs PaddlePaddle + PaddleOCR (in the correct order)
-#   4. Installs all other dependencies
-#   5. Runs database migrations (if needed)
-#   6. Starts the Gunicorn server
+#   3. Installs the validated custom PaddlePaddle GPU wheel
+#   4. Installs PaddleOCR and all other dependencies
+#   5. Verifies the runtime installation
+#   6. Runs database migrations (if needed)
+#   7. Starts the Gunicorn server
 #
 # Prerequisites:
-#   - Python 3.10+
+#   - Python 3.8
 #   - PostgreSQL 16 (running and accessible)
-#   - (Optional) NVIDIA GPU + drivers (for GPU mode)
+#   - NVIDIA GPU + drivers compatible with the validated K80 build
 # ═══════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
@@ -37,7 +38,7 @@ error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 step()  { echo -e "${BLUE}[STEP]${NC}  $*"; }
 
 # ── Configuration ─────────────────────────────────────────────────────
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BACKEND_DIR="${PROJECT_ROOT}/apps/backend"
 VENV_DIR="${PROJECT_ROOT}/venv"
 REQUIREMENTS="${PROJECT_ROOT}/requirements-linux.txt"
@@ -47,7 +48,7 @@ THREADS="${THREADS:-4}"
 
 # ── Parse arguments ───────────────────────────────────────────────────
 USE_DOCKER=false
-USE_GPU=false
+USE_GPU=true
 SKIP_VENV=false
 
 for arg in "$@"; do
@@ -60,7 +61,7 @@ for arg in "$@"; do
             echo ""
             echo "Options:"
             echo "  --docker    Deploy using docker-compose"
-            echo "  --gpu       Install paddlepaddle-gpu instead of paddlepaddle"
+            echo "  --gpu       Use the validated custom PaddlePaddle GPU build (default)"
             echo "  --no-venv   Skip virtual environment creation"
             echo "  --help      Show this help"
             exit 0
@@ -75,17 +76,20 @@ done
 # Docker deployment path
 # ═══════════════════════════════════════════════════════════════════════
 if [ "$USE_DOCKER" = true ]; then
-    step "Deploying with Docker Compose..."
+    step "Deploying jbdetection_test with Docker Compose..."
     cd "${BACKEND_DIR}"
-    docker-compose down || true
-    docker-compose build
-    docker-compose up -d
-    info "Docker deployment started."
-    info "  App:       http://localhost:${PORT}"
+
+    # IMPORTANT:
+    # This deployment path intentionally targets ONLY jbdetection_test.
+    # jbdetection_v1 must remain untouched.
+    docker compose build jbdetection_test
+    docker compose up -d --no-deps jbdetection_test
+
+    info "Docker test deployment started."
     info "  Test app:  http://localhost:5001"
-    info "  Postgres:  localhost:5433"
+    info "  V1:        untouched"
     info ""
-    info "View logs: docker-compose logs -f"
+    info "View test logs: docker compose logs -f jbdetection_test"
     exit 0
 fi
 
@@ -96,7 +100,7 @@ fi
 # ── Step 1: Check Python version ────────────────────────────────────
 step "Step 1/7: Checking Python version..."
 if ! command -v python3 &>/dev/null; then
-    error "Python 3 is not installed. Install Python 3.10+ first."
+    error "Python 3 is not installed. Python 3.8 is required."
 fi
 
 PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
@@ -104,8 +108,8 @@ info "Python version: ${PYTHON_VERSION}"
 
 PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
 PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
-if [ "$PYTHON_MAJOR" -lt 3 ] || { [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 10 ]; }; then
-    error "Python 3.10+ is required. Found ${PYTHON_VERSION}"
+if [ "$PYTHON_MAJOR" -ne 3 ] || [ "$PYTHON_MINOR" -ne 8 ]; then
+    error "Python 3.8 is required for the validated custom PaddlePaddle wheel. Found ${PYTHON_VERSION}"
 fi
 
 # ── Step 2: Create virtual environment ───────────────────────────────
@@ -127,34 +131,28 @@ fi
 step "Step 3/7: Upgrading pip..."
 pip install --upgrade pip setuptools wheel
 
-# ── Step 4: Install PaddlePaddle (MUST be before paddleocr) ─────────
-step "Step 4/7: Installing PaddlePaddle..."
-if [ "$USE_GPU" = true ]; then
-    info "Installing paddlepaddle-gpu (GPU mode)..."
-    pip install paddlepaddle-gpu==2.6.2
-else
-    info "Installing paddlepaddle (CPU mode)..."
-    pip install paddlepaddle==2.6.2
+# ── Step 4: Install validated custom PaddlePaddle GPU build ──────────
+step "Step 4/7: Installing validated PaddlePaddle GPU build..."
+
+PADDLE_WHEEL="${PROJECT_ROOT}/apps/backend/build_artifacts/paddle/paddlepaddle_gpu-0.0.0-cp38-cp38-linux_x86_64.whl"
+
+if [ ! -f "${PADDLE_WHEEL}" ]; then
+    error "Custom PaddlePaddle wheel not found: ${PADDLE_WHEEL}"
 fi
 
-# ── Step 5: Install PaddleOCR ────────────────────────────────────────
-step "Step 5/7: Installing PaddleOCR..."
-pip install paddleocr==2.10.0
+info "Installing custom PaddlePaddle wheel for Tesla K80..."
+pip install --no-cache-dir "${PADDLE_WHEEL}"
 
-# ── Step 6: Install remaining dependencies ───────────────────────────
-step "Step 6/7: Installing remaining dependencies..."
+# ── Step 5: Install PaddleOCR and dependencies ───────────────────────
+step "Step 5/7: Installing PaddleOCR and runtime dependencies..."
 if [ -f "${REQUIREMENTS}" ]; then
-    # Install everything EXCEPT paddlepaddle/paddleocr (already installed above)
-    # Use --no-deps for those two to avoid conflicts
-    pip install -r "${REQUIREMENTS}" --no-deps paddlepaddle paddleocr || true
-    # Then install any missing deps
-    pip install -r "${REQUIREMENTS}"
+    pip install --no-cache-dir -r "${REQUIREMENTS}"
 else
     error "Requirements file not found: ${REQUIREMENTS}"
 fi
 
-# ── Step 7: Verify installation ──────────────────────────────────────
-step "Step 7/7: Verifying installation..."
+# ── Step 6: Verify installation ──────────────────────────────────────
+step "Step 6/7: Verifying installation..."
 python3 -c "
 import ctypes
 ctypes.CDLL('libz.so.1', mode=ctypes.RTLD_GLOBAL)
@@ -179,8 +177,8 @@ else
     warn "Set it with: export DATABASE_URL='postgresql+psycopg2://user:pass@host:port/dbname'"
 fi
 
-# ── Start the server ─────────────────────────────────────────────────
-step "Starting Gunicorn server on port ${PORT}..."
+# ── Step 7: Start the server ─────────────────────────────────────────
+step "Step 7/7: Starting Gunicorn server on port ${PORT}..."
 cd "${BACKEND_DIR}"
 info "  Workers: ${WORKERS}"
 info "  Threads: ${THREADS}"

@@ -427,54 +427,5 @@ class LinuxTagJBExtractor(TagJBExtractor):
             logger.error(traceback.format_exc())
             
     def get_processing_stats(self) -> Dict[str, Any]:
-        """
-        Calculate and return processing statistics
-        """
-        stats = {}
-        try:
-            # Default values
-            stats = {
-                'total_tags': 0,
-                'matched_tags': 0,
-                'exact_matches': 0,
-                'similar_matches': 0,
-                'total_jbs': 0,
-                'processing_time': '0.00 seconds',
-                'match_rate': '0.0%',
-                'exact_match_rate': '0%',
-                'unmatched_tags': 0
-            }
-            
-            # Add processing time if available
-            if hasattr(self, 'processing_time'):
-                stats['processing_time'] = f"{self.processing_time:.2f} seconds"
-            
-            # If we have similarity reports, use them for stats
-            if hasattr(self, 'similarity_reports') and isinstance(self.similarity_reports, list):
-                exact_matches = sum(1 for report in self.similarity_reports if report.get('match_type') == 'exact')
-                similar_matches = sum(1 for report in self.similarity_reports if report.get('match_type') == 'similar')
-                total_matches = exact_matches + similar_matches
-                total_tags = len(self.similarity_reports)
-                
-                stats['total_tags'] = total_tags
-                stats['matched_tags'] = total_matches
-                stats['exact_matches'] = exact_matches
-                stats['similar_matches'] = similar_matches
-                
-                # Calculate match rates
-                if total_tags > 0:
-                    match_rate = (total_matches / total_tags) * 100
-                    exact_match_rate = (exact_matches / total_tags) * 100 if total_tags > 0 else 0
-                    stats['match_rate'] = f"{match_rate:.1f}%"
-                    stats['exact_match_rate'] = f"{exact_match_rate:.1f}%"
-                    stats['unmatched_tags'] = total_tags - total_matches
-            
-            # Add JB stats if available
-            if hasattr(self, 'total_jbs'):
-                stats['total_jbs'] = self.total_jbs
-                
-            return stats
-            
-        except Exception as e:
-            logger.error(f"Error calculating stats: {e}")
-            return stats
+        """Return statistics from the processor used by the extraction pipeline."""
+        return super().get_processing_stats()

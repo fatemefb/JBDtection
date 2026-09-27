@@ -2,14 +2,33 @@
 # JBDetection — Dockerfile
 # ═══════════════════════════════════════════════════════════════════════
 #
-# Same base image + Python version as the original Dockerfile that worked.
-# CUDA 11.4.3 + Python 3.8 + Ubuntu 20.04.
+# Base:
+#   CUDA 11.4.3 + cuDNN 8 + Ubuntu 20.04
+#   Python 3.8
 #
 # PaddlePaddle:
-#   GPU build: 2.4.2.post112
-#   CUDA build: 11.2
-#   Runtime: CUDA 11.4.3
+#   Source: PaddlePaddle 2.4.2
+#   Custom GPU build
+#   CUDA: 11.4
+#   GPU architecture: sm_37
+#   Target GPU: NVIDIA Tesla K80
+#
+# IMPORTANT:
+# The official PaddlePaddle 2.4.2 GPU wheel does not contain
+# CUDA kernels for Tesla K80 (sm_37).
+#
+# Therefore this image uses the custom wheel built specifically
+# for CUDA 11.4 + sm_37:
+#
+#   apps/backend/build_artifacts/paddle/
+#       paddlepaddle_gpu-0.0.0-cp38-cp38-linux_x86_64.whl
+#
+# The wheel version appears as 0.0.0 because it was built directly
+# from the PaddlePaddle 2.4.2 source tree.
+#
+# DO NOT replace this wheel with the official Paddle GPU wheel.
 # ═══════════════════════════════════════════════════════════════════════
+
 
 FROM nvidia/cuda:11.4.3-cudnn8-runtime-ubuntu20.04
 
@@ -58,14 +77,14 @@ RUN rm -f /etc/apt/sources.list.d/*.list && \
     && rm -rf /var/lib/apt/lists/*
 
 
-# Make python3 the default
+# Make python3 / pip3 the default commands
 
 RUN ln -sf /usr/bin/python3 /usr/bin/python && \
     ln -sf /usr/bin/pip3 /usr/bin/pip && \
     python3 -m pip install --upgrade pip "setuptools<70" wheel
 
 
-# ── 2. Timezone ──────────────────────────────────────────────────────
+# ── 2. Timezone ───────────────────────────────────────────────────────
 
 ENV TZ=Asia/Tehran
 
@@ -73,7 +92,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && \
     echo $TZ > /etc/timezone
 
 
-# ── 3. Create directories with proper permissions ────────────────────
+# ── 3. Create application directories + permissions ──────────────────
 
 RUN mkdir -p \
         /home/devio/JB-outputs \
@@ -83,12 +102,13 @@ RUN mkdir -p \
     chmod -R 777 /home/devio
 
 
-# ── 4. Environment ───────────────────────────────────────────────────
+# ── 4. Runtime environment ────────────────────────────────────────────
 
 ENV PYTHONPATH=/app
 ENV HOME=/home/devio
 ENV XDG_CACHE_HOME=/home/devio/.cache
 
+# Paddle/PyMuPDF/OpenCV runtime workaround.
 ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libz.so.1
 
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/cuda/extras/CUPTI/lib64:/usr/local/lib:/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
@@ -98,17 +118,18 @@ ENV TZ=Asia/Tehran
 ENV DATABASE_URL=postgresql+psycopg2://vakav:vakav_strong_password_change_me@postgres:5432/vakav
 
 
-# ── 4.1. Fix CUDA/cuDNN library names for PaddlePaddle 2.4.2 ──────────
+# ── 4.1. CUDA/cuDNN compatibility symlinks ─────────────────────────────
 #
-# PaddlePaddle 2.4.2 dynamically looks for unversioned library names:
+# PaddlePaddle 2.4.2 expects the unversioned library names:
 #
 #   libcudnn.so
 #   libcublas.so
 #   libcublasLt.so
 #
-# The CUDA runtime image provides versioned libraries instead.
-# Create the required unversioned symlinks during IMAGE BUILD,
-# so runtime containers do not need manual fixes.
+# The CUDA runtime image provides versioned libraries.
+#
+# Create the symlinks during IMAGE BUILD so that runtime containers
+# do not require any manual library fixes.
 #
 # cuDNN:
 #   /usr/lib/x86_64-linux-gnu/libcudnn.so.8
@@ -117,8 +138,8 @@ ENV DATABASE_URL=postgresql+psycopg2://vakav:vakav_strong_password_change_me@pos
 #   /usr/local/cuda/lib64/libcublas.so.11
 #   /usr/local/cuda/lib64/libcublasLt.so.11
 #
-# These are runtime-library compatibility symlinks only.
-# No CUDA/Paddle version is changed here.
+# These are compatibility symlinks only.
+# They do not change the CUDA or Paddle version.
 
 RUN ln -sf \
     /usr/lib/x86_64-linux-gnu/libcudnn.so.8 \
@@ -131,13 +152,13 @@ RUN ln -sf \
     /usr/local/cuda/lib64/libcublasLt.so
 
 
-# ── 4.2. Verify CUDA runtime libraries exist in the IMAGE ────────────
+# ── 4.2. Verify CUDA runtime libraries exist in the image ─────────────
 #
-# This does NOT try to execute a GPU operation during docker build.
 # Docker build normally has no GPU access.
+# Therefore this only verifies that the required runtime libraries
+# physically exist in the image.
 #
-# It only verifies that the expected runtime libraries/symlinks
-# physically exist in the final image.
+# Actual GPU validation is performed after the container starts.
 
 RUN test -e /usr/local/cuda/lib64/libcudnn.so && \
     test -e /usr/local/cuda/lib64/libcublas.so && \
@@ -149,17 +170,56 @@ RUN test -e /usr/local/cuda/lib64/libcudnn.so && \
       /usr/local/cuda/lib64/libcublasLt.so
 
 
+# ── 5. Application working directory ──────────────────────────────────
+
 WORKDIR /app
 
 
-# ── 5. Install PaddlePaddle-GPU FIRST ─────────────────────────────────
+# ── 6. Install CUSTOM PaddlePaddle-GPU build ──────────────────────────
+#
+# IMPORTANT:
+#
+# Do NOT install:
+#
+#   paddlepaddle-gpu==2.4.2.post112
+#
+# from the official Paddle repository.
+#
+# That wheel does not contain Tesla K80 / sm_37 support.
+#
+# The wheel below was built from PaddlePaddle 2.4.2 source with:
+#
+#   CUDA 11.4
+#   CUDA architecture: 37
+#   Python 3.8
+#   GPU enabled
+#
+# The same wheel was already validated inside jbdetection_test:
+#
+#   CUDA: True
+#   Device: gpu:0
+#   GPU: Tesla K80
+#   Compute Capability: 3.7
+#   CUDA Runtime: 11.4
+#   cuDNN: 8.2
+#
+# It also passed a real PaddleOCR GPU inference test.
+
+COPY apps/backend/build_artifacts/paddle/paddlepaddle_gpu-0.0.0-cp38-cp38-linux_x86_64.whl /tmp/
+
 
 RUN pip3 install --no-cache-dir \
-    paddlepaddle-gpu==2.4.2.post112 \
-    -f https://www.paddlepaddle.org.cn/whl/linux/mkl/avx/stable.html
+    /tmp/paddlepaddle_gpu-0.0.0-cp38-cp38-linux_x86_64.whl && \
+    rm -f /tmp/paddlepaddle_gpu-0.0.0-cp38-cp38-linux_x86_64.whl
 
 
-# ── 6. Install Python dependencies ───────────────────────────────────
+# ── 7. Install Python dependencies ────────────────────────────────────
+#
+# PaddleOCR and the remaining application dependencies are installed
+# from the project's requirements file.
+#
+# PaddlePaddle itself is intentionally NOT installed from this file;
+# the custom wheel above is the required GPU build.
 
 COPY apps/backend/requirements-linux.txt /app/
 
@@ -167,7 +227,21 @@ RUN pip3 install --no-cache-dir --prefer-binary \
     -r requirements-linux.txt
 
 
-# ── 7. Install TensorFlow SEPARATELY ─────────────────────────────────
+# ── 8. Legacy TensorFlow/Keras compatibility layer ────────────────────
+#
+# These packages are temporarily retained because legacy compatibility
+# modules/files still exist in the repository.
+#
+# Current target architecture uses PaddleOCR instead of:
+#
+#   Tesseract
+#   Keras PDF classifier
+#   TensorFlow
+#
+# However, removal is intentionally deferred until the migrated
+# application has been fully validated through the real runtime.
+#
+# DO NOT use this section for PaddlePaddle.
 
 RUN pip3 install --no-cache-dir --no-deps \
       tensorflow-gpu==2.10.0 \
@@ -202,22 +276,22 @@ RUN pip3 install --no-cache-dir --no-deps \
     || echo "WARN: Some TF packages failed to install (non-critical)"
 
 
-# ── 8. Copy application code ─────────────────────────────────────────
+# ── 9. Copy application source ────────────────────────────────────────
 
 COPY apps /app/apps
 
 
-# ── 9. Volumes ────────────────────────────────────────────────────────
+# ── 10. Runtime volumes ───────────────────────────────────────────────
 
 VOLUME ["/home/devio/JB-outputs", "/home/devio/JB-logs"]
 
 
-# ── 10. Expose port ──────────────────────────────────────────────────
+# ── 11. Expose application port ───────────────────────────────────────
 
 EXPOSE 5000
 
 
-# ── 11. Start command ────────────────────────────────────────────────
+# ── 12. Start application ─────────────────────────────────────────────
 
 CMD ["gunicorn", \
      "apps.backend.app:app", \

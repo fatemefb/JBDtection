@@ -2,26 +2,34 @@
 # JBDetection — Base Requirements
 # ═══════════════════════════════════════════════════════════════════════
 #
-# Tested with: Python 3.8 (Ubuntu 20.04) + PaddlePaddle 2.6.2 + PaddleOCR 2.10.0
-# All version pins below are confirmed to have Python 3.8 wheels.
+# Runtime baseline:
+# Python 3.8 (Ubuntu 20.04)
+# PaddleOCR 2.10.0
+# Custom PaddlePaddle GPU build (CUDA 11.4 / Tesla K80 sm_37)
+#
+# NOTE:
+# PaddlePaddle is intentionally NOT listed here.
+# The K80-compatible custom PaddlePaddle wheel is installed separately.
 # ═══════════════════════════════════════════════════════════════════════
 
 # ── OCR Engine ──
 paddleocr==2.10.0
 
 # ── Image / PDF Processing ──
-opencv-python==4.10.0.84
-Pillow==10.4.0
+opencv-python==4.12.0.88
+opencv-python-headless==4.12.0.88
+Pillow==10.2.0
 PyMuPDF==1.24.11
 pdf2image==1.17.0
 
 # ── Data Processing ──
-numpy<2.0
+numpy==1.24.4
 pandas==2.0.3
 openpyxl==3.1.5
 
 # ── String Matching ──
-python-Levenshtein==0.25.1
+Levenshtein==0.25.1
+RapidFuzz==3.9.7
 
 # ── PDF Report Generation ──
 reportlab==4.4.9
@@ -70,5 +78,8 @@ filelock==3.16.1
 fsspec==2023.6.0
 et_xmlfile==2.0.0
 
-# ── Build tool ──
-setuptools<81
+# ── Paddle / Serialization Compatibility ──
+protobuf==3.20.0
+
+# ── Build Tool ──
+setuptools==69.5.1

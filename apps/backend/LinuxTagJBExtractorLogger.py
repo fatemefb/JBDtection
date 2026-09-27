@@ -108,11 +108,15 @@ class LoggedLinuxTagJBExtractor(LoggerMixin, LinuxTagJBExtractor):
             **kwargs: پارامترهای اضافی (مثل all_pdf_results) که به super پاس داده می‌شود
             
         Returns:
-            دیکشنری شماره‌گذاری تگ‌ها
+            Counts of annotations drawn per category.
         """
         self.logger.info(f"Creating annotated PDF: {pdf_path} -> {output_pdf_path}")
         result = super().create_annotated_pdf(pdf_path, output_pdf_path, **kwargs)
-        self.logger.info(f"Created annotated PDF with {len(result)} tagged elements")
+        self.logger.info(
+            "Created annotated PDF with %d elements (tags=%d, JBs=%d, MCs=%d, cables=%d, spares=%d)",
+            sum(result.values()), result["tags"], result["jbs"],
+            result["mcs"], result["cables"], result["spares"],
+        )
         return result
     
     def run_with_annotated_pdf(self, pdf_paths, excel_path, output_excel_path, output_pdf_dir, **kwargs):
