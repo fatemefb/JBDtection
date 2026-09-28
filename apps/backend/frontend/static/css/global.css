@@ -4747,3 +4747,6 @@ body.home-body.light .module-cube .mini-cabinet {
     border-radius:18px;
     box-shadow:0 40px 80px rgba(0,0,0,.35);
 }
+/* Learned IO List candidates retain their warning color in the IO table. */
+tr.io-match-similar > td { background-color: #fff2cc; color: #6b4600; }
+tr.io-match-unmatched > td { background-color: #fce4d6; color: #8b2218; }

@@ -141,6 +141,7 @@ class PatternMatcher:
         self.spare_regex: Optional[re.Pattern] = None
         self.cable_regex: re.Pattern = CABLE_PATTERN
         self.tag_regex: re.Pattern = TAG_PATTERN
+        self.io_tag_matcher: Optional[Any] = None
 
         self._compile_regex_patterns()
 
@@ -297,13 +298,20 @@ class PatternMatcher:
 
         return False
 
+    def _extract_tag(self, text: str) -> str:
+        if self.io_tag_matcher is not None:
+            candidates = self.io_tag_matcher.extract_candidates(text)
+            return next((tag for tag in candidates if not self._is_non_tag_pattern(tag)), "")
+        match = self.tag_regex.search(text)
+        return match.group(1).upper() if match else ""
+
     def _looks_like_tag(self, token: str) -> bool:
         """Heuristic: does this token look like an instrument tag?"""
         if not token or self._is_non_tag_pattern(token):
             return False
         t = str(token).strip().upper()
         # Tag regex requires letter(s) + digit(s) minimum.
-        if not self.tag_regex.search(t):
+        if not self._extract_tag(t):
             return False
         # Reject if it doesn't contain at least one digit (tags always do)
         if not any(c.isdigit() for c in t):
@@ -353,7 +361,7 @@ class PatternMatcher:
         if spare_identifiers_with_positions:
             spare_items = []
             for idx, item in enumerate(spare_identifiers_with_positions):
-                spare_text = str(item.get("spare", item.get("text", "SPARE")))
+                spare_text = str(item.get("id", f"SPARE_{idx + 1}"))
                 spare_items.append({
                     "name": spare_text,
                     "y_position": int(item.get("y", 0)),
@@ -558,12 +566,16 @@ class PatternMatcher:
                 spare_match = self.spare_regex.search(text)
                 spare_id = spare_match.group(0).upper() if spare_match else "SPARE"
                 spare_identifiers.append(spare_id)
+                # Repeated SPARE labels represent separate physical occurrences.
+                occurrence_id = f"SPARE_{len(spare_identifiers)}"
                 spare_with_positions.append({
+                    "id": occurrence_id,
+                    "bbox": det.bbox,
                     "spare": spare_id,
                     "y": det.bbox[1],
                     "x": det.bbox[0],
                 })
-                tag_match_info[spare_id] = TagMatchInfo(
+                tag_match_info[occurrence_id] = TagMatchInfo(
                     match_type="SPARE",
                     score=det.confidence,
                     ocr_text=text,
@@ -587,9 +599,8 @@ class PatternMatcher:
             # always captured before the cable fallback.
             if self._looks_like_tag(text):
                 # Try to extract the canonical tag from the text
-                tag_match = self.tag_regex.search(text)
-                tag = tag_match.group(1).upper() if tag_match else text_upper
-                tag = _normalize_code_token(tag)
+                tag = self._extract_tag(text)
+                tag = tag.strip().upper() if self.io_tag_matcher is not None else _normalize_code_token(tag)
                 if not tag:
                     continue
 

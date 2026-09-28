@@ -203,7 +203,7 @@ class PDFAnnotator:
 
         - ``JB``       → blue
         - ``MC``       → (not stored in tag_match_info; drawn from mc_identifiers)
-        - ``exact`` / ``similar`` / ``unmatched`` → green (Tag)
+        - ``exact`` → green; ``similar`` → orange; ``unmatched`` → red
         - ``SPARE``    → gray
 
         Cables are drawn from ``cable_descriptions`` (they don't have
@@ -235,10 +235,17 @@ class PDFAnnotator:
                 counts["mcs"] += 1
             elif match_type == "SPARE":
                 color = CATEGORY_COLORS_RGB["spare"]
-                label = str(key)
+                label = info.matched_tag or "SPARE"
+                number = result.tag_to_number.get(key)
+                if number:
+                    label += f" #{number}"
                 counts["spares"] += 1
+            elif match_type in {"SIMILAR", "UNMATCHED", "UNMATCHED_CANDIDATE"}:
+                color = CATEGORY_COLORS_RGB["mc"] if match_type == "SIMILAR" else CATEGORY_COLORS_RGB["unknown"]
+                label = self._tag_label(str(key), info, tag_to_number)
+                counts["tags"] += 1
             else:
-                # exact / similar / unmatched → Tag (green)
+                # Exact IO List tags use green.
                 color = CATEGORY_COLORS_RGB["tag"]
                 label = self._tag_label(str(key), info, tag_to_number)
                 counts["tags"] += 1
@@ -289,7 +296,8 @@ class PDFAnnotator:
             spare_text = sp.get("spare", sp.get("text", ""))
             if not spare_text:
                 continue
-            if spare_text.upper() in {k.upper() for k in result.tag_match_info.keys()
+            occurrence_id = str(sp.get("id", spare_text))
+            if occurrence_id.upper() in {k.upper() for k in result.tag_match_info.keys()
                                        if result.tag_match_info[k].match_type.upper() == "SPARE"}:
                 continue  # already drawn above
             pos = (sp.get("y", 0), sp.get("x", 0))
@@ -386,7 +394,9 @@ class PDFAnnotator:
         if info.match_type == "exact":
             parts.append("[E]")
         elif info.match_type == "similar":
-            parts.append(f"[S:{info.score:.2f}]")
+            parts.append(f"[S:{info.score:.1%}]")
+        elif info.match_type in {"unmatched", "unmatched_candidate"}:
+            parts.append(f"[NOT IN IO:{info.score:.1%}]")
         return " ".join(parts)
 
 

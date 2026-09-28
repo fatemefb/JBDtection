@@ -5,9 +5,9 @@ class. The original had triple-nested loops and a confusing mix of
 similarity metrics; this version exposes one clean entry point
 (:meth:`TagMatcher.match_tag`) that returns one of three outcomes:
 
-- ``("exact", 1.0, io_tag)``  — exact match (after OCR-confusion fixup)
-- ``("similar", score, io_tag)``  — fuzzy match (Levenshtein ≥ threshold)
-- ``("unmatched", 0.0, "")``  — no match
+- ``("exact", 1.0, io_tag)``  — exact literal IO List match
+- ``("similar", score, io_tag)``  — similarity suggestion within a learned IO List family
+- ``("unmatched", score, closest_tag)`` — absent tag requiring review
 
 The matcher is built from an Excel IO List via :meth:`build_from_excel`,
 which extracts tags from the ``Tag No`` column (case-insensitive) and
@@ -79,8 +79,8 @@ class TagMatcher:
     """
 
     def __init__(self,
-                 similarity_threshold: float = 0.85,
-                 levenshtein_threshold: float = 0.92,
+                 similarity_threshold: Optional[float] = None,
+                 levenshtein_threshold: Optional[float] = None,
                  config: Optional[Config] = None) -> None:
         if config is None:
             from .config import DEFAULT_CONFIG
@@ -99,6 +99,8 @@ class TagMatcher:
         # Reference data
         self.reference_tags: List[str] = []
         self.tag_vectors: Dict[str, Dict[str, float]] = {}
+        self.io_patterns: Dict[str, re.Pattern] = {}
+        self.reference_patterns: Dict[str, str] = {}
         self.tag_set_upper: Set[str] = set()
         # Track IO List tag in original case (for output)
         self.upper_to_original: Dict[str, str] = {}
@@ -152,6 +154,13 @@ class TagMatcher:
         tags = tags[tags.str.len() > 0]
         tags_upper = tags.str.upper().unique()
 
+        # Each IO List defines its own allowed families; do not retain older lists.
+        self.reference_tags.clear()
+        self.tag_vectors.clear()
+        self.tag_set_upper.clear()
+        self.upper_to_original.clear()
+        self.io_patterns.clear()
+        self.reference_patterns.clear()
         for tag_upper in tags_upper:
             self.add_reference_tag(tag_upper)
 
@@ -171,6 +180,23 @@ class TagMatcher:
             self.tag_set_upper.add(tag)
             self.upper_to_original[tag] = tag
         self.tag_vectors[tag] = self.create_tag_vector(tag)
+        pattern = "".join(
+            rf"\d{{{len(part)}}}" if part.isdigit() else re.escape(part)
+            for part in re.split(r"(\d+)", tag) if part
+        )
+        self.reference_patterns[tag] = pattern
+        self.io_patterns[pattern] = re.compile(
+            r"(?<![A-Z0-9_./-])" + pattern + r"(?![A-Z0-9_./-])", re.IGNORECASE,
+        )
+
+    def matches_io_pattern(self, tag: str) -> bool:
+        return any(pattern.fullmatch(str(tag).strip()) for pattern in self.io_patterns.values())
+
+    def extract_candidates(self, text: str) -> List[str]:
+        found = []
+        for pattern in self.io_patterns.values():
+            found.extend((match.start(), match.group().upper()) for match in pattern.finditer(text))
+        return list(dict.fromkeys(tag for _, tag in sorted(found)))
 
     # ── Feature extraction ─────────────────────────────────────────
     def create_tag_vector(self, tag: str) -> Dict[str, float]:
@@ -362,58 +388,30 @@ class TagMatcher:
             self.exact_matches += 1
             return ("exact", 1.0, tag_upper)
 
-        # ── 2. OCR-confusion correction ───────────────────────────
-        if self._config.match_use_confusion_pairs:
-            corrected = self.apply_ocr_corrections(tag_upper)
-            if corrected != tag_upper and corrected in self.tag_set_upper:
-                self.exact_matches += 1
-                return ("exact", 1.0, corrected)
-
-        # ── 3. Fuzzy match (Levenshtein first — fast and reliable) ─
-        if self.reference_tags:
-            best_io = ""
-            best_score = 0.0
-            for io_tag in self.reference_tags:
-                score = self._levenshtein_ratio(tag_upper, io_tag)
-                if score > best_score:
-                    best_score = score
-                    best_io = io_tag
-                if score >= 1.0:
-                    break
-
-            if best_io and best_score >= self.levenshtein_threshold:
-                self.similar_matches += 1
-                return ("similar", best_score, best_io)
-
-            # ── 4. Fallback to vector similarity ──────────────────
-            # Used when Levenshtein is just below threshold but the
-            # structural features (digits, prefixes) line up well.
-            tag_vec = self.create_tag_vector(tag_upper)
-            best_vec_io = ""
-            best_vec_score = 0.0
-            for io_tag in self.reference_tags:
-                io_vec = self.tag_vectors.get(io_tag)
-                if io_vec is None:
-                    continue
-                # Quick filter: skip if length difference is too big
-                if abs(len(io_tag) - len(tag_upper)) > max(5, len(io_tag) * 0.5):
-                    continue
-                sim = self.calculate_similarity(tag_vec, io_vec)
-                if sim > best_vec_score:
-                    best_vec_score = sim
-                    best_vec_io = io_tag
-
-            if best_vec_io and best_vec_score >= self.similarity_threshold:
-                # Combine: take the max of Levenshtein and vector scores
-                final_score = max(best_score, best_vec_score)
-                self.similar_matches += 1
-                return ("similar", final_score, best_vec_io)
-
+        # Similarity is evaluated only inside a family actually seen in the IO List.
+        if not self.matches_io_pattern(tag_upper):
+            self.unmatched += 1
+            return ("unmatched", 0.0, "")
+        families = {key for key, pattern in self.io_patterns.items() if pattern.fullmatch(tag_upper)}
+        vector = self.create_tag_vector(tag_upper)
+        best_score, best_io = 0.0, ""
+        for io_tag in self.reference_tags:
+            if self.reference_patterns[io_tag] not in families:
+                continue
+            lexical = self._levenshtein_ratio(tag_upper, io_tag)
+            structural = self.calculate_similarity(vector, self.tag_vectors[io_tag])
+            # Cosine similarity alone can approach 1 for distinct serial numbers.
+            score = min(0.999, (lexical + structural) / 2)
+            if score > best_score:
+                best_score, best_io = score, io_tag
+        if best_io and best_score >= self.similarity_threshold:
+            self.similar_matches += 1
+            return ("similar", best_score, best_io)
         self.unmatched += 1
-        return ("unmatched", 0.0, "")
+        return ("unmatched", best_score, best_io)
 
     def match_many(self, tags: List[str]) -> Dict[str, Tuple[str, float, str]]:
-        """Match a batch of tags. Returns ``{tag: (type, score, io_tag)}``."""
+        """Match a batch using the same strict learned-pattern rules."""
         return {tag: self.match_tag(tag) for tag in tags}
 
     # ── Stats ──────────────────────────────────────────────────────

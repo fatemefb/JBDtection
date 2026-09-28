@@ -60,6 +60,7 @@ class JBDetectionPipeline:
         self._config = config
         self._pattern_matcher = pattern_matcher or PatternMatcher()
         self._tag_matcher = tag_matcher  # may be None — set later
+        self._pattern_matcher.io_tag_matcher = self._tag_matcher
         self._detector = detector  # may be None — built lazily
 
         # Stats
@@ -82,6 +83,7 @@ class JBDetectionPipeline:
     @tag_matcher.setter
     def tag_matcher(self, value: Optional[TagMatcher]) -> None:
         self._tag_matcher = value
+        self._pattern_matcher.io_tag_matcher = value
 
     @property
     def detector(self) -> TextDetector:
@@ -93,6 +95,7 @@ class JBDetectionPipeline:
         """Build (or rebuild) the :class:`TagMatcher` from an IO List."""
         self._tag_matcher = TagMatcher(config=self._config)
         self._tag_matcher.build_from_excel(excel_path)
+        self._pattern_matcher.io_tag_matcher = self._tag_matcher
         return self._tag_matcher
 
     # ── Single-page entry point ────────────────────────────────────
@@ -149,9 +152,9 @@ class JBDetectionPipeline:
                 if match_type == "exact":
                     info.reason = f"Exact IO List match: {matched_tag}"
                 elif match_type == "similar":
-                    info.reason = f"Fuzzy match (score={score:.3f}): {matched_tag}"
+                    info.reason = f"Not in IO List; closest tag: {matched_tag} ({score:.1%}). Review required."
                 else:
-                    info.reason = "No IO List match"
+                    info.reason = f"Matches learned IO List pattern but is absent; closest tag: {matched_tag or 'none'} ({score:.1%}). Review required."
                 result.tag_match_info[tag] = info
 
         # 5. Stats

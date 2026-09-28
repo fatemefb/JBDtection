@@ -2694,8 +2694,14 @@
             rows.forEach(r => {
                 const tr = document.createElement('tr');
                 tr.dataset.id = r.id;
+                const matchType = String((r.values || {}).Match_Type || r.match_status || '').toLowerCase();
+                if (['similar', 'unmatched', 'unmatched_candidate'].includes(matchType)) {
+                    tr.classList.add(matchType === 'similar' ? 'io-match-similar' : 'io-match-unmatched');
+                    tr.title = String((r.values || {}).Warning || '');
+                }
                 const cells = columns.map(col => {
-                    const val = (r.values || {})[col] || '';
+                    const rawValue = (r.values || {})[col] ?? '';
+                    const val = col === 'Similarity_Percent' && rawValue !== '' ? `${rawValue}%` : rawValue;
                     return `<td data-col="${escapeHtml(col)}">${escapeHtml(val)}</td>`;
                 }).join('');
                 if (issueRowIds.has(r.id)) {
@@ -2824,7 +2830,7 @@
                 if (i.page !== undefined && i.page !== null && i.page !== '') metaParts.push(`${currentLang === 'fa' ? 'صفحه' : 'Page'}: ${escapeHtml(i.page)}`);
                 if (i.jb) metaParts.push(`JB: ${escapeHtml(i.jb)}`);
                 if (i.mc) metaParts.push(`MC: ${escapeHtml(i.mc)}`);
-                if (i.score !== undefined && i.score !== null && i.score !== '') metaParts.push(`${currentLang === 'fa' ? 'امتیاز' : 'Score'}: ${escapeHtml(Number(i.score).toFixed ? Number(i.score).toFixed(2) : i.score)}`);
+                if (i.score !== undefined && i.score !== null && i.score !== '') metaParts.push(`${currentLang === 'fa' ? 'شباهت' : 'Similarity'}: ${escapeHtml((Number(i.score) * 100).toFixed(1))}%`);
                 if (details.ocr_text || details.display_text) metaParts.push(`${currentLang === 'fa' ? 'متن OCR' : 'OCR'}: ${escapeHtml(details.ocr_text || details.display_text)}`);
                 if (details.tag_number !== undefined && details.tag_number !== null && String(details.tag_number).trim() !== '') {
                     metaParts.push(`${currentLang === 'fa' ? 'ایندکس پیشنهادی' : 'Suggested index'}: ${escapeHtml(details.tag_number)}`);
@@ -2895,7 +2901,8 @@
                 if (i.page !== undefined && i.page !== null && i.page !== '') metaParts.push(`${currentLang === 'fa' ? 'صفحه' : 'Page'}: ${escapeHtml(i.page)}`);
                 if (i.jb) metaParts.push(`JB: ${escapeHtml(i.jb)}`);
                 if (i.mc) metaParts.push(`MC: ${escapeHtml(i.mc)}`);
-                if (i.score !== undefined && i.score !== null && i.score !== '') metaParts.push(`${currentLang === 'fa' ? 'امتیاز' : 'Score'}: ${escapeHtml(Number(i.score).toFixed ? Number(i.score).toFixed(2) : i.score)}`);
+                if (i.score !== undefined && i.score !== null && i.score !== '') metaParts.push(`${currentLang === 'fa' ? 'شباهت' : 'Similarity'}: ${escapeHtml((Number(i.score) * 100).toFixed(1))}%`);
+                if (i.details && i.details.closest_io_tag) metaParts.push(`${currentLang === 'fa' ? 'نزدیک‌ترین تگ' : 'Closest tag'}: ${escapeHtml(i.details.closest_io_tag)}`);
                 const meta = metaParts.join(' | ');
                 const card = document.createElement('div');
                 card.className = 'pattern-card';

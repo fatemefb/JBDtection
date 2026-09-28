@@ -811,6 +811,8 @@ class TagJBExtractor:
         try:
             self._page_warnings = []
             self.latest_warnings = []
+            self.latest_pattern_unmatched_details = []
+            self.latest_pattern_unmatched_candidates = []
 
             self.build_tag_vectors_from_excel(excel_path)
 
@@ -888,6 +890,9 @@ class TagJBExtractor:
                     io_tags=io_tags,
                 )
                 output_files.append(intermediate_excel_path)
+                candidate_rows = self._excel_exporter._last_pattern_candidates
+                self.latest_pattern_unmatched_details = candidate_rows
+                self.latest_pattern_unmatched_candidates = sorted({item["ocr_text"] for item in candidate_rows})
             except Exception as exc:
                 logger.error("Error creating intermediate Excel: %s", exc)
 

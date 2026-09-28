@@ -700,8 +700,8 @@ def _persist_run_outputs(run_id, project_id, output_excel_path, unmatched_excel_
                             or ""
                         ),
                         src=str(raw.get("SRC") or raw.get("src") or ""),
-                        normalized_tag=str(raw.get("Tag/SPARE") or raw.get("Tag No") or raw.get("normalized_tag") or ""),
-                        match_status=str(raw.get("Match") or raw.get("match_status") or raw.get("MATCH") or ""),
+                        normalized_tag=str(raw.get("Tag/SPARE") or raw.get("Tag No") or raw.get("Tag No.") or raw.get("Tag") or raw.get("TAG") or raw.get("normalized_tag") or ""),
+                        match_status=str(raw.get("Match_Type") or raw.get("Match") or raw.get("match_status") or raw.get("MATCH") or ""),
                         raw_json=raw,
                     )
                 )
@@ -732,6 +732,8 @@ def _persist_run_outputs(run_id, project_id, output_excel_path, unmatched_excel_
                 )
             )
 
+        db.flush()
+        saved_candidate_rows = db.query(IOListRow).filter(IOListRow.run_id == run.id).all()
         pattern_unmatched_details = pattern_unmatched_details or []
         pattern_unmatched_candidates = pattern_unmatched_candidates or []
         pattern_tags_upper = set()
@@ -756,7 +758,7 @@ def _persist_run_outputs(run_id, project_id, output_excel_path, unmatched_excel_
                 message = f"{message} ({loc_str})"
             if score:
                 try:
-                    message = f"{message} [score={float(score):.2f}]"
+                    message = f"{message} [similarity={float(score):.1%}; closest={item.get('closest_io_tag') or 'none'}]"
                 except Exception:
                     pass
             if reason:
@@ -770,6 +772,10 @@ def _persist_run_outputs(run_id, project_id, output_excel_path, unmatched_excel_
                     status=IssueStatus.OPEN,
                     code="unmatched_pattern_candidate",
                     message=message,
+                    io_list_row_id=next((row.id for row in saved_candidate_rows
+                        if row.normalized_tag.upper() == ocr_text.upper()
+                        and str((row.raw_json or {}).get("PDF_Name", "")) == pdf_name
+                        and (row.raw_json or {}).get("Page") == page_no), None),
                     details=to_json_safe(item),
                 )
             )

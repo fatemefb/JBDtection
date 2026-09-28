@@ -43,6 +43,7 @@ INTERMEDIATE_COLUMNS: List[str] = [
     "Terminal_First_Number", "Terminal_Second_Number",
     "Cable_Code", "SCR_Terminal_Number",
     "Cable_Description", "Type", "Tag_Number_Status", "Warning",
+    "Match_Type", "Similarity_Percent", "Closest_IO_Tag", "IO_Pattern_Match",
 ]
 
 UNMATCHED_COLUMNS: List[str] = [
@@ -403,10 +404,10 @@ class ExcelExporter:
                         elif info.match_type == "unmatched":
                             match_status = "Unmatched"
 
-                    row_warning = ""
+                    row_warning = info.reason if info and info.match_type != "exact" else ""
                     if _jb_not_found:
-                        row_warning = (
-                            f"JB_NOT_FOUND: page {page_num} has tag {tag} but no "
+                        row_warning += (
+                            f" JB_NOT_FOUND: page {page_num} has tag {tag} but no "
                             f"JB was detected on this page. Tag was NOT assigned to any JB."
                         )
 
@@ -427,14 +428,18 @@ class ExcelExporter:
                         "Type": "Tag",
                         "Tag_Number_Status": match_status,
                         "Warning": row_warning,
+                        "Match_Type": info.match_type if info else "unmatched",
+                        "Similarity_Percent": round(info.score * 100, 2) if info else 0,
+                        "Closest_IO_Tag": info.matched_tag if info else "",
+                        "IO_Pattern_Match": bool(self._pattern_matcher.io_tag_matcher.matches_io_pattern(tag))
+                            if getattr(self, "_pattern_matcher", None) and self._pattern_matcher.io_tag_matcher else False,
                     })
 
                 # ── SPAREs ──────────────────────────────────────
-                spare_prefix = (self.spare_examples or "SPARE").strip().upper()
                 for spare_idx, spare in enumerate(result.spare_identifiers):
-                    spare_id = f"{spare_prefix}_{spare_idx + 1}"
-                    spare_number = (result.tag_to_number.get(spare_id)
-                                     or master_tag_numbers.get(spare_id))
+                    spare_id = f"SPARE_{spare_idx + 1}"
+                    # Occurrence IDs are local to this page, not global tags.
+                    spare_number = result.tag_to_number.get(spare_id)
                     if not spare_number:
                         # Auto-assign after the last tag number
                         max_existing = max(result.tag_to_number.values(), default=0)
@@ -454,8 +459,7 @@ class ExcelExporter:
 
                     spare_status = (
                         "Assigned (Position-based)"
-                        if (result.tag_to_number.get(spare_id)
-                            or master_tag_numbers.get(spare_id))
+                        if result.tag_to_number.get(spare_id)
                         else "Auto-assigned (WARNING: not in tag_to_number)"
                     )
                     new_df_data.append({
@@ -492,10 +496,31 @@ class ExcelExporter:
         # Save
         os.makedirs(os.path.dirname(os.path.abspath(output_path)) or ".",
                     exist_ok=True)
-        df.to_excel(output_path, index=False)
+        self._write_colored_excel(df, output_path)
         logger.info("Intermediate Excel saved: %s (%d rows)",
                      output_path, len(df))
 
+        # Full context for UI warning rows and candidate review.
+        self._last_pattern_candidates = []
+        for _, row in df.iterrows():
+            if row.get("Match_Type") not in {"similar", "unmatched", "unmatched_candidate"} or not row.get("IO_Pattern_Match"):
+                continue
+            self._last_pattern_candidates.append({
+                "source_type": "pattern_unmatched_candidate",
+                "ocr_text": row["Tag/SPARE"], "display_text": row["Tag/SPARE"],
+                "pdf_name": row["PDF_Name"], "page": int(row["Page"]),
+                "jb": row["JB"], "mc": row["MC"],
+                "tag_number": int(row["Tag_Number"]),
+                "score": float(row["Similarity_Percent"]) / 100,
+                "closest_io_tag": row["Closest_IO_Tag"],
+                "match_type": row["Match_Type"], "io_pattern_match": True,
+                "reason": row["Warning"],
+                "terminal_first_number": row["Terminal_First_Number"],
+                "terminal_second_number": row["Terminal_Second_Number"],
+                "scr_terminal_number": row["SCR_Terminal_Number"],
+                "wire_code_1": row["Wire_Code_1"], "wire_code_2": row["Wire_Code_2"],
+                "cable_code": row["Cable_Code"], "cable_description": row["Cable_Description"],
+            })
         # Stash warnings for later
         self._last_page_warnings = page_warnings
         return df
@@ -589,64 +614,14 @@ class ExcelExporter:
         # Filter out NC* tokens (cable codes, not tags)
         ocr_upper = {t for t in ocr_upper if not t.startswith("NC")}
 
-        # ── Fuzzy matching OCR tags → IO List tags ─────────────────
-        ocr_to_io_map: Dict[str, str] = {}
-        matched_io_tags: Set[str] = set()
-
-        try:
-            import Levenshtein as _lev  # type: ignore
-            _fuzzy = True
-        except Exception:
-            _fuzzy = False
-
-        # Character confusion pairs (for OCR-error correction)
-        char_confusions = [
-            ("V", "Y"), ("Y", "V"),
-            ("S", "5"), ("5", "S"),
-            ("O", "0"), ("0", "O"),
-            ("B", "8"), ("8", "B"),
-            ("G", "6"), ("6", "G"),
-            ("Z", "2"), ("2", "Z"),
-            ("I", "1"), ("1", "I"),
-            ("D", "0"), ("0", "D"),
-        ]
-
-        for ocr_tag in ocr_upper:
-            if ocr_tag.startswith("NC"):
-                continue
-            # 1. Exact
-            if ocr_tag in io_tags_upper:
-                ocr_to_io_map[ocr_tag] = ocr_tag
-                matched_io_tags.add(ocr_tag)
-                continue
-            if not _fuzzy:
-                continue
-            # 2. Levenshtein fuzzy
-            best_io = ""
-            best_score = 0.0
-            for io_tag in io_tags_upper:
-                score = _lev.ratio(ocr_tag, io_tag)
-                if score > best_score:
-                    best_score = score
-                    best_io = io_tag
-            if best_io and best_score >= self._config.match_levenshtein_threshold:
-                ocr_to_io_map[ocr_tag] = best_io
-                matched_io_tags.add(best_io)
-                continue
-            # 3. Single-char substitution
-            if best_score < self._config.match_levenshtein_threshold:
-                for old_ch, new_ch in char_confusions:
-                    positions = [j for j, c in enumerate(ocr_tag) if c == old_ch]
-                    for pos in positions:
-                        cand = ocr_tag[:pos] + new_ch + ocr_tag[pos + 1:]
-                        for io_tag in io_tags_upper:
-                            score = _lev.ratio(cand, io_tag)
-                            if score > best_score:
-                                best_score = score
-                                best_io = io_tag
-                if best_io and best_score >= self._config.match_levenshtein_threshold:
-                    ocr_to_io_map[ocr_tag] = best_io
-                    matched_io_tags.add(best_io)
+        # Use the same strict learned families as PDF extraction. Suggestions never
+        # replace a missing tag or mark the suggested IO List row as found.
+        from .tag_matcher import TagMatcher
+        matcher = TagMatcher(config=self._config)
+        matcher.build_from_excel(io_list_path, tag_column=io_col)
+        ocr_upper = {tag for tag in ocr_upper if matcher.matches_io_pattern(tag)}
+        ocr_to_io_map = {tag: tag for tag in ocr_upper if tag in io_tags_upper}
+        matched_io_tags = set(ocr_to_io_map.values())
 
         # Unmatched
         unmatched_pdf_tags_upper = set(ocr_upper) - set(ocr_to_io_map.keys())
@@ -668,55 +643,14 @@ class ExcelExporter:
             lambda x: str(x).strip().upper() if pd.notna(x) else ""
         )
 
-        pdf_to_io_map = inter_tags_upper & io_tags_upper
-        for ocr_tag_upper, io_tag_upper in ocr_to_io_map.items():
-            if ocr_tag_upper != io_tag_upper:
-                if ocr_tag_upper in inter_tags_upper:
-                    pdf_to_io_map.add(ocr_tag_upper)
-                if io_tag_upper not in pdf_to_io_map:
-                    pdf_to_io_map.add(io_tag_upper)
-
+        # Enrich original IO rows only from the exact same observed tag.
         for idx, row in final_df.iterrows():
-            io_tag = (str(row[io_col]).strip().upper()
-                       if pd.notna(row[io_col]) else "")
-            if not io_tag:
-                continue
-            # 1. Exact match in intermediate
-            if io_tag in pdf_to_io_map:
-                match_row = intermediate_df[
-                    intermediate_df["_TAG_UPPER_HELPER_"] == io_tag
-                ]
-                if not match_row.empty:
-                    src = match_row.iloc[0]
-                    for col in intermediate_cols_to_add:
-                        final_df.at[idx, col] = src.get(col, None)
-                    continue
-            # 2. Fuzzy-matched OCR tags
-            matched_ocr_tags = [o for o, i in ocr_to_io_map.items() if i == io_tag]
-            for ocr_tag in matched_ocr_tags:
-                if ocr_tag in inter_tags_upper:
-                    match_row = intermediate_df[
-                        intermediate_df["_TAG_UPPER_HELPER_"] == ocr_tag
-                    ]
-                    if not match_row.empty:
-                        src = match_row.iloc[0]
-                        for col in intermediate_cols_to_add:
-                            final_df.at[idx, col] = src.get(col, None)
-                        break
-                else:
-                    for col in intermediate_cols_to_add:
-                        if col == "Type":
-                            final_df.at[idx, col] = "Tag"
-                        elif col == "Tag_Number_Status":
-                            final_df.at[idx, col] = "Matched (Fuzzy OCR)"
-                    break
-            # 3. Fuzzy matched but no intermediate data
-            if io_tag in matched_io_tags:
+            io_tag = str(row[io_col]).strip().upper() if pd.notna(row[io_col]) else ""
+            matching_rows = intermediate_df[intermediate_df["_TAG_UPPER_HELPER_"] == io_tag]
+            if not matching_rows.empty:
+                source = matching_rows.iloc[0]
                 for col in intermediate_cols_to_add:
-                    if col == "Type" and pd.isna(final_df.at[idx, col]):
-                        final_df.at[idx, col] = "Tag"
-                    elif col == "Tag_Number_Status" and pd.isna(final_df.at[idx, col]):
-                        final_df.at[idx, col] = "Matched (Fuzzy OCR)"
+                    final_df.at[idx, col] = source.get(col)
 
         # JB_SPARE_COUNT column (used by some downstream UIs)
         if "JB" in intermediate_df.columns:
@@ -740,9 +674,35 @@ class ExcelExporter:
                     lambda jb: int(spare_counts.get(str(jb).strip().upper(), 0))
                 )
 
+        # Preserve every qualified absent tag as its own row, with its PDF wiring
+        # details. Unknown IO engineering fields stay empty for review.
+        extra_rows = []
+        for _, src in intermediate_df.iterrows():
+            tag = str(src.get(inter_tag_col, "")).strip().upper()
+            is_spare = str(src.get("Type", "")).upper() == "SPARE"
+            if not is_spare and (tag in io_tags_upper or not matcher.matches_io_pattern(tag)):
+                continue
+            new_row = {col: None for col in final_df.columns}
+            new_row.update({col: src.get(col) for col in intermediate_cols_to_add})
+            new_row[io_col] = tag
+            new_row["JB_SPARE_COUNT"] = int(spare_counts.get(str(src.get("JB", "")).strip().upper(), 0)) if "JB" in intermediate_df.columns else 0
+            if not is_spare:
+                kind, score, closest = matcher.match_tag(tag)
+                new_row.update({
+                    "Match_Type": kind,
+                    "Similarity_Percent": round(score * 100, 2),
+                    "Closest_IO_Tag": closest,
+                    "IO_Pattern_Match": True,
+                    "Warning": f"Not in IO List; closest tag: {closest or 'none'} ({score:.1%}). Review required. "
+                        + str(src.get("Warning", "") if pd.notna(src.get("Warning")) else ""),
+                })
+            extra_rows.append(new_row)
+        if extra_rows:
+            final_df = pd.concat([final_df, pd.DataFrame(extra_rows)], ignore_index=True)
+
         os.makedirs(os.path.dirname(os.path.abspath(output_path)) or ".",
                     exist_ok=True)
-        final_df.to_excel(output_path, index=False)
+        self._write_colored_excel(final_df, output_path)
         logger.info("Final Excel saved: %s (%d rows)", output_path, len(final_df))
 
         # Convert unmatched back to original case
@@ -765,6 +725,20 @@ class ExcelExporter:
         return (final_df,
                 sorted(unmatched_io_tags_original),
                 sorted(unmatched_pdf_tags_original))
+
+    @staticmethod
+    def _write_colored_excel(df: "Any", output_path: str) -> None:
+        from openpyxl.styles import PatternFill
+        import pandas as pd
+        with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False)
+            sheet = writer.sheets["Sheet1"]
+            for row_index, (_, row) in enumerate(df.iterrows(), start=2):
+                kind = str(row.get("Match_Type", "")).lower()
+                color = {"similar": "FFF2CC", "unmatched": "FCE4D6", "unmatched_candidate": "FCE4D6"}.get(kind)
+                if color:
+                    for cell in sheet[row_index]:
+                        cell.fill = PatternFill(fill_type="solid", fgColor=color)
 
     # ── Unmatched Excel ────────────────────────────────────────────
     def create_unmatched_excel(

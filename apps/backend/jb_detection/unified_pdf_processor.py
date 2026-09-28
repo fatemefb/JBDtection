@@ -126,6 +126,7 @@ class UnifiedPdfProcessor:
         self._config = config
         self._pattern_matcher = pattern_matcher or PatternMatcher()
         self._tag_matcher = tag_matcher  # may be None
+        self._pattern_matcher.io_tag_matcher = self._tag_matcher
         self._detector = detector  # may be None — built lazily
         self._digital_extractor = DigitalTextExtractor(config=config)
         self._type_detector = PdfTypeDetector(config=config)
@@ -164,11 +165,13 @@ class UnifiedPdfProcessor:
     @tag_matcher.setter
     def tag_matcher(self, value: Optional[TagMatcher]) -> None:
         self._tag_matcher = value
+        self._pattern_matcher.io_tag_matcher = value
 
     def build_tag_matcher_from_excel(self, excel_path: str) -> TagMatcher:
         """Build (or rebuild) the :class:`TagMatcher` from an IO List."""
         self._tag_matcher = TagMatcher(config=self._config)
         self._tag_matcher.build_from_excel(excel_path)
+        self._pattern_matcher.io_tag_matcher = self._tag_matcher
         return self._tag_matcher
 
     # ── Main entry: process_pdf ────────────────────────────────────
@@ -235,21 +238,32 @@ class UnifiedPdfProcessor:
                     page = doc.load_page(idx)
                     page_type = self._type_detector.detect_page_type(page)
 
+                    classified = None
                     if page_type == PdfType.DIGITAL:
                         detections = self._extract_digital(page)
-                        self.pages_digital += 1
-                    else:
-                        # Scanned — close the fitz doc handle temporarily
-                        # and use render_pdf_to_images for this page.
-                        # Actually, render_pdf_to_images opens its own doc,
-                        # so we can just call it with the PDF path and
-                        # take the page we need.
+                        if self._has_usable_text(detections):
+                            classified = self._pattern_matcher.match(detections)
+                        if classified is not None and (
+                            classified.tags or classified.jb_identifiers
+                            or classified.mc_identifiers or classified.spare_identifiers
+                            or classified.cable_descriptions
+                        ):
+                            self.pages_digital += 1
+                        else:
+                            logger.info(
+                                "Page %d: native extraction has no usable identifiers; falling back to OCR",
+                                page_number,
+                            )
+                            self.total_detections -= len(detections)
+                            page_type = PdfType.SCANNED
+                            classified = None
+                    if page_type != PdfType.DIGITAL:
+                        self.pages_scanned += 1
                         detections = self._extract_scanned(
                             pdf_path, page_number, doc, idx,
                         )
-                        self.pages_scanned += 1
 
-                    result = self._process_detections(detections, page_number)
+                    result = self._process_detections(detections, page_number, classified)
                     results[page_number] = result
 
                 except Exception as exc:
@@ -299,6 +313,18 @@ class UnifiedPdfProcessor:
         return all_results
 
     # ── Per-page extraction paths ───────────────────────────────────
+    @staticmethod
+    def _has_usable_text(detections: List[OcrDetection]) -> bool:
+        """Reject empty or broken text layers after native font decoding."""
+        text = "".join(d.text for d in detections)
+        if not text or not any(char.isalnum() for char in text):
+            return False
+        invalid = sum(
+            char == "\ufffd" or (not char.isprintable() and not char.isspace())
+            for char in text
+        )
+        return invalid / len(text) <= 0.05
+
     def _extract_digital(self, page: "object") -> List[OcrDetection]:
         """Extract text from a digital page via PyMuPDF.
 
@@ -337,11 +363,10 @@ class UnifiedPdfProcessor:
             effective_dpi = _compute_effective_dpi(self._config, page_count)
             image = load_pdf_page(page, dpi=effective_dpi)
         except Exception as exc:
-            logger.error("Failed to render page %d: %s", page_number, exc)
-            return []
+            raise RuntimeError(f"Failed to render page {page_number}: {exc}") from exc
 
         if image is None or image.size == 0:
-            return []
+            raise RuntimeError(f"Failed to render page {page_number}: empty image")
 
         try:
             # Preprocess (CLAHE + Otsu) — same as the OCR pipeline
@@ -354,8 +379,7 @@ class UnifiedPdfProcessor:
             # PaddleOCR — exactly ONE call per page
             detections = self.detector.detect(preprocessed)
         except Exception as exc:
-            logger.error("OCR failed on page %d: %s", page_number, exc)
-            detections = []
+            raise RuntimeError(f"OCR failed on page {page_number}: {exc}") from exc
 
         self.total_detections += len(detections)
         return detections
@@ -365,6 +389,7 @@ class UnifiedPdfProcessor:
         self,
         detections: List[OcrDetection],
         page_number: int,
+        classified: Optional[JBDetectionResult] = None,
     ) -> JBDetectionResult:
         """Run pattern matching + tag matching on a list of detections.
 
@@ -372,7 +397,7 @@ class UnifiedPdfProcessor:
         care whether detections came from OCR or native extraction.
         """
         # 1. Classify detections → JBDetectionResult
-        result = self._pattern_matcher.match(detections)
+        result = classified if classified is not None else self._pattern_matcher.match(detections)
 
         # 2. Match tags against IO List (if a TagMatcher is set)
         if self._tag_matcher is not None and result.tags:
@@ -387,9 +412,9 @@ class UnifiedPdfProcessor:
                 if match_type == "exact":
                     info.reason = f"Exact IO List match: {matched_tag}"
                 elif match_type == "similar":
-                    info.reason = f"Fuzzy match (score={score:.3f}): {matched_tag}"
+                    info.reason = f"Not in IO List; closest tag: {matched_tag} ({score:.1%}). Review required."
                 else:
-                    info.reason = "No IO List match"
+                    info.reason = f"Matches learned IO List pattern but is absent; closest tag: {matched_tag or 'none'} ({score:.1%}). Review required."
                 result.tag_match_info[tag] = info
 
         # 3. Update stats
