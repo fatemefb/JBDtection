@@ -614,13 +614,14 @@ class ExcelExporter:
         # Filter out NC* tokens (cable codes, not tags)
         ocr_upper = {t for t in ocr_upper if not t.startswith("NC")}
 
-        # Use the same strict learned families as PDF extraction. Suggestions never
+        # Use the same legacy candidate rules as PDF extraction. Suggestions never
         # replace a missing tag or mark the suggested IO List row as found.
         from .tag_matcher import TagMatcher
         matcher = TagMatcher(config=self._config)
         matcher.build_from_excel(io_list_path, tag_column=io_col)
         ocr_upper = {tag for tag in ocr_upper if matcher.matches_io_pattern(tag)}
-        ocr_to_io_map = {tag: tag for tag in ocr_upper if tag in io_tags_upper}
+        ocr_to_io_map = {tag: matcher.exact_reference(tag) for tag in ocr_upper
+                         if matcher.exact_reference(tag)}
         matched_io_tags = set(ocr_to_io_map.values())
 
         # Unmatched
@@ -640,10 +641,10 @@ class ExcelExporter:
         # Helper column for joining
         intermediate_df = intermediate_df.copy()
         intermediate_df["_TAG_UPPER_HELPER_"] = intermediate_df[inter_tag_col].apply(
-            lambda x: str(x).strip().upper() if pd.notna(x) else ""
+            lambda x: (matcher.exact_reference(str(x)) or str(x).strip().upper()) if pd.notna(x) else ""
         )
 
-        # Enrich original IO rows only from the exact same observed tag.
+        # Enrich IO rows from identical tag identities, including separator variants.
         for idx, row in final_df.iterrows():
             io_tag = str(row[io_col]).strip().upper() if pd.notna(row[io_col]) else ""
             matching_rows = intermediate_df[intermediate_df["_TAG_UPPER_HELPER_"] == io_tag]
@@ -680,7 +681,7 @@ class ExcelExporter:
         for _, src in intermediate_df.iterrows():
             tag = str(src.get(inter_tag_col, "")).strip().upper()
             is_spare = str(src.get("Type", "")).upper() == "SPARE"
-            if not is_spare and (tag in io_tags_upper or not matcher.matches_io_pattern(tag)):
+            if not is_spare and (matcher.exact_reference(tag) or not matcher.matches_io_pattern(tag)):
                 continue
             new_row = {col: None for col in final_df.columns}
             new_row.update({col: src.get(col) for col in intermediate_cols_to_add})

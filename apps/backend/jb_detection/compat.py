@@ -947,15 +947,19 @@ class TagJBExtractor:
                 unmatched_pdf_tags = sorted(list(all_pdf_tags - io_tags)) if io_tags else []
                 unmatched_io_tags = sorted(list(io_tags - all_pdf_tags)) if io_tags else []
 
+            matched_observations = {
+                tag: self._tag_matcher.exact_reference(tag)
+                for tag in all_pdf_ocr_tags
+                if self._tag_matcher.exact_reference(tag)
+            }
+            io_only_tags = io_tags - set(matched_observations.values())
+            ocr_only_unmatched = all_pdf_ocr_tags - set(matched_observations)
+
             # Always create unmatched Excel
             unmatched_excel_path = os.path.join(
                 output_pdf_dir, "JB_Wiring_Diagram_Unmatched_Tags.xlsx"
             )
             try:
-                ocr_only_unmatched = set()
-                if all_pdf_ocr_tags:
-                    ocr_only_unmatched = all_pdf_ocr_tags - io_tags
-                io_only_tags = io_tags - all_pdf_ocr_tags
                 self._excel_exporter.create_unmatched_excel(
                     list(ocr_only_unmatched), list(io_only_tags),
                     unmatched_excel_path,
@@ -1019,8 +1023,8 @@ class TagJBExtractor:
                 self.processing_time,
             )
 
-            io_only_tags_final = io_tags - all_pdf_ocr_tags
-            ocr_only_unmatched_final = all_pdf_ocr_tags - io_tags
+            io_only_tags_final = io_only_tags
+            ocr_only_unmatched_final = ocr_only_unmatched
             return (list(io_only_tags_final), list(ocr_only_unmatched_final))
 
         except Exception as exc:

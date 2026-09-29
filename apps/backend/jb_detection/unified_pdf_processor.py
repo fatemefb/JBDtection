@@ -337,9 +337,10 @@ class UnifiedPdfProcessor:
         instantaneous compared to OCR.
         """
         detections = self._digital_extractor.extract_from_page(page)
+        matcher = self._tag_matcher
+        detections = self._pattern_matcher._join_tag_fragments(detections)
         # A PDF span can contain several identifiers. Use actual word boxes
         # for such spans, preserving decoded spans if raw word text is unusable.
-        matcher = self._tag_matcher
         words = None
         expanded = []
         for detection in detections:
@@ -352,9 +353,28 @@ class UnifiedPdfProcessor:
                     if x - 2 <= word.x and y - 2 <= word.y
                     and word.x + word.width <= x + w + 2
                     and word.y + word.height <= y + h + 2]
-                recovered = {tag for word in contained for tag in matcher.extract_candidates(word.text)}
+                grouped = []
+                used = set()
+                recovered = set()
+                for candidate in candidates:
+                    for start in range(len(contained)):
+                        if start in used:
+                            continue
+                        for stop in range(start + 1, min(len(contained), start + 8) + 1):
+                            if any(index in used for index in range(start, stop)):
+                                break
+                            group = contained[start:stop]
+                            text = " ".join(word.text for word in group)
+                            if matcher.separator_key(text) == matcher.separator_key(candidate):
+                                grouped.append(self._combine_detections(group, candidate))
+                                used.update(range(start, stop))
+                                recovered.add(candidate)
+                                break
+                        if candidate in recovered:
+                            break
                 if contained and set(candidates).issubset(recovered):
-                    expanded.extend(contained)
+                    grouped.extend(word for index, word in enumerate(contained) if index not in used)
+                    expanded.extend(sorted(grouped, key=lambda word: (word.y, word.x)))
                     continue
             expanded.append(detection)
         detections = expanded
@@ -363,6 +383,14 @@ class UnifiedPdfProcessor:
         )
         self.total_detections += len(detections)
         return detections
+
+    @staticmethod
+    def _combine_detections(detections: List[OcrDetection], text: str) -> OcrDetection:
+        x = min(item.x for item in detections)
+        y = min(item.y for item in detections)
+        right = max(item.x + item.width for item in detections)
+        bottom = max(item.y + item.height for item in detections)
+        return OcrDetection(text, min(item.confidence for item in detections), [], (x, y, right - x, bottom - y))
 
     def _extract_scanned(
         self,

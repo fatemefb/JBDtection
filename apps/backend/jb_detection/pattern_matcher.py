@@ -288,6 +288,17 @@ class PatternMatcher:
         if WIRE_COLOR_PATTERN.match(t):
             return True
 
+        # Preserve the legacy exclusions when structural discovery is broad.
+        if re.fullmatch(r"\d{1,3}(?:BK|WH|RD|BL|GN|YL|OR|GY|VI|BN|PK)", t):
+            return True
+        if re.fullmatch(r"SCR[-_]?\d*", t):
+            return True
+        for rule in (self.wire_color_rule, self.scr_number_rule):
+            for part in re.split(r"[,;\s]+", rule or ""):
+                prefix = re.match(r"^([A-Za-z]{2,})", part)
+                if prefix and t.startswith(prefix.group(1).upper()) and any(char.isdigit() for char in t):
+                    return True
+
         # Pure numbers (terminal numbers, page numbers)
         if re.fullmatch(r"\d{1,4}", t):
             return True
@@ -476,6 +487,42 @@ class PatternMatcher:
         return max(norm_sorted, key=lambda c: (candidate_score(c), c))
 
     # ── Main entry point ───────────────────────────────────────────
+    def _join_tag_fragments(self, detections: List[OcrDetection]) -> List[OcrDetection]:
+        """Join neighboring prefix/serial fragments in OCR and native PDFs."""
+        matcher = self.io_tag_matcher
+        if matcher is None:
+            return detections
+        joined = []
+        index = 0
+        while index < len(detections):
+            first = detections[index]
+            group = [first]
+            combined = first.text
+            consumed = 1
+            if not matcher.extract_candidates(first.text):
+                for following in detections[index + 1:index + 8]:
+                    previous = group[-1]
+                    overlap = min(previous.y + previous.height, following.y + following.height) - max(previous.y, following.y)
+                    gap = following.x - (previous.x + previous.width)
+                    if (overlap < min(previous.height, following.height) * 0.5
+                            or gap < -2 or gap > max(previous.height, following.height) * 1.5):
+                        break
+                    if matcher.extract_candidates(following.text):
+                        break
+                    group.append(following)
+                    combined += " " + following.text
+                    if matcher.matches_io_pattern(combined):
+                        consumed = len(group)
+                        x = min(item.x for item in group)
+                        y = min(item.y for item in group)
+                        right = max(item.x + item.width for item in group)
+                        bottom = max(item.y + item.height for item in group)
+                        first = OcrDetection(combined, min(item.confidence for item in group), [], (x, y, right - x, bottom - y))
+                        break
+            joined.append(first)
+            index += consumed
+        return joined
+
     def match(self, detections: List[OcrDetection]) -> JBDetectionResult:
         """Classify OCR detections into the 9-tuple structure.
 
@@ -506,7 +553,7 @@ class PatternMatcher:
         # Track which bboxes we've already used for a given tag
         seen_tag_bbox: Dict[str, BBox_T] = {}  # type: ignore
 
-        for det in detections:
+        for det in self._join_tag_fragments(detections):
             text = (det.text or "").strip()
             if not text:
                 continue

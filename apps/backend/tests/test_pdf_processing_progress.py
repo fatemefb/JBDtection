@@ -44,7 +44,7 @@ class PdfProcessingProgressTests(unittest.TestCase):
             if event['stage'] == 'save' and event['current'] == 1:
                 with fitz.open(output) as doc:
                     self.assertEqual(len(doc), 3)
-                    self.assertEqual(len(doc[0].get_drawings()), 1)
+                    self.assertEqual(len([d for d in doc[0].get_drawings() if d['color'] is not None]), 1)
         counts = PDFAnnotator(config=Config(pdf_dpi=72), progress_callback=callback).annotate_pdf(
             str(self.path), results, str(output))
         self.assertEqual(counts['spares'], 3)

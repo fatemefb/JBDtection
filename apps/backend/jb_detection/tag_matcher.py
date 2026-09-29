@@ -27,6 +27,8 @@ from .config import (
     Config, INSTRUMENT_PREFIXES, OCR_CONFUSION_PAIRS,
 )
 
+from .legacy_candidates import LegacyCandidateRules
+
 logger = logging.getLogger("jb_detection.tag_matcher")
 
 
@@ -104,6 +106,8 @@ class TagMatcher:
         self.reference_patterns: Dict[str, str] = {}
         self.candidate_patterns: Dict[str, re.Pattern] = {}
         self.reference_candidate_patterns: Dict[str, str] = {}
+        self._legacy_rules = None
+        self.normalized_references: Dict[str, Set[str]] = {}
         self.tag_set_upper: Set[str] = set()
         # Track IO List tag in original case (for output)
         self.upper_to_original: Dict[str, str] = {}
@@ -158,6 +162,8 @@ class TagMatcher:
         tags_upper = tags.str.upper().unique()
 
         # Each IO List defines its own allowed families; do not retain older lists.
+        self.normalized_references.clear()
+        self._legacy_rules = None
         self.reference_tags.clear()
         self.tag_vectors.clear()
         self.tag_set_upper.clear()
@@ -184,6 +190,8 @@ class TagMatcher:
             self.reference_tags.append(tag)
             self.tag_set_upper.add(tag)
             self.upper_to_original[tag] = tag
+        self._legacy_rules = None
+        self.normalized_references.setdefault(self.separator_key(tag), set()).add(tag)
         self.tag_vectors[tag] = self.create_tag_vector(tag)
         pattern = "".join(
             rf"\d{{{len(part)}}}" if part.isdigit() else re.escape(part)
@@ -194,15 +202,13 @@ class TagMatcher:
             r"(?<![A-Z0-9_./-])" + pattern + r"(?![A-Z0-9_./-])", re.IGNORECASE,
         )
 
-        # Legacy discovery accepts compact/underscored separators and new
-        # terminal channel suffixes within a learned family. Keep the exact
-        # IO pattern above strict: discovery must not turn a new tag into
-        # an exact or similarity match merely by normalizing its spelling.
+        # Learn separator variants from both compact and separated IO tags.
         core = re.sub(r"(?<=\d)[A-Z]$", "", tag)
-        core = re.sub(r"(?<=\d)-[A-Z]{1,5}$", "", core)
-        candidate_pattern = "".join(
-            r"\d+" if part.isdigit() else re.escape(part).replace(r"\-", r"[-_]?")
-            for part in re.split(r"(\d+)", core) if part
+        core = re.sub(r"(?<=\d)[-_\s]+[A-Z]{1,5}$", "", core)
+        segments = re.findall(r"[A-Z]+|\d+", core)
+        candidate_pattern = r"[\s_-]*".join(
+            r"\d+" if segment.isdigit() else re.escape(segment)
+            for segment in segments
         )
         if core and core[-1].isdigit():
             candidate_pattern += r"[A-Z]?(?:[-_][A-Z0-9]{1,5})?"
@@ -211,15 +217,48 @@ class TagMatcher:
             r"(?<![A-Z0-9_./-])" + candidate_pattern + r"(?![A-Z0-9_./-])", re.IGNORECASE,
         )
 
+    @staticmethod
+    def separator_key(tag: str) -> str:
+        """Compare identity while ignoring spaces, dashes and underscores."""
+        return re.sub(r"[\s_-]+", "", str(tag).strip().upper())
+
+    def exact_reference(self, tag: str) -> str:
+        tag = str(tag).strip().upper()
+        if tag in self.tag_set_upper:
+            return tag
+        references = self.normalized_references.get(self.separator_key(tag), set())
+        return next(iter(references)) if len(references) == 1 else ""
+
+    def _candidate_rules(self):
+        if self._legacy_rules is None:
+            self._legacy_rules = LegacyCandidateRules(self.reference_tags, _lev.distance)
+        return self._legacy_rules
+
     def matches_io_pattern(self, tag: str) -> bool:
-        """A learned candidate match does not require a similar IO reference."""
-        return any(pattern.fullmatch(str(tag).strip()) for pattern in self.candidate_patterns.values())
+        """Legacy candidate discovery plus equivalent separator spellings."""
+        if not self.reference_tags:
+            return False
+        text = str(tag).strip()
+        return bool(self.exact_reference(text)) or any(
+            pattern.fullmatch(text) for pattern in self.candidate_patterns.values()
+        ) or (not re.search(r"\s", text) and self._candidate_rules().accepts(text))
 
     def extract_candidates(self, text: str) -> List[str]:
         found = []
         for pattern in self.candidate_patterns.values():
-            found.extend((match.start(), match.group().upper()) for match in pattern.finditer(text))
-        return list(dict.fromkeys(tag for _, tag in sorted(found)))
+            found.extend((match.start(), match.end(), match.group().upper()) for match in pattern.finditer(text))
+        # Legacy phase 2.5 accepts high structural scores even without a
+        # learned literal prefix. Preserve the observed text for review.
+        for match in re.finditer(r"(?<![A-Z0-9_./-])[A-Z0-9]+(?:[-_][A-Z0-9]+)*(?![A-Z0-9_./-])", text, re.IGNORECASE):
+            if self.matches_io_pattern(match.group()):
+                found.append((match.start(), match.end(), match.group().upper()))
+        selected = []
+        end = -1
+        for start, stop, tag in sorted(set(found), key=lambda item: (item[0], -item[1])):
+            if start >= end:
+                selected.append(tag)
+                end = stop
+        return list(dict.fromkeys(selected))
 
     # ── Feature extraction ─────────────────────────────────────────
     def create_tag_vector(self, tag: str) -> Dict[str, float]:
@@ -409,9 +448,10 @@ class TagMatcher:
             return ("unmatched", 0.0, "")
 
         # ── 1. Exact match ────────────────────────────────────────
-        if tag_upper in self.tag_set_upper:
+        exact = self.exact_reference(tag_upper)
+        if exact:
             self.exact_matches += 1
-            return ("exact", 1.0, tag_upper)
+            return ("exact", 1.0, exact)
 
         # Similarity is evaluated only inside a family actually seen in the IO List.
         if not self.matches_io_pattern(tag_upper):
