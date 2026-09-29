@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import fitz
 import pandas as pd
 
-from jb_detection.annotator import PDFAnnotator
+from jb_detection.annotator import CATEGORY_COLORS_RGB, PDFAnnotator
 from jb_detection.config import Config
 from jb_detection.excel_exporter import ExcelExporter
 from jb_detection.models import JBDetectionResult, OcrDetection
@@ -101,7 +101,7 @@ class PdfExtractionRegressions(unittest.TestCase):
         )
         self.assertEqual(counts['spares'], 3)
         with fitz.open(self.directory / 'annotated.pdf') as doc:
-            self.assertEqual(len(doc[0].get_drawings()), 3)
+            self.assertEqual(len([d for d in doc[0].get_drawings() if d['color'] is not None]), 3)
             self.assertIn('SPARE #3', doc[0].get_text())
             self.assertNotIn('#99', doc[0].get_text())
 
@@ -129,6 +129,61 @@ class PdfExtractionRegressions(unittest.TestCase):
         self.assertEqual(rows['Tag/SPARE'].tolist(), ['UNUSED', 'RESERVE', 'RESERVE'])
         self.assertEqual(rows['Tag_Number'].tolist(), [1, 2, 3])
         self.assertEqual(rows['Tag_Number_Status'].tolist(), ['Assigned (Position-based)'] * 3)
+
+    def test_labels_are_outside_boxes_and_visible_at_page_edges(self):
+        with fitz.open() as doc:
+            page = doc.new_page(width=240, height=180)
+            boxes = [fitz.Rect(20, 50, 120, 65), fitz.Rect(20, 1, 120, 16), fitz.Rect(200, 150, 239, 165)]
+            annotator = PDFAnnotator(config=self.config)
+            for index, box in enumerate(boxes):
+                annotator._draw_box(page, box, CATEGORY_COLORS_RGB['tag'], label=f'TE-987654A #{index}')
+            spans = [span for block in page.get_text('dict')['blocks'] if 'lines' in block
+                     for line in block['lines'] for span in line['spans']]
+            self.assertEqual(len(spans), 3)
+            for span, box in zip(spans, boxes):
+                label = fitz.Rect(span['bbox'])
+                self.assertFalse(label.intersects(box))
+                self.assertTrue(page.rect.contains(label))
+                self.assertGreaterEqual(span['size'], 7)
+                self.assertEqual(span['color'], 0)
+            self.assertLess(spans[0]['bbox'][3], boxes[0].y0)
+            self.assertGreater(spans[1]['bbox'][1], boxes[1].y1)
+
+    def test_only_final_cable_is_annotated_with_cable_color(self):
+        result = PatternMatcher().match([
+            detection('NC-0-1-2-C-3-BL', 30),
+            detection('NC-12-3-4-A-5-WHT', 70),
+            detection('TE-5223', 110),
+        ])
+        output = self.directory / 'cables.xlsx'
+        ExcelExporter(config=self.config).create_intermediate_excel({'input.pdf': {1: result}}, str(output))
+        selected = pd.read_excel(output)['Cable_Code'].iloc[0]
+        self.assertEqual(selected, 'NC-12-3-4-A-5-WHT')
+        with fitz.open() as doc:
+            page = doc.new_page()
+            counts = PDFAnnotator(config=self.config)._annotate_page(page, result, result.tag_to_number, 1)
+            self.assertEqual(counts['cables'], 1)
+            self.assertEqual(counts['tags'], 1)
+            self.assertIn(selected, page.get_text())
+            self.assertNotIn('NC-0-1-2-C-3-BL', page.get_text())
+            cable_boxes = [d for d in page.get_drawings() if d['color'] == CATEGORY_COLORS_RGB['cable']]
+            self.assertEqual(len(cable_boxes), 1)
+            self.assertEqual(cable_boxes[0]['rect'], fitz.Rect(20, 70, 120, 90))
+
+    def test_sp_fragments_do_not_create_phantom_spare_excel_rows(self):
+        result = PatternMatcher().match([
+            detection('SPARE', 20), detection('SP', 40), detection('SP 2', 60), detection('SPARE 3', 80),
+        ])
+        self.assertEqual(result.spare_identifiers, ['SPARE', 'SPARE 3'])
+        output = self.directory / 'no-phantom-sp.xlsx'
+        ExcelExporter(config=self.config).create_intermediate_excel({'input.pdf': {1: result}}, str(output))
+        rows = pd.read_excel(output)
+        self.assertEqual(rows['Tag/SPARE'].tolist(), ['SPARE', 'SPARE 3'])
+        with fitz.open() as doc:
+            counts = PDFAnnotator(config=self.config)._annotate_page(doc.new_page(), result, {}, 1)
+            self.assertEqual(counts['spares'], len(rows))
+        explicit = PatternMatcher(spare_examples=['SP']).match([detection('SP', 20)])
+        self.assertEqual(explicit.spare_identifiers, ['SP'])
 
 
 if __name__ == '__main__':

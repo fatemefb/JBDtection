@@ -208,9 +208,9 @@ MC_PATTERN: re.Pattern = re.compile(
     re.IGNORECASE,
 )
 
-# SPARE pattern: the word "SPARE" or "SP" (optionally with a number).
+# SP is ambiguous; accept it only when explicitly configured as a spare example.
 SPARE_PATTERN: re.Pattern = re.compile(
-    r"\b(SPARE|SP|Spare)(?:\s*\d+)?\b",
+    r"\b(SPARE)(?:\s*\d+)?\b",
     re.IGNORECASE,
 )
 

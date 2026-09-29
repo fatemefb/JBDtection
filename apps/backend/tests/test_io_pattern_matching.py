@@ -81,7 +81,7 @@ class IoPatternMatchingTests(unittest.TestCase):
             doc.save(path)
         PDFAnnotator(config=self.config).annotate_pdf(str(path), {1: result}, str(self.root / 'annotated.pdf'), tag_to_number=result.tag_to_number)
         with fitz.open(self.root / 'annotated.pdf') as doc:
-            colors = {tuple(round(value, 2) for value in drawing['color']) for drawing in doc[0].get_drawings()}
+            colors = {tuple(round(value, 2) for value in drawing['color']) for drawing in doc[0].get_drawings() if drawing['color'] is not None}
             for category in ['tag', 'mc', 'unknown']:
                 self.assertIn(tuple(round(value, 2) for value in CATEGORY_COLORS_RGB[category]), colors)
             self.assertIn('[S:', doc[0].get_text())
@@ -211,6 +211,27 @@ class IoPatternMatchingTests(unittest.TestCase):
         row_index = next(index for index, row in enumerate(list(book.active.values)[1:], start=2) if row[tag_index] == 'TE-987654A')
         self.assertEqual(book.active.cell(row_index, 1).fill.fgColor.rgb, '00FCE4D6')
         book.close()
+
+    def test_legacy_separator_and_channel_variants_are_review_candidates(self):
+        source = ['TE987654', 'TE_987654A', 'TE-987654-01', 'TE-987654-B', '123_FV_98765-X1']
+        proc = UnifiedPdfProcessor(config=self.config, tag_matcher=self.matcher)
+        result = proc._process_detections([det(tag, 30 * i + 20) for i, tag in enumerate(source)], 1)
+        self.assertEqual(result.tags, set(source))
+        self.assertEqual(result.all_ocr_tags, set(source))
+        self.assertEqual(set(result.tag_to_number), set(source))
+        for tag in source:
+            self.assertEqual(result.tag_match_info[tag].match_type, 'unmatched_candidate')
+        exporter = ExcelExporter(config=self.config)
+        exporter.set_pattern_matcher(proc.pattern_matcher)
+        intermediate = self.root / 'variants.xlsx'
+        exporter.create_intermediate_excel({'input.pdf': {1: result}}, str(intermediate))
+        final, _, absent = exporter.create_final_excel(
+            str(intermediate), str(self.io_path), str(self.root / 'variants-final.xlsx'), result.all_ocr_tags,
+        )
+        self.assertEqual(set(final.loc[final['Match_Type'] == 'unmatched_candidate', 'Tag No']), set(source))
+        self.assertEqual(set(absent), set(source))
+        self.assertFalse(self.matcher.matches_io_pattern('XYZ-987654-B'))
+        self.assertEqual(self.matcher.extract_candidates('X.TE987654 TE987654.1'), [])
 
     def test_native_span_candidates_have_individual_word_boxes(self):
         pdf = self.root / 'one-span.pdf'

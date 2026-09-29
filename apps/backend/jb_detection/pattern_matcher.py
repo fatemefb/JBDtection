@@ -379,7 +379,8 @@ class PatternMatcher:
         return tag_to_number
 
     # ── Best-MC / Best-Cable selection ─────────────────────────────
-    def select_best_cable_description(self, cable_descriptions: List[str]) -> str:
+    @staticmethod
+    def select_best_cable_description(cable_descriptions: List[str]) -> str:
         """Pick the cable code with the largest sum of digits.
 
         Real cable codes (NC-12-3-4-A-5-WHT) typically use larger

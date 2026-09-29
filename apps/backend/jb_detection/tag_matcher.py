@@ -194,16 +194,18 @@ class TagMatcher:
             r"(?<![A-Z0-9_./-])" + pattern + r"(?![A-Z0-9_./-])", re.IGNORECASE,
         )
 
-        # Candidate discovery is independent of the stricter similarity family.
-        # Keep learned letter segments/separators, allowing other serial widths
-        # and a terminal letter as in the legacy unmatched candidate phase.
+        # Legacy discovery accepts compact/underscored separators and new
+        # terminal channel suffixes within a learned family. Keep the exact
+        # IO pattern above strict: discovery must not turn a new tag into
+        # an exact or similarity match merely by normalizing its spelling.
         core = re.sub(r"(?<=\d)[A-Z]$", "", tag)
+        core = re.sub(r"(?<=\d)-[A-Z]{1,5}$", "", core)
         candidate_pattern = "".join(
-            r"\d+" if part.isdigit() else re.escape(part)
+            r"\d+" if part.isdigit() else re.escape(part).replace(r"\-", r"[-_]?")
             for part in re.split(r"(\d+)", core) if part
         )
         if core and core[-1].isdigit():
-            candidate_pattern += r"[A-Z]?"
+            candidate_pattern += r"[A-Z]?(?:[-_][A-Z0-9]{1,5})?"
         self.reference_candidate_patterns[tag] = candidate_pattern
         self.candidate_patterns[candidate_pattern] = re.compile(
             r"(?<![A-Z0-9_./-])" + candidate_pattern + r"(?![A-Z0-9_./-])", re.IGNORECASE,

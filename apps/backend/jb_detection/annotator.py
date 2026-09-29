@@ -33,6 +33,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .config import Config, DEFAULT_CONFIG
 from .models import JBDetectionResult, TagMatchInfo
+from .pattern_matcher import PatternMatcher
 from .progress import ProgressCallback, report_progress
 
 logger = logging.getLogger("jb_detection.annotator")
@@ -229,6 +230,8 @@ class PDFAnnotator:
 
         counts = {"tags": 0, "jbs": 0, "mcs": 0, "cables": 0, "spares": 0}
 
+        selected_cable = PatternMatcher.select_best_cable_description(result.cable_descriptions)
+
         # ── Iterate tag_match_info — single source of truth ──────
         # This dict contains JB, MC, SPARE, and Tag entries, each
         # with its own bbox and match_type.
@@ -248,6 +251,12 @@ class PDFAnnotator:
                 color = CATEGORY_COLORS_RGB["mc"]
                 label = str(key)
                 counts["mcs"] += 1
+            elif match_type == "CABLE":
+                if str(key).strip().upper() != selected_cable.strip().upper():
+                    continue
+                color = CATEGORY_COLORS_RGB["cable"]
+                label = str(key)
+                counts["cables"] += 1
             elif match_type == "SPARE":
                 color = CATEGORY_COLORS_RGB["spare"]
                 label = info.matched_tag or "SPARE"
@@ -294,7 +303,7 @@ class PDFAnnotator:
         # Cables are now stored in tag_match_info with match_type="Cable"
         # and are drawn by the main loop above. This fallback handles
         # any cables that somehow didn't get a tag_match_info entry.
-        for cable in result.cable_descriptions:
+        for cable in [selected_cable] if selected_cable else []:
             if cable in result.tag_match_info:
                 continue  # already drawn above
             pos = result.tag_positions.get(cable)
@@ -366,8 +375,7 @@ class PDFAnnotator:
     ) -> None:
         """Draw a colored rectangle + optional label on the page.
 
-        The label is placed INSIDE the box (top-left corner) to avoid
-        being clipped at the top of the page.
+        Place readable labels above the box, or below near the page top.
         """
         import fitz  # type: ignore
 
@@ -380,16 +388,31 @@ class PDFAnnotator:
             overlay=True,
         )
 
-        # Draw the label INSIDE the box (top-left corner)
         if label:
-            # Place label just inside the top-left corner of the box
-            label_point = fitz.Point(rect.x0 + 2, rect.y0 + 8)
             try:
+                text = str(label)[:80]
+                font = fitz.Font("helv")
+                fontsize = 7
+                padding, gap = 2, 3
+                bounds = page.rect
+                available_width = bounds.width - 4 * padding
+                text_width = font.text_length(text, fontsize=fontsize)
+                if text_width > available_width:
+                    fontsize *= available_width / text_width
+                    text_width = font.text_length(text, fontsize=fontsize)
+                height = (font.ascender - font.descender) * fontsize + 2 * padding
+                x = max(bounds.x0 + padding, min(rect.x0, bounds.x1 - text_width - 3 * padding))
+                y = rect.y0 - gap - height
+                if y < bounds.y0:
+                    y = rect.y1 + gap
+                # White backing separates the label from drawing lines.
+                backing = fitz.Rect(x, y, x + text_width + 2 * padding, y + height)
+                page.draw_rect(backing, color=None, fill=(1, 1, 1), overlay=True)
                 page.insert_text(
-                    label_point,
-                    str(label)[:40],  # Truncate long labels
-                    fontsize=5,
-                    color=color,
+                    fitz.Point(x + padding, y + padding + font.ascender * fontsize),
+                    text,
+                    fontsize=fontsize,
+                    color=(0, 0, 0),
                     overlay=True,
                 )
             except Exception as exc:
