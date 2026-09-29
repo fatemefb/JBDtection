@@ -86,6 +86,7 @@ from .models import JBDetectionResult, OcrDetection, TagMatchInfo
 from .pattern_matcher import PatternMatcher
 from .pdf_type_detector import PdfType, PdfTypeDetector
 from .tag_matcher import TagMatcher
+from .progress import ProgressCallback, report_progress
 
 logger = logging.getLogger("jb_detection.unified_pdf_processor")
 
@@ -120,10 +121,12 @@ class UnifiedPdfProcessor:
         pattern_matcher: Optional[PatternMatcher] = None,
         tag_matcher: Optional[TagMatcher] = None,
         detector: Optional[TextDetector] = None,
+        progress_callback: Optional[ProgressCallback] = None,
     ) -> None:
         if config is None:
             config = DEFAULT_CONFIG
         self._config = config
+        self.progress_callback = progress_callback
         self._pattern_matcher = pattern_matcher or PatternMatcher()
         self._tag_matcher = tag_matcher  # may be None
         self._pattern_matcher.io_tag_matcher = self._tag_matcher
@@ -231,6 +234,7 @@ class UnifiedPdfProcessor:
             page_count = len(doc)
             cap = max_pages if max_pages is not None else self._config.pdf_max_pages
             total = min(page_count, cap)
+            report_progress(self.progress_callback, "extract", pdf_path, 0, total)
 
             for idx in range(total):
                 page_number = idx + 1
@@ -275,6 +279,7 @@ class UnifiedPdfProcessor:
                     self.pages_failed += 1
 
                 finally:
+                    report_progress(self.progress_callback, "extract", pdf_path, page_number, total)
                     # Periodic GC for large PDFs
                     if page_number % self._config.gc_interval_pages == 0:
                         gc.collect()
@@ -332,6 +337,27 @@ class UnifiedPdfProcessor:
         instantaneous compared to OCR.
         """
         detections = self._digital_extractor.extract_from_page(page)
+        # A PDF span can contain several identifiers. Use actual word boxes
+        # for such spans, preserving decoded spans if raw word text is unusable.
+        matcher = self._tag_matcher
+        words = None
+        expanded = []
+        for detection in detections:
+            candidates = matcher.extract_candidates(detection.text) if matcher else []
+            if candidates and not matcher.matches_io_pattern(detection.text):
+                if words is None:
+                    words = self._digital_extractor.extract_from_page_words(page)
+                x, y, w, h = detection.bbox
+                contained = [word for word in words
+                    if x - 2 <= word.x and y - 2 <= word.y
+                    and word.x + word.width <= x + w + 2
+                    and word.y + word.height <= y + h + 2]
+                recovered = {tag for word in contained for tag in matcher.extract_candidates(word.text)}
+                if contained and set(candidates).issubset(recovered):
+                    expanded.extend(contained)
+                    continue
+            expanded.append(detection)
+        detections = expanded
         logger.debug(
             "Digital extraction: %d detections", len(detections),
         )

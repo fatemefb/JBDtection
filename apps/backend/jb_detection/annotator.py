@@ -27,11 +27,13 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from .config import Config, DEFAULT_CONFIG
 from .models import JBDetectionResult, TagMatchInfo
+from .progress import ProgressCallback, report_progress
 
 logger = logging.getLogger("jb_detection.annotator")
 
@@ -81,10 +83,12 @@ class PDFAnnotator:
         )
     """
 
-    def __init__(self, config: Optional[Config] = None) -> None:
+    def __init__(self, config: Optional[Config] = None,
+                 progress_callback: Optional[ProgressCallback] = None) -> None:
         if config is None:
             config = DEFAULT_CONFIG
         self._config = config
+        self.progress_callback = progress_callback
         # Track the render DPI per page for coordinate conversion.
         # If not provided, we assume config.pdf_dpi.
         self._page_dpi: Dict[int, int] = {}
@@ -151,7 +155,8 @@ class PDFAnnotator:
             page_count = len(doc)
             scale = 72.0 / render_dpi  # pixel → point conversion
 
-            for page_number, result in page_results.items():
+            report_progress(self.progress_callback, "annotate", pdf_path, 0, len(page_results))
+            for completed, (page_number, result) in enumerate(page_results.items(), start=1):
                 if page_number < 1 or page_number > page_count:
                     logger.warning(
                         "Page %d out of range (1-%d) — skipping", page_number, page_count
@@ -170,10 +175,20 @@ class PDFAnnotator:
                         "Failed to annotate page %d of %s: %s",
                         page_number, p.name, exc,
                     )
+                finally:
+                    report_progress(self.progress_callback, "annotate", pdf_path, completed, len(page_results))
 
-            # Save
+            # Level 3 compares objects to find duplicates. Large CAD PDFs can
+            # have hundreds of thousands of objects, making that pass prohibitively
+            # expensive. Level 1 removes unused objects without duplicate matching.
             os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-            doc.save(output_path, garbage=3, deflate=True)
+            logger.info("Saving annotated PDF: %s (%d pages, %d objects)",
+                        output_path, page_count, doc.xref_length())
+            report_progress(self.progress_callback, "save", pdf_path, 0, 1)
+            save_started = time.perf_counter()
+            doc.save(output_path, garbage=1, deflate=True)
+            logger.info("PDF save finished in %.2fs", time.perf_counter() - save_started)
+            report_progress(self.progress_callback, "save", pdf_path, 1, 1)
             logger.info(
                 "Annotated PDF saved: %s (tags=%d, jbs=%d, mcs=%d, cables=%d, spares=%d)",
                 output_path, counts["tags"], counts["jbs"],

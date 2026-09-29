@@ -599,36 +599,39 @@ class PatternMatcher:
             # always captured before the cable fallback.
             if self._looks_like_tag(text):
                 # Try to extract the canonical tag from the text
-                tag = self._extract_tag(text)
-                tag = tag.strip().upper() if self.io_tag_matcher is not None else _normalize_code_token(tag)
-                if not tag:
-                    continue
+                candidate_tags = self.io_tag_matcher.extract_candidates(text) if self.io_tag_matcher is not None else [self._extract_tag(text)]
+                for tag in candidate_tags:
+                    if self._is_non_tag_pattern(tag):
+                        continue
+                    tag = tag.strip().upper() if self.io_tag_matcher is not None else _normalize_code_token(tag)
+                    if not tag:
+                        continue
 
-                tags.add(tag)
-                all_ocr_tags.add(tag)
-                tags_with_positions.append({
-                    "tag": tag,
-                    "y": det.bbox[1],
-                    "x": det.bbox[0],
-                })
-                seen_tag_bbox[tag] = det.bbox
-                # Initial tag_match_info — match_type will be updated by
-                # TagMatcher later.
-                tag_match_info[tag] = TagMatchInfo(
-                    match_type="unmatched",
-                    score=0.0,
-                    ocr_text=text,
-                    matched_tag="",
-                    bbox=det.bbox,
-                    reason="Awaiting IO List match",
-                )
-                log_extraction(
-                    "classification",
-                    page=0, source="",
-                    text=text, bbox=det.bbox, confidence=det.confidence,
-                    category="Tag", reason="matched TAG_PATTERN",
-                    pattern_name="TAG_PATTERN", pattern_match=tag,
-                )
+                    tags.add(tag)
+                    all_ocr_tags.add(tag)
+                    tags_with_positions.append({
+                        "tag": tag,
+                        "y": det.bbox[1],
+                        "x": det.bbox[0],
+                    })
+                    seen_tag_bbox[tag] = det.bbox
+                    # Initial tag_match_info — match_type will be updated by
+                    # TagMatcher later.
+                    tag_match_info[tag] = TagMatchInfo(
+                        match_type="unmatched",
+                        score=0.0,
+                        ocr_text=text,
+                        matched_tag="",
+                        bbox=det.bbox,
+                        reason="Awaiting IO List match",
+                    )
+                    log_extraction(
+                        "classification",
+                        page=0, source="",
+                        text=text, bbox=det.bbox, confidence=det.confidence,
+                        category="Tag", reason="matched TAG_PATTERN",
+                        pattern_name="TAG_PATTERN", pattern_match=tag,
+                    )
                 continue
 
             # ── Cable description (checked AFTER tag) ─────────────

@@ -591,6 +591,10 @@ class TagJBExtractor:
             }
         return legacy
 
+    def set_progress_callback(self, callback: Any) -> None:
+        """Forward per-page and PDF-save progress to the task owner."""
+        self._processor.progress_callback = callback
+
     # ── Annotated PDF ──────────────────────────────────────────────
     def create_annotated_pdf(
         self,
@@ -600,7 +604,7 @@ class TagJBExtractor:
     ) -> Dict[str, int]:
         """Generate an annotated PDF with bounding boxes."""
         from .annotator import PDFAnnotator
-        annotator = PDFAnnotator(config=self._config)
+        annotator = PDFAnnotator(config=self._config, progress_callback=self._processor.progress_callback)
 
         # If we have results from a recent process_pdf call, use them;
         # otherwise re-run the pipeline.

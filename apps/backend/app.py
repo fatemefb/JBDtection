@@ -904,7 +904,29 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
                 logger.info(f"Task {task_id}: الگوهای ترمینال و سیم تنظیم شد")
         
         TaskManager.update_task(task_id, {'progress': 40})
-        
+
+        pdf_positions = {str(path): index for index, path in enumerate(pdf_paths)}
+        def update_pdf_progress(event):
+            current, total = event["current"], max(1, event["total"])
+            if current not in {0, 1, total} and current % 10:
+                return
+            stage = event["stage"]
+            ratio = min(1.0, current / total)
+            fraction = {"extract": 0.6 * ratio, "annotate": 0.6 + 0.3 * ratio,
+                        "save": 0.9 + 0.1 * ratio}[stage]
+            file_index = pdf_positions.get(event["pdf_path"], 0)
+            progress = 40 + int(35 * (file_index + fraction) / max(1, len(pdf_paths)))
+            TaskManager.update_task(task_id, {"progress": progress, "stage": stage})
+            if stage == "save":
+                action = "ذخیره PDF تمام شد" if current else "در حال ذخیره PDF"
+                message = f"{event['pdf_name']}: {action}"
+            else:
+                action = "استخراج متن" if stage == "extract" else "رسم کادرها"
+                message = f"{event['pdf_name']}: {action} — صفحه {current} از {total}"
+            append_task_log(task_id, message)
+        if hasattr(extractor, "set_progress_callback"):
+            extractor.set_progress_callback(update_pdf_progress)
+
         # پردازش فایل‌ها
         logger.info(f"Task {task_id}: شروع پردازش {len(pdf_paths)} فایل PDF")
 
@@ -1398,6 +1420,7 @@ def get_task_status(task_id):
         return jsonify({
             'status': task.get('status', 'pending'),
             'progress': task.get('progress', 0),
+            'stage': task.get('stage'),
             'result': task.get('result'),
             'error': task.get('error'),
             'run_id': task.get('run_id'),

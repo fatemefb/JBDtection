@@ -401,8 +401,8 @@ class ExcelExporter:
                             match_status = f"Exact Match (score: {info.score:.3f})"
                         elif info.match_type == "similar":
                             match_status = f"Similar Match (score: {info.score:.3f})"
-                        elif info.match_type == "unmatched":
-                            match_status = "Unmatched"
+                        elif info.match_type in {"unmatched", "unmatched_candidate"}:
+                            match_status = "Not in IO List (pattern candidate)"
 
                     row_warning = info.reason if info and info.match_type != "exact" else ""
                     if _jb_not_found:

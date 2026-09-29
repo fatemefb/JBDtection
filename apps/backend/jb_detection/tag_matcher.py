@@ -3,11 +3,12 @@
 A *much* simplified re-implementation of the original ``VectorMatcher``
 class. The original had triple-nested loops and a confusing mix of
 similarity metrics; this version exposes one clean entry point
-(:meth:`TagMatcher.match_tag`) that returns one of three outcomes:
+(:meth:`TagMatcher.match_tag`) that returns one of four outcomes:
 
 - ``("exact", 1.0, io_tag)``  — exact literal IO List match
 - ``("similar", score, io_tag)``  — similarity suggestion within a learned IO List family
-- ``("unmatched", score, closest_tag)`` — absent tag requiring review
+- ``("unmatched_candidate", score, closest_tag)`` — learned-pattern tag requiring review
+- ``("unmatched", 0.0, "")`` — outside the learned tag families
 
 The matcher is built from an Excel IO List via :meth:`build_from_excel`,
 which extracts tags from the ``Tag No`` column (case-insensitive) and
@@ -101,6 +102,8 @@ class TagMatcher:
         self.tag_vectors: Dict[str, Dict[str, float]] = {}
         self.io_patterns: Dict[str, re.Pattern] = {}
         self.reference_patterns: Dict[str, str] = {}
+        self.candidate_patterns: Dict[str, re.Pattern] = {}
+        self.reference_candidate_patterns: Dict[str, str] = {}
         self.tag_set_upper: Set[str] = set()
         # Track IO List tag in original case (for output)
         self.upper_to_original: Dict[str, str] = {}
@@ -161,6 +164,8 @@ class TagMatcher:
         self.upper_to_original.clear()
         self.io_patterns.clear()
         self.reference_patterns.clear()
+        self.candidate_patterns.clear()
+        self.reference_candidate_patterns.clear()
         for tag_upper in tags_upper:
             self.add_reference_tag(tag_upper)
 
@@ -189,12 +194,28 @@ class TagMatcher:
             r"(?<![A-Z0-9_./-])" + pattern + r"(?![A-Z0-9_./-])", re.IGNORECASE,
         )
 
+        # Candidate discovery is independent of the stricter similarity family.
+        # Keep learned letter segments/separators, allowing other serial widths
+        # and a terminal letter as in the legacy unmatched candidate phase.
+        core = re.sub(r"(?<=\d)[A-Z]$", "", tag)
+        candidate_pattern = "".join(
+            r"\d+" if part.isdigit() else re.escape(part)
+            for part in re.split(r"(\d+)", core) if part
+        )
+        if core and core[-1].isdigit():
+            candidate_pattern += r"[A-Z]?"
+        self.reference_candidate_patterns[tag] = candidate_pattern
+        self.candidate_patterns[candidate_pattern] = re.compile(
+            r"(?<![A-Z0-9_./-])" + candidate_pattern + r"(?![A-Z0-9_./-])", re.IGNORECASE,
+        )
+
     def matches_io_pattern(self, tag: str) -> bool:
-        return any(pattern.fullmatch(str(tag).strip()) for pattern in self.io_patterns.values())
+        """A learned candidate match does not require a similar IO reference."""
+        return any(pattern.fullmatch(str(tag).strip()) for pattern in self.candidate_patterns.values())
 
     def extract_candidates(self, text: str) -> List[str]:
         found = []
-        for pattern in self.io_patterns.values():
+        for pattern in self.candidate_patterns.values():
             found.extend((match.start(), match.group().upper()) for match in pattern.finditer(text))
         return list(dict.fromkeys(tag for _, tag in sorted(found)))
 
@@ -373,7 +394,9 @@ class TagMatcher:
         -------
         (match_type, score, matched_tag)
             ``match_type`` is one of ``"exact"``, ``"similar"``,
-            ``"unmatched"``. ``matched_tag`` is the IO List tag (or "").
+            ``"unmatched_candidate"`` (learned-pattern candidate), or
+            ``"unmatched"`` (outside the learned families). ``matched_tag`` is
+            a suggestion only when the result is not exact.
         """
         if not tag:
             return ("unmatched", 0.0, "")
@@ -392,11 +415,11 @@ class TagMatcher:
         if not self.matches_io_pattern(tag_upper):
             self.unmatched += 1
             return ("unmatched", 0.0, "")
-        families = {key for key, pattern in self.io_patterns.items() if pattern.fullmatch(tag_upper)}
+        families = {key for key, pattern in self.candidate_patterns.items() if pattern.fullmatch(tag_upper)}
         vector = self.create_tag_vector(tag_upper)
         best_score, best_io = 0.0, ""
         for io_tag in self.reference_tags:
-            if self.reference_patterns[io_tag] not in families:
+            if self.reference_candidate_patterns[io_tag] not in families:
                 continue
             lexical = self._levenshtein_ratio(tag_upper, io_tag)
             structural = self.calculate_similarity(vector, self.tag_vectors[io_tag])
@@ -404,11 +427,12 @@ class TagMatcher:
             score = min(0.999, (lexical + structural) / 2)
             if score > best_score:
                 best_score, best_io = score, io_tag
-        if best_io and best_score >= self.similarity_threshold:
+        strict_family = best_io and self.io_patterns[self.reference_patterns[best_io]].fullmatch(tag_upper)
+        if strict_family and best_score >= self.similarity_threshold:
             self.similar_matches += 1
             return ("similar", best_score, best_io)
         self.unmatched += 1
-        return ("unmatched", best_score, best_io)
+        return ("unmatched_candidate", best_score, best_io)
 
     def match_many(self, tags: List[str]) -> Dict[str, Tuple[str, float, str]]:
         """Match a batch using the same strict learned-pattern rules."""
