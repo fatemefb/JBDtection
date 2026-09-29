@@ -1,0 +1,441 @@
+"""JBDetection — PDF annotator.
+
+Generates an annotated PDF with color-coded bounding boxes for each
+detected category (Tag, JB, MC, Cable, SPARE).
+
+Color scheme (BGR):
+    - TAG     → green   (0, 200, 0)
+    - JB      → blue    (255, 100, 0)
+    - MC      → orange  (0, 165, 255)
+    - CABLE   → yellow  (0, 255, 255)
+    - SPARE   → gray    (128, 128, 128)
+    - UNKNOWN → red     (0, 0, 255)
+
+The annotator reads :class:`JBDetectionResult` objects (which contain
+:class:`TagMatchInfo` with bbox coordinates) and draws rectangles on
+the original PDF pages using PyMuPDF's drawing API.
+
+Coordinate system
+-----------------
+Bounding boxes in :class:`OcrDetection` / :class:`TagMatchInfo` are in
+**pixel** coordinates (relative to the rendered page image at a given
+DPI). PyMuPDF's drawing API uses **PDF point** coordinates (72 DPI).
+Conversion: ``point = pixel * 72 / dpi``.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import time
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+from .config import Config, DEFAULT_CONFIG
+from .models import JBDetectionResult, TagMatchInfo
+from .pattern_matcher import PatternMatcher
+from .progress import ProgressCallback, report_progress
+
+logger = logging.getLogger("jb_detection.annotator")
+
+
+# ── Category colors (RGB for PyMuPDF; converted from BGR config) ──────
+# PyMuPDF uses RGB tuples with float values in [0, 1] for shape drawing,
+# while OpenCV uses BGR with int values in [0, 255].
+# Our config stores BGR (for OpenCV compatibility), so we convert here:
+# BGR int → RGB float (normalize to [0, 1]).
+def _bgr_to_rgb_float(bgr: tuple) -> tuple:
+    """Convert BGR int (0-255) to RGB float (0.0-1.0) for PyMuPDF."""
+    return (bgr[2] / 255.0, bgr[1] / 255.0, bgr[0] / 255.0)
+
+
+CATEGORY_COLORS_RGB = {
+    "tag":    _bgr_to_rgb_float((0, 200, 0)),    # green
+    "jb":     _bgr_to_rgb_float((255, 100, 0)),  # blue
+    "mc":     _bgr_to_rgb_float((0, 165, 255)),  # orange
+    "cable":  _bgr_to_rgb_float((0, 255, 255)),  # yellow
+    "spare":  _bgr_to_rgb_float((128, 128, 128)),# gray
+    "unknown":_bgr_to_rgb_float((0, 0, 255)),    # red
+}
+
+# Default DPI for coordinate conversion when render DPI is unknown.
+_DEFAULT_DPI = 300
+
+
+class PDFAnnotator:
+    """Generate an annotated PDF with color-coded bounding boxes.
+
+    The annotator reads per-page :class:`JBDetectionResult` objects and
+    draws rectangles on the original PDF. Each category gets a distinct
+    color.
+
+    Usage
+    -----
+    ::
+
+        annotator = PDFAnnotator(config=config)
+        counts = annotator.annotate_pdf(
+            pdf_path="input.pdf",
+            page_results={1: result_page1, 2: result_page2},
+            output_path="annotated_output.pdf",
+            tag_to_number={"TE-5223": 1, "PT-1014": 2},
+            all_pdf_results={"input.pdf": {1: result_page1, 2: result_page2}},
+            pdf_name="input.pdf",
+        )
+    """
+
+    def __init__(self, config: Optional[Config] = None,
+                 progress_callback: Optional[ProgressCallback] = None) -> None:
+        if config is None:
+            config = DEFAULT_CONFIG
+        self._config = config
+        self.progress_callback = progress_callback
+        # Track the render DPI per page for coordinate conversion.
+        # If not provided, we assume config.pdf_dpi.
+        self._page_dpi: Dict[int, int] = {}
+
+    def annotate_pdf(
+        self,
+        pdf_path: str,
+        page_results: Dict[int, JBDetectionResult],
+        output_path: str,
+        tag_to_number: Optional[Dict[str, int]] = None,
+        all_pdf_results: Optional[Dict[str, Dict[int, JBDetectionResult]]] = None,
+        pdf_name: Optional[str] = None,
+        render_dpi: Optional[int] = None,
+    ) -> Dict[str, int]:
+        """Annotate a PDF with color-coded bounding boxes.
+
+        Parameters
+        ----------
+        pdf_path:
+            Path to the original PDF.
+        page_results:
+            ``{page_number: JBDetectionResult}`` — per-page detection
+            results. Page numbers are 1-indexed.
+        output_path:
+            Where to write the annotated PDF.
+        tag_to_number:
+            Master tag → number mapping (for labeling). Optional.
+        all_pdf_results:
+            All PDFs' results (for cross-PDF duplicate detection labels).
+            Optional — used only for logging.
+        pdf_name:
+            Filename of the PDF (for logging). Optional.
+        render_dpi:
+            The DPI at which pages were rendered when OCR'd. If ``None``,
+            uses ``config.pdf_dpi``. This is needed to convert pixel
+            coordinates back to PDF point coordinates for drawing.
+
+        Returns
+        -------
+        Dict[str, int]
+            Counts of annotations drawn per category:
+            ``{"tags": N, "jbs": N, "mcs": N, "cables": N, "spares": N}``.
+        """
+        p = Path(pdf_path)
+        if not p.exists():
+            raise FileNotFoundError(f"PDF not found: {pdf_path}")
+
+        if render_dpi is None:
+            render_dpi = self._config.pdf_dpi
+
+        try:
+            import fitz  # type: ignore
+        except Exception as exc:
+            raise RuntimeError(
+                f"PyMuPDF (fitz) not available: {exc}. "
+                f"Install with: pip install PyMuPDF"
+            ) from exc
+
+        tag_to_number = tag_to_number or {}
+        counts = {"tags": 0, "jbs": 0, "mcs": 0, "cables": 0, "spares": 0}
+
+        doc = fitz.open(str(p))
+        try:
+            page_count = len(doc)
+            scale = 72.0 / render_dpi  # pixel → point conversion
+
+            report_progress(self.progress_callback, "annotate", pdf_path, 0, len(page_results))
+            for completed, (page_number, result) in enumerate(page_results.items(), start=1):
+                if page_number < 1 or page_number > page_count:
+                    logger.warning(
+                        "Page %d out of range (1-%d) — skipping", page_number, page_count
+                    )
+                    continue
+
+                try:
+                    page = doc.load_page(page_number - 1)  # 0-indexed
+                    page_counts = self._annotate_page(
+                        page, result, tag_to_number, scale,
+                    )
+                    for k, v in page_counts.items():
+                        counts[k] = counts.get(k, 0) + v
+                except Exception as exc:
+                    logger.error(
+                        "Failed to annotate page %d of %s: %s",
+                        page_number, p.name, exc,
+                    )
+                finally:
+                    report_progress(self.progress_callback, "annotate", pdf_path, completed, len(page_results))
+
+            # Level 3 compares objects to find duplicates. Large CAD PDFs can
+            # have hundreds of thousands of objects, making that pass prohibitively
+            # expensive. Level 1 removes unused objects without duplicate matching.
+            os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+            logger.info("Saving annotated PDF: %s (%d pages, %d objects)",
+                        output_path, page_count, doc.xref_length())
+            report_progress(self.progress_callback, "save", pdf_path, 0, 1)
+            save_started = time.perf_counter()
+            doc.save(output_path, garbage=1, deflate=True)
+            logger.info("PDF save finished in %.2fs", time.perf_counter() - save_started)
+            report_progress(self.progress_callback, "save", pdf_path, 1, 1)
+            logger.info(
+                "Annotated PDF saved: %s (tags=%d, jbs=%d, mcs=%d, cables=%d, spares=%d)",
+                output_path, counts["tags"], counts["jbs"],
+                counts["mcs"], counts["cables"], counts["spares"],
+            )
+        finally:
+            try:
+                doc.close()
+            except Exception:
+                pass
+
+        return counts
+
+    # ── Per-page annotation ────────────────────────────────────────
+    def _annotate_page(
+        self,
+        page: "object",
+        result: JBDetectionResult,
+        tag_to_number: Dict[str, int],
+        scale: float,
+    ) -> Dict[str, int]:
+        """Draw bounding boxes on a single page.
+
+        Uses ``tag_match_info`` as the single source of truth for ALL
+        categories (JB, MC, Tag, SPARE). The ``match_type`` field on
+        each :class:`TagMatchInfo` determines the color:
+
+        - ``JB``       → blue
+        - ``MC``       → (not stored in tag_match_info; drawn from mc_identifiers)
+        - ``exact`` → green; ``similar`` → orange; ``unmatched`` → red
+        - ``SPARE``    → gray
+
+        Cables are drawn from ``cable_descriptions`` (they don't have
+        tag_match_info entries — their bboxes are stored separately
+        in the raw OCR data).
+        """
+        import fitz  # type: ignore
+
+        counts = {"tags": 0, "jbs": 0, "mcs": 0, "cables": 0, "spares": 0}
+
+        selected_cable = PatternMatcher.select_best_cable_description(result.cable_descriptions)
+
+        # ── Iterate tag_match_info — single source of truth ──────
+        # This dict contains JB, MC, SPARE, and Tag entries, each
+        # with its own bbox and match_type.
+        for key, info in result.tag_match_info.items():
+            bbox = info.bbox
+            if not bbox or bbox == (0, 0, 0, 0):
+                continue
+
+            rect = self._bbox_to_rect(bbox, scale)
+            match_type = info.match_type.upper()
+
+            if match_type == "JB":
+                color = CATEGORY_COLORS_RGB["jb"]
+                label = str(key)
+                counts["jbs"] += 1
+            elif match_type == "MC":
+                color = CATEGORY_COLORS_RGB["mc"]
+                label = str(key)
+                counts["mcs"] += 1
+            elif match_type == "CABLE":
+                if str(key).strip().upper() != selected_cable.strip().upper():
+                    continue
+                color = CATEGORY_COLORS_RGB["cable"]
+                label = str(key)
+                counts["cables"] += 1
+            elif match_type == "SPARE":
+                color = CATEGORY_COLORS_RGB["spare"]
+                label = info.matched_tag or "SPARE"
+                number = result.tag_to_number.get(key)
+                if number:
+                    label += f" #{number}"
+                counts["spares"] += 1
+            elif match_type in {"SIMILAR", "UNMATCHED", "UNMATCHED_CANDIDATE"}:
+                color = CATEGORY_COLORS_RGB["mc"] if match_type == "SIMILAR" else CATEGORY_COLORS_RGB["unknown"]
+                label = self._tag_label(str(key), info, tag_to_number)
+                counts["tags"] += 1
+            else:
+                # Exact IO List tags use green.
+                color = CATEGORY_COLORS_RGB["tag"]
+                label = self._tag_label(str(key), info, tag_to_number)
+                counts["tags"] += 1
+
+            self._draw_box(page, rect, color, label=label)
+
+        # ── JBs not in tag_match_info (fallback) ────────────────
+        for jb in result.jb_identifiers:
+            if jb in result.tag_match_info:
+                continue  # already drawn above
+            pos = result.tag_positions.get(jb)
+            if pos:
+                rect = self._pos_to_rect(pos, scale)
+                self._draw_box(page, rect, CATEGORY_COLORS_RGB["jb"], label=str(jb))
+                counts["jbs"] += 1
+
+        # ── MC identifiers not in tag_match_info (fallback) ──────
+        # Some MC identifiers may not have tag_match_info entries
+        # (e.g. if the MC was detected but not stored). Draw them
+        # from tag_positions if available.
+        for mc in result.mc_identifiers:
+            if mc in result.tag_match_info:
+                continue  # already drawn above
+            pos = result.tag_positions.get(mc)
+            if pos:
+                rect = self._pos_to_rect(pos, scale)
+                self._draw_box(page, rect, CATEGORY_COLORS_RGB["mc"], label=str(mc))
+                counts["mcs"] += 1
+
+        # ── Cables (yellow) ──────────────────────────────────────
+        # Cables are now stored in tag_match_info with match_type="Cable"
+        # and are drawn by the main loop above. This fallback handles
+        # any cables that somehow didn't get a tag_match_info entry.
+        for cable in [selected_cable] if selected_cable else []:
+            if cable in result.tag_match_info:
+                continue  # already drawn above
+            pos = result.tag_positions.get(cable)
+            if pos:
+                rect = self._pos_to_rect(pos, scale)
+                self._draw_box(page, rect, CATEGORY_COLORS_RGB["cable"], label=str(cable)[:20])
+                counts["cables"] += 1
+
+        # ── SPAREs not in tag_match_info (fallback) ─────────────
+        # Some spares may not have tag_match_info entries.
+        for sp in result.spare_positions:
+            if not isinstance(sp, dict):
+                continue
+            spare_text = sp.get("spare", sp.get("text", ""))
+            if not spare_text:
+                continue
+            occurrence_id = str(sp.get("id", spare_text))
+            if occurrence_id.upper() in {k.upper() for k in result.tag_match_info.keys()
+                                       if result.tag_match_info[k].match_type.upper() == "SPARE"}:
+                continue  # already drawn above
+            pos = (sp.get("y", 0), sp.get("x", 0))
+            if pos != (0, 0):
+                rect = self._pos_to_rect(pos, scale)
+                self._draw_box(page, rect, CATEGORY_COLORS_RGB["spare"], label=str(spare_text))
+                counts["spares"] += 1
+
+        return counts
+
+    # ── Drawing helpers ────────────────────────────────────────────
+    def _bbox_to_rect(
+        self,
+        bbox: Tuple[int, int, int, int],
+        scale: float,
+    ) -> "fitz.Rect":
+        """Convert a pixel bbox (x, y, w, h) to a PyMuPDF Rect in points."""
+        import fitz  # type: ignore
+        x, y, w, h = bbox
+        x0 = x * scale
+        y0 = y * scale
+        x1 = (x + w) * scale
+        y1 = (y + h) * scale
+        return fitz.Rect(x0, y0, x1, y1)
+
+    def _pos_to_rect(
+        self,
+        pos: Tuple[int, int],
+        scale: float,
+        default_size: int = 80,
+    ) -> "fitz.Rect":
+        """Convert a position (x, y) to a small Rect in points.
+
+        Used when only a position is known (not a full bbox). We draw
+        a small rectangle around the position.
+        """
+        import fitz  # type: ignore
+        x, y = pos[0], pos[1]
+        x0 = x * scale
+        y0 = y * scale
+        x1 = (x + default_size) * scale
+        y1 = (y + default_size) * scale
+        return fitz.Rect(x0, y0, x1, y1)
+
+    def _draw_box(
+        self,
+        page: "object",
+        rect: "fitz.Rect",
+        color: tuple,
+        label: Optional[str] = None,
+    ) -> None:
+        """Draw a colored rectangle + optional label on the page.
+
+        Place readable labels above the box, or below near the page top.
+        """
+        import fitz  # type: ignore
+
+        # Draw the rectangle (1.5 point border, no fill)
+        page.draw_rect(
+            rect,
+            color=color,
+            fill=None,
+            width=1.5,
+            overlay=True,
+        )
+
+        if label:
+            try:
+                text = str(label)[:80]
+                font = fitz.Font("helv")
+                fontsize = 7
+                padding, gap = 2, 3
+                bounds = page.rect
+                available_width = bounds.width - 4 * padding
+                text_width = font.text_length(text, fontsize=fontsize)
+                if text_width > available_width:
+                    fontsize *= available_width / text_width
+                    text_width = font.text_length(text, fontsize=fontsize)
+                height = (font.ascender - font.descender) * fontsize + 2 * padding
+                x = max(bounds.x0 + padding, min(rect.x0, bounds.x1 - text_width - 3 * padding))
+                y = rect.y0 - gap - height
+                if y < bounds.y0:
+                    y = rect.y1 + gap
+                # White backing separates the label from drawing lines.
+                backing = fitz.Rect(x, y, x + text_width + 2 * padding, y + height)
+                page.draw_rect(backing, color=None, fill=(1, 1, 1), overlay=True)
+                page.insert_text(
+                    fitz.Point(x + padding, y + padding + font.ascender * fontsize),
+                    text,
+                    fontsize=fontsize,
+                    color=(0, 0, 0),
+                    overlay=True,
+                )
+            except Exception as exc:
+                logger.debug("Failed to insert label '%s': %s", label, exc)
+
+    def _tag_label(
+        self,
+        tag: str,
+        info: TagMatchInfo,
+        tag_to_number: Dict[str, int],
+    ) -> str:
+        """Build a label for a tag annotation."""
+        parts = [str(tag)]
+        num = tag_to_number.get(tag) or tag_to_number.get(info.matched_tag)
+        if num:
+            parts.append(f"#{num}")
+        if info.match_type == "exact":
+            parts.append("[E]")
+        elif info.match_type == "similar":
+            parts.append(f"[S:{info.score:.1%}]")
+        elif info.match_type in {"unmatched", "unmatched_candidate"}:
+            parts.append(f"[NOT IN IO:{info.score:.1%}]")
+        return " ".join(parts)
+
+
+__all__ = ["PDFAnnotator", "CATEGORY_COLORS_RGB"]

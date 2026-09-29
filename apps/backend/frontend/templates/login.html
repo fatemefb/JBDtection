@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ورود به سیستم تشخیص JB</title>
+    <link rel="icon" href="{{ url_for('static', filename='images/favicon.png') }}" type="image/png">
+    <link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.png') }}" type="image/png">
+    <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/favicon.png') }}">
+    <link rel="name" href="{{ url_for('static', filename='images/JBD.png') }}" type="image/png">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/login.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <div class="login-wrapper">
+            <div class="login-header">
+                <div class="logo">
+                    <!-- جایگزین کردن آیکون با تصویر لوگو -->
+                    <div class="logo-icon">
+                        <img src="{{ url_for('static', filename='images/favicon.png') }}" alt="JB Detection Logo">
+                    </div>
+                    <!-- جایگزین کردن متن با تصویر -->
+                    <div id="title" class="title-image-container">
+                        <img src="{{ url_for('static', filename='images/JBD.png') }}" alt="JBDtection System" class="title-image">
+                    </div>
+                </div>
+                <p id="subtitle">سیستم پیشرفته شناسایی و تطابق تگ‌های PDF و Excel</p>
+                <div class="topbar">
+                    <div class="lang-switch">
+                        <button id="faBtn" class="lang-btn active">فارسی</button>
+                        <button id="enBtn" class="lang-btn">English</button>
+                    </div>
+                    <div class="theme-switch">
+                        <button id="themeBtn" class="theme-btn"><i class="fas fa-moon"></i></button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="login-form">
+                <form id="loginForm">
+                    <div class="form-group">
+                        <label for="username" id="username-label">نام کاربری</label>
+                        <div class="input-with-icon">
+                            <i class="fas fa-user"></i>
+                            <input type="text" id="username" name="username" placeholder="نام کاربری خود را وارد کنید" required>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="password" id="password-label">رمز عبور</label>
+                        <div class="input-with-icon">
+                            <i class="fas fa-lock"></i>
+                            <input type="password" id="password" name="password" placeholder="رمز عبور خود را وارد کنید" required>
+                        </div>
+                    </div>
+                    
+                    <div class="form-options">
+                        <div class="remember-me">
+                            <input type="checkbox" id="remember" name="remember">
+                            <label for="remember" id="remember-label">مرا به خاطر بسپار</label>
+                        </div>
+                        <a href="#" id="forgot-password">فراموشی رمز عبور؟</a>
+                    </div>
+                    
+                    <button type="submit" class="login-btn" id="login-btn">
+                        <i class="fas fa-sign-in-alt"></i>
+                        <span id="login-text">ورود به سیستم</span>
+                    </button>
+                    
+                    <div id="error-message" class="error-message"></div>
+                </form>
+            </div>
+            
+            <div class="login-footer">
+                <p id="footer-text">&copy; 2025 سیستم تشخیص JB. تمامی حقوق محفوظ است.</p>
+            </div>
+        </div>
+        
+        <div class="features-panel">
+            <div class="feature-item">
+                <div class="feature-icon">
+                    <i class="fas fa-search"></i>
+                </div>
+                <h3 id="feature-1-title">شناسایی هوشمند تگ‌ها</h3>
+                <p id="feature-1-desc">با استفاده از فناوری OCR پیشرفته، تگ‌های موجود در فایل‌های PDF را به صورت خودکار شناسایی می‌کند.</p>
+            </div>
+            
+            <div class="feature-item">
+                <div class="feature-icon">
+                    <i class="fas fa-link"></i>
+                </div>
+                <h3 id="feature-2-title">تطابق خودکار با اطلاعات Excel</h3>
+                <p id="feature-2-desc">اطلاعات استخراج شده از PDF را با فایل‌های Excel مطابقت داده و نتایج را به صورت دقیق گزارش می‌دهد.</p>
+            </div>
+            
+            <div class="feature-item">
+                <div class="feature-icon">
+                    <i class="fas fa-file-export"></i>
+                </div>
+                <h3 id="feature-3-title">خروجی حرفه‌ای</h3>
+                <p id="feature-3-desc">نتایج را به صورت فایل‌های PDF حاشیه‌نویسی شده و گزارش‌های Excel ارائه می‌دهد.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // Translation object
+    const translations = {
+        'fa': {
+            'title': 'سیستم تشخیص JB',
+            'subtitle': 'سیستم پیشرفته شناسایی و تطابق تگ‌های PDF و Excel',
+            'username-label': 'نام کاربری',
+            'password-label': 'رمز عبور',
+            'username-placeholder': 'نام کاربری خود را وارد کنید',
+            'password-placeholder': 'رمز عبور خود را وارد کنید',
+            'remember-label': 'مرا به خاطر بسپار',
+            'forgot-password': 'فراموشی رمز عبور؟',
+            'login-text': 'ورود به سیستم',
+            'footer-text': '&copy; 2025 سیستم تشخیص JB. تمامی حقوق محفوظ است.',
+            'feature-1-title': 'شناسایی هوشمند تگ‌ها',
+            'feature-1-desc': 'با استفاده از فناوری OCR پیشرفته، تگ‌های موجود در فایل‌های PDF را به صورت خودکار شناسایی می‌کند.',
+            'feature-2-title': 'تطابق خودکار با اطلاعات Excel',
+            'feature-2-desc': 'اطلاعات استخراج شده از PDF را با فایل‌های Excel مطابقت داده و نتایج را به صورت دقیق گزارش می‌دهد.',
+            'feature-3-title': 'خروجی حرفه‌ای',
+            'feature-3-desc': 'نتایج را به صورت فایل‌های PDF حاشیه‌نویسی شده و گزارش‌های Excel ارائه می‌دهد.',
+            'error-empty': 'لطفاً تمام فیلدها را پر کنید',
+            'error-invalid': 'نام کاربری یا رمز عبور اشتباه است'
+        },
+        'en': {
+            'title': 'JB Detection System',
+            'subtitle': 'Advanced PDF and Excel Tag Detection and Matching System',
+            'username-label': 'Username',
+            'password-label': 'Password',
+            'username-placeholder': 'Enter your username',
+            'password-placeholder': 'Enter your password',
+            'remember-label': 'Remember me',
+            'forgot-password': 'Forgot password?',
+            'login-text': 'Sign In',
+            'footer-text': '&copy; 2025 JB Detection System. All rights reserved.',
+            'feature-1-title': 'Smart Tag Detection',
+            'feature-1-desc': 'Using advanced OCR technology, automatically identifies tags in PDF files.',
+            'feature-2-title': 'Automatic Excel Matching',
+            'feature-2-desc': 'Matches extracted information from PDFs with Excel files and provides accurate reports.',
+            'feature-3-title': 'Professional Output',
+            'feature-3-desc': 'Delivers results as annotated PDF files and Excel reports.',
+            'error-empty': 'Please fill in all fields',
+            'error-invalid': 'Invalid username or password'
+        }
+    };
+
+    // Theme and language switch logic
+    const themeBtn = document.getElementById('themeBtn');
+    const faBtn = document.getElementById('faBtn');
+    const enBtn = document.getElementById('enBtn');
+    let currentTheme = localStorage.getItem('theme') || 'light';
+    let currentLang = localStorage.getItem('lang') || 'fa';
+
+    // Set theme function
+    function setTheme(theme) {
+        document.body.classList.remove('light', 'dark');
+        document.body.classList.add(theme);
+        themeBtn.innerHTML = theme === 'dark' ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
+        const logoImg = document.querySelector('.logo-icon img');
+
+        if (logoImg) logoImg.src = theme === 'dark' ? '/static/images/favicon.png' : '/static/images/favicon2.png';
+
+    }
+
+    // Set language function
+    function setLang(lang) {
+        faBtn.classList.toggle('active', lang === 'fa');
+        enBtn.classList.toggle('active', lang === 'en');
+        document.documentElement.dir = lang === 'fa' ? 'rtl' : 'ltr';
+        currentLang = lang;
+
+        // Update all text elements
+        // متن عنوان دیگر تغییر نمی‌کند چون به تصویر تبدیل شده است
+        document.getElementById('subtitle').textContent = translations[lang]['subtitle'];
+        document.getElementById('username-label').textContent = translations[lang]['username-label'];
+        document.getElementById('password-label').textContent = translations[lang]['password-label'];
+        document.getElementById('username').placeholder = translations[lang]['username-placeholder'];
+        document.getElementById('password').placeholder = translations[lang]['password-placeholder'];
+        document.getElementById('remember-label').textContent = translations[lang]['remember-label'];
+        document.getElementById('forgot-password').textContent = translations[lang]['forgot-password'];
+        document.getElementById('login-text').textContent = translations[lang]['login-text'];
+        document.getElementById('footer-text').innerHTML = translations[lang]['footer-text'];
+        document.getElementById('feature-1-title').textContent = translations[lang]['feature-1-title'];
+        document.getElementById('feature-1-desc').textContent = translations[lang]['feature-1-desc'];
+        document.getElementById('feature-2-title').textContent = translations[lang]['feature-2-title'];
+        document.getElementById('feature-2-desc').textContent = translations[lang]['feature-2-desc'];
+        document.getElementById('feature-3-title').textContent = translations[lang]['feature-3-title'];
+        document.getElementById('feature-3-desc').textContent = translations[lang]['feature-3-desc'];
+        
+        localStorage.setItem('lang', lang);
+    }
+
+    // Theme toggle event
+    themeBtn.addEventListener('click', () => {
+        currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+        setTheme(currentTheme);
+    });
+
+    // Language toggle events
+    faBtn.addEventListener('click', () => {
+        setLang('fa');
+    });
+
+    enBtn.addEventListener('click', () => {
+        setLang('en');
+    });
+
+    // Initialize theme and language
+    setTheme(currentTheme);
+    setLang(currentLang);
+
+    // Login form handling
+    document.getElementById('loginForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value.trim();
+        const errorMessage = document.getElementById('error-message');
+        
+        // Simple validation
+        if (!username || !password) {
+            errorMessage.textContent = translations[currentLang]['error-empty'];
+            return;
+        }
+        
+        // ارسال درخواست به سرور برای احراز هویت
+        fetch('/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                // هدایت به صفحه خانه
+                window.location.href = '/home';
+            } else {
+                errorMessage.textContent = translations[currentLang]['error-invalid'];
+                
+                // انیمیشن لرزش برای خطا
+                const form = document.querySelector('.login-form');
+                form.classList.add('shake');
+                setTimeout(() => {
+                    form.classList.remove('shake');
+                }, 500);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            errorMessage.textContent = 'خطا در ارتباط با سرور';
+        });
+    });
+
+    // Add ripple effect to buttons
+    function createRipple(event, element) {
+        const circle = document.createElement('span');
+        const diameter = Math.max(element.clientWidth, element.clientHeight);
+        const radius = diameter / 2;
+        
+        const rect = element.getBoundingClientRect();
+        
+        circle.style.width = circle.style.height = `${diameter}px`;
+        circle.style.left = `${event.clientX - rect.left - radius}px`;
+        circle.style.top = `${event.clientY - rect.top - radius}px`;
+        circle.classList.add('ripple');
+        
+        const ripple = element.getElementsByClassName('ripple')[0];
+        if (ripple) {
+            ripple.remove();
+        }
+        
+        element.appendChild(circle);
+        
+        setTimeout(() => {
+            circle.remove();
+        }, 600);
+    }
+
+    // Add ripple effect to buttons
+    document.querySelectorAll('button, .login-btn').forEach(button => {
+        button.addEventListener('click', function(e) {
+            createRipple(e, this);
+        });
+    });
+
+    // Add shake animation style
+    document.addEventListener('DOMContentLoaded', () => {
+        // اضافه کردن انیمیشن چرخش به لوگو در هنگام بارگذاری صفحه
+        const logoIcon = document.querySelector('.logo-icon');
+        if (logoIcon) {
+            logoIcon.classList.add('initial-load');
+            
+            // حذف کلاس انیمیشن پس از اتمام آن
+            setTimeout(() => {
+                logoIcon.classList.remove('initial-load');
+            }, 1500);
+        }
+    });
+
+    // Add auto-fill animation
+    const inputs = document.querySelectorAll('input');
+    inputs.forEach(input => {
+        input.addEventListener('input', function() {
+            if (this.value !== '') {
+                this.classList.add('has-value');
+            } else {
+                this.classList.remove('has-value');
+            }
+        });
+    });
+    </script>
+</body>
+</html>

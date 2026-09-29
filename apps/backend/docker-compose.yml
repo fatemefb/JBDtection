@@ -1,0 +1,172 @@
+# ═══════════════════════════════════════════════════════════════════════
+# JBDetection — Docker Compose (GPU-only production)
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Gunicorn worker strategy (SINGLE GPU)
+# --------------------------------------
+# PaddleOCR loads a multi-hundred-MB model into GPU memory. Spawning
+# multiple independent gunicorn workers on a single GPU would:
+#   1. Duplicate the model N times in GPU memory (OOM risk).
+#   2. Serialize CUDA kernel launches anyway (single GPU context).
+#   3. Multiply first-request latency (each worker initialises lazily).
+#
+# Strategy:
+#   • 1 gunicorn worker (preload_app=True so the OCR model loads ONCE)
+#   • Multiple threads handle concurrent HTTP requests
+#   • PaddleOCR's internal thread-lock serialises the actual OCR calls
+#     (PaddleOCR 2.10.0 is NOT thread-safe — see detector.py:_call_lock)
+#
+# Tune JBDET_OCR_THREADS to control OCR concurrency (default: 1).
+# ═══════════════════════════════════════════════════════════════════════
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: vakav_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vakav
+      POSTGRES_USER: vakav
+      POSTGRES_PASSWORD: vakav_strong_password_change_me
+      TZ: Asia/Tehran
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vakav -d vakav"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - vakav_net
+
+  jbdetection_v1:
+    container_name: jbdetection_v1
+    build:
+      context: ../..
+      dockerfile: apps/backend/Dockerfile
+    image: jbdetection-image-v1:${IMAGE_TAG:-latest}
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./outputs_v1:/home/devio/JB-outputs
+      - ./logs_v1:/home/devio/JB-logs
+    environment:
+      - PYTHONPATH=/app
+      - FLASK_ENV=production
+      - TZ=Asia/Tehran
+      - DATABASE_URL=postgresql+psycopg2://vakav:vakav_strong_password_change_me@postgres:5432/vakav
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # PaddleOCR crash workaround (PaddlePaddle 2.6.x on Python 3.12+)
+      - LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libz.so.1
+      # GPU validation — set to 1 to allow CPU fallback (for testing without GPU).
+      # Remove this line for production GPU deployment.
+      - JBDET_ALLOW_CPU=1
+    # GPU passthrough — requires NVIDIA Container Toolkit on the host.
+    gpus: all
+    runtime: nvidia
+    user: "1000:1000"
+    cap_add:
+      - SYS_ADMIN
+      - DAC_READ_SEARCH
+    security_opt:
+      - apparmor:unconfined
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - vakav_net
+    # Gunicorn: 1 worker, multiple threads (single-GPU strategy).
+    # --preload loads the OCR model ONCE in the master process and
+    # shares it with the worker (saves GPU memory + startup time).
+    # If --preload causes issues with the lazy TextDetector singleton,
+    # remove it — the singleton will then init on first request.
+    command: >
+      gunicorn apps.backend.app:app
+        -b 0.0.0.0:5000
+        --workers=1
+        --threads=4
+        --timeout=3600
+        --graceful-timeout=3600
+        --keep-alive=5
+        --max-requests=500
+        --max-requests-jitter=50
+        --worker-class=gthread
+        --log-level=info
+        --access-logfile=-
+        --error-logfile=-
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 8G
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  jbdetection_test:
+    container_name: jbdetection_test
+    build:
+      context: ../..
+      dockerfile: apps/backend/Dockerfile
+    image: jbdetection-image-test:${IMAGE_TAG:-test}
+    ports:
+      - "5001:5000"
+    volumes:
+      - ./outputs_test:/home/devio/JB-outputs
+      - ./logs_test:/home/devio/JB-logs
+    environment:
+      - PYTHONPATH=/app
+      - FLASK_ENV=development
+      - TZ=Asia/Tehran
+      - DATABASE_URL=postgresql+psycopg2://vakav:vakav_strong_password_change_me@postgres:5432/vakav
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libz.so.1
+    gpus: all
+    runtime: nvidia
+    user: "1000:1000"
+    cap_add:
+      - SYS_ADMIN
+      - DAC_READ_SEARCH
+    security_opt:
+      - apparmor:unconfined
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - vakav_net
+    command: >
+      gunicorn apps.backend.app:app
+        -b 0.0.0.0:5000
+        --workers=1
+        --threads=2
+        --timeout=3600
+        --graceful-timeout=3600
+        --keep-alive=5
+        --max-requests=200
+        --max-requests-jitter=20
+        --worker-class=gthread
+        --log-level=debug
+        --access-logfile=-
+        --error-logfile=-
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  postgres_data:
+
+networks:
+  vakav_net:
+    driver: bridge
