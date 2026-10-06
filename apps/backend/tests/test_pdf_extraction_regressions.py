@@ -15,6 +15,7 @@ from jb_detection.config import Config
 from jb_detection.excel_exporter import ExcelExporter
 from jb_detection.models import JBDetectionResult, OcrDetection
 from jb_detection.pattern_matcher import PatternMatcher
+from jb_detection.tag_matcher import TagMatcher
 from jb_detection.unified_pdf_processor import UnifiedPdfProcessor
 
 
@@ -144,6 +145,78 @@ class PdfExtractionRegressions(unittest.TestCase):
         tag_prefix = PatternMatcher(jb_examples='1201JR')
         self.assertEqual(tag_prefix.match([detection('1201JRS01')]).jb_identifiers, set())
 
+    def test_jb_and_mc_identifiers_allow_attached_terminal_letters(self):
+        matcher = PatternMatcher(jb_examples='JSF,JDF', mc_examples='NC')
+        result = matcher.match([
+            detection('JSF-227S'), detection('JDF-215S', 50),
+            detection('NC-JSF-227S', 80),
+        ])
+        self.assertEqual(result.jb_identifiers, {'JSF-227S', 'JDF-215S'})
+        self.assertEqual(result.mc_identifiers, {'NC-JSF-227S'})
+
+    def test_page61_header_and_space_separated_numeric_tag_suffixes(self):
+        matcher = PatternMatcher(jb_examples='JAF', mc_examples='NC', spare_examples='SPARE')
+        result = matcher.match([
+            detection('JAF-225S'), detection('NC-JAF-225S', 40),
+            detection('FT-2150', 100), detection('FV-2150', 130),
+            detection('TT-2232', 160), detection('FV-2233 1', 190),
+            detection('FV-2233 2', 220), detection('TV-7071A', 250),
+            detection('TV-7071B', 280), detection('HV-2225 1', 310),
+            detection('HV-2225 2', 340), detection('FT-2111', 370),
+            detection('PV-2224', 400),
+        ])
+        self.assertEqual(result.jb_identifiers, {'JAF-225S'})
+        self.assertEqual(result.mc_identifiers, {'NC-JAF-225S'})
+        self.assertEqual(result.tags, {
+            'FT-2150', 'FV-2150', 'TT-2232', 'FV-2233 1', 'FV-2233 2',
+            'TV-7071A', 'TV-7071B', 'HV-2225 1', 'HV-2225 2',
+            'FT-2111', 'PV-2224',
+        })
+
+        # The IO/profile candidate extractor may initially return the base;
+        # the space separated digit must remain attached to the OCR identity.
+        io_matcher = TagMatcher(config=self.config)
+        io_matcher.add_reference_tag('FV-2233')
+        matcher.io_tag_matcher = io_matcher
+        with_io = matcher.match([detection('FV-2233 1')])
+        self.assertEqual(with_io.tags, {'FV-2233 1'})
+
+        ocr_separator_variant = PatternMatcher().match([detection('Fv.2233 1')])
+        self.assertEqual(ocr_separator_variant.tags, {'FV-2233 1'})
+
+        output = str(self.directory / 'page61-tags.xlsx')
+        ExcelExporter(config=self.config).create_intermediate_excel(
+            {'page61.pdf': {61: result.to_tuple()}}, output,
+        )
+        rows = pd.read_excel(output)
+        names = set(rows['Tag/SPARE'].astype(str))
+        self.assertTrue({'FV-2233 1', 'FV-2233 2', 'HV-2225 1', 'HV-2225 2'}.issubset(names))
+
+    def test_date_and_ingress_rating_are_not_recovered_as_tags(self):
+        matcher = PatternMatcher()
+        io_matcher = TagMatcher(config=self.config)
+        io_matcher.add_reference_tag('PT-1234')
+        matcher.io_tag_matcher = io_matcher
+
+        result = matcher.match([
+            detection('02-Jul-2025'), detection('22-May-2023', 50),
+            detection('2025-07-02', 80), detection('IP65', 110),
+            detection('PT-1234', 140),
+        ])
+
+        self.assertEqual(result.tags, {'PT-1234'})
+        for token in ('02-JUL-2025', '22-MAY-2023', '2025-07-02', 'IP65', 'IP-65'):
+            self.assertTrue(matcher._is_non_tag_pattern(token), token)
+        self.assertFalse(matcher._is_non_tag_pattern('PT-1234'))
+
+    def test_numeric_prefixed_jb_example_accepts_split_prefix(self):
+        matcher = PatternMatcher(jb_examples='1201JM')
+        result = matcher.match([detection('JM506')])
+        # The configured numeric area prefix is part of the JB identity even
+        # when OCR split or dropped it from this text span.
+        self.assertEqual(result.jb_identifiers, {'1201JM506'})
+        self.assertEqual(result.tags, set())
+
     def test_explicitly_empty_patterns_disable_categories(self):
         matcher = PatternMatcher(jb_examples='', mc_examples='', spare_examples='', cable_examples='')
         result = matcher.match([detection('JB-101'), detection('MC-101', 50),
@@ -152,7 +225,7 @@ class PdfExtractionRegressions(unittest.TestCase):
         self.assertEqual(result.mc_identifiers, set())
         self.assertEqual(result.spare_identifiers, [])
 
-    def test_tags_share_one_number_but_spares_each_get_a_number(self):
+    def test_repeated_identical_tags_share_number_and_spares_each_get_a_number(self):
         result = PatternMatcher().match([
             detection('TE-5223', 10), detection('TE-5223', 30),
             detection('SPARE', 50), detection('SPARE', 70),
@@ -253,6 +326,15 @@ class PdfExtractionRegressions(unittest.TestCase):
             {'tag': 'TE_5223', 'y': 40, 'x': 20},
         ])
         self.assertEqual(numbers, {'TE-5223': 1, 'TE_5223': 1})
+
+    def test_cable_on_same_row_does_not_consume_tag_number(self):
+        matcher = PatternMatcher(jb_examples='JB', mc_examples='IC', cable_examples='12P')
+        numbers = matcher.assign_tag_numbers_by_position([
+            {'tag': 'FRT-12PX2.5MM2', 'y': 20, 'x': 20},
+            {'tag': 'FT-12118', 'y': 20, 'x': 500},
+            {'tag': 'FT-12218', 'y': 40, 'x': 500},
+        ])
+        self.assertEqual(numbers, {'FT-12118': 1, 'FT-12218': 2})
 
     def test_spare_and_tag_share_legacy_position_order(self):
         result = PatternMatcher().match([detection('SPARE', 20), detection('TE-5223', 40)])

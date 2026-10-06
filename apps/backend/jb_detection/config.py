@@ -194,11 +194,12 @@ INSTRUMENT_PREFIXES: List[str] = [
     "YIC", "YIT", "YS", "YSD", "YSL",
 ]
 
-# Tag pattern: matches ISA-5.1 instrument tags like TE-5223, PT-1014-A, FCV-101.
-# Two-three letter prefix, hyphen, digits, optional suffix.
+# Tag pattern: matches ISA-5.1 instrument tags like TE-5223, PT-1014-A,
+# FCV-101, terminal channel letters (TV-7071A), and a spaced numeric
+# suffix when the drawing prints the channel separately (FV-2233 1).
 # NOTE: group(1) captures the full tag (required by PatternMatcher.match()).
 TAG_PATTERN: re.Pattern = re.compile(
-    r"\b([A-Z]{2,5}-\d{2,4}(?:-\d{1,4})?(?:-[A-Z])?)\b",
+    r"\b([A-Z]{2,5}[-._]\d{2,4}(?:[-._]\d{1,4})?(?:[-._][A-Z])?(?:[A-Z]{1,2})?(?:\s+\d{1,3})?)\b",
     re.IGNORECASE,
 )
 

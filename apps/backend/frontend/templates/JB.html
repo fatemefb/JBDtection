@@ -12,6 +12,44 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/global.css', v=asset_v) }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <script src="{{ url_for('static', filename='js/ui_preferences.js', v=asset_v) }}"></script>
+
+    <!-- ===== QUICK ENTRY (ورود سریع) : CSS ===== -->
+    <style>
+    .qe-card{margin:0 0 18px;padding:14px;border:1px solid var(--border,rgba(0,20,60,.12));border-radius:12px;background:var(--bg-card,#fff)}
+    .qe-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-weight:600}
+    .qe-head small{font-weight:400;opacity:.65}
+    .qe-box{position:relative;border:1px solid var(--border,rgba(0,20,60,.18));border-radius:10px;background:var(--bg-soft,#f6f8fc)}
+    .qe-box:focus-within{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.15)}
+    .qe-hl,.qe-input{font-size:15px;line-height:22px;font-family:inherit;padding:9px 12px;margin:0;border:0;letter-spacing:normal;
+      white-space:pre;overflow:hidden;box-sizing:border-box;width:100%}
+    .qe-hl{position:absolute;inset:0;pointer-events:none;color:var(--text,#0c1b33)}
+    .qe-input{position:relative;display:block;background:transparent;color:transparent;caret-color:var(--text,#0c1b33);outline:none}
+    .qe-input::placeholder{color:var(--text-muted,#7b8aa6)}
+    .qe-hl span{border-radius:5px;padding:1px 0}
+    .qe-hl .qe-project{background:#e0f2fe;color:#075985}
+    .qe-hl .qe-key{font-weight:700}
+    .qe-hl .qe-jb{background:#dbeafe;color:#1d4ed8}
+    .qe-hl .qe-mc{background:#ede9fe;color:#6d28d9}
+    .qe-hl .qe-spare{background:#fef3c7;color:#92400e}
+    .qe-hl .qe-cable{background:#dcfce7;color:#166534}
+    .qe-hl .qe-terminal{background:#ffedd5;color:#9a3412}
+    .qe-hl .qe-wire{background:#fce7f3;color:#9d174d}
+    .qe-hl .qe-unknown{background:#fee2e2;color:#991b1b;text-decoration:underline wavy}
+    .qe-pop{position:absolute;z-index:50;top:100%;inset-inline-start:0;margin-top:6px;min-width:260px;max-width:100%;
+      background:var(--bg-card,#fff);border:1px solid var(--border,rgba(0,20,60,.15));border-radius:10px;
+      box-shadow:0 8px 24px rgba(0,0,0,.15);padding:4px;display:none}
+    .qe-pop.open{display:block}
+    .qe-item{display:flex;gap:10px;align-items:center;padding:7px 10px;border-radius:7px;cursor:pointer;font-size:13px}
+    .qe-item.active,.qe-item:hover{background:rgba(59,130,246,.12)}
+    .qe-item kbd{font-family:monospace;font-size:12px;padding:1px 6px;border:1px solid var(--border,#ccd);border-radius:5px}
+    .qe-item small{opacity:.6;margin-inline-start:auto}
+    .qe-summary{margin-top:10px;font-size:12px;opacity:.9}
+    .qe-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+    .qe-chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:12px;border:1px solid currentColor}
+    .qe-chip button{all:unset;cursor:pointer;opacity:.7;font-size:14px;line-height:1}
+    .qe-chip button:hover{opacity:1}
+    .qe-legend{margin-top:8px;font-size:11px;opacity:.65}
+    </style>
 </head>
 <body class="home-body io-body jb-body">
     <div class="home-shell">
@@ -174,6 +212,30 @@
 
                     <div id="honeywellFormWrapper">
                     <h2 id="upload-title"><i class="fas fa-file-upload"></i> بارگذاری فایل‌ها</h2>
+
+                    <!-- ===== QUICK ENTRY (ورود سریع) : HTML — بیرون از form تا Enter فرم را submit نکند ===== -->
+                    <div class="qe-card" id="qeCard">
+                        <div class="qe-head">
+                            <i class="fas fa-wand-magic-sparkles"></i>
+                            <span id="qe-title">ورود سریع</span>
+                            <small id="qe-sub">یک خط بنویس — خودش به فیلدهای فرم تبدیل می‌شود</small>
+                        </div>
+                        <div class="qe-box" id="qeBox">
+                            <div class="qe-hl" id="qeHl" aria-hidden="true"></div>
+                            <input class="qe-input" id="qeInput" type="text" autocomplete="off" spellcheck="false"
+                                   placeholder="Siemens_001 /jb JB, JM /mc MC /spare SPARE /cable 12P, 8P /terminal ... /wire ...">
+                            <div class="qe-pop" id="qePop"></div>
+                        </div>
+                        <div class="qe-summary" id="qeSummary" style="display:none">
+                            <span id="qe-saved-label">اعمال می‌شود به‌صورت:</span>
+                            <div class="qe-chips" id="qeChips"></div>
+                        </div>
+                        <div class="qe-legend" id="qeLegend">
+                            متن اول = نام پروژه · <b>/</b> = انتخاب فیلد (jb, mc, spare, cable, terminal, wire) · مقدارها را با ویرگول جدا کن ·
+                            ↑↓ انتخاب، Enter/Tab تأیید، Esc بستن
+                        </div>
+                    </div>
+
                     <form id="processForm" method="post" action="/process" enctype="multipart/form-data">
                         <!-- بخش اطلاعات پروژه -->
                         <div class="pattern-group">
@@ -818,6 +880,9 @@
                 'siemens-result-title': 'نتیجه‌ی پردازش Siemens',
                 'siemens-matched-label': 'تگ‌های پیدا شده',
                 'siemens-unmatched-label': 'تگ‌های پیدا نشده',
+                'qe-title': 'ورود سریع',
+                'qe-sub': 'یک خط بنویس — خودش به فیلدهای فرم تبدیل می‌شود',
+                'qe-saved-label': 'اعمال می‌شود به‌صورت:',
             },
             'en': {
                 'title': 'JBDetection Module',
@@ -960,6 +1025,9 @@
                 'siemens-result-title': 'Siemens Processing Result',
                 'siemens-matched-label': 'Matched tags',
                 'siemens-unmatched-label': 'Unmatched tags',
+                'qe-title': 'Quick Entry',
+                'qe-sub': 'Type one line — it turns into form fields',
+                'qe-saved-label': 'Applied as:',
             },
         };
 
@@ -1264,6 +1332,8 @@
             } else {
                 localStorage.setItem('lang', lang);
             }
+            // ورود سریع: چیپ‌ها را با زبان جدید دوباره بساز
+            if (window.QuickEntry) window.QuickEntry.refresh();
         }
 
         themeBtn.addEventListener('click', () => {
@@ -3620,6 +3690,261 @@
                 list.appendChild(item);
             }
         });
+
+        // =====================================================================
+        // QUICK ENTRY (ورود سریع) — یک خط ورودی هوشمند برای فرم JB Detection
+        // =====================================================================
+        window.QuickEntry = (function () {
+            const $ = (id) => document.getElementById(id);
+            const input = $('qeInput'), hl = $('qeHl'), pop = $('qePop'),
+                  chipsBox = $('qeChips'), summary = $('qeSummary');
+            if (!input) return { refresh() {} };
+
+            const isFa = () => currentLang === 'fa';
+
+            /* ---- تعریف فیلدها: کلید، نام‌های مستعار، آی‌دی فیلد فرم ---- */
+            const FIELDS = {
+                project:  { fa: 'نام پروژه',     en: 'Project',  alias: ['project', 'پروژه', 'نام'],   target: 'projectName' },
+                jb:       { fa: 'Junction Box',  en: 'JB',       alias: ['jb', 'جانکشن'],               target: 'jbExamples' },
+                mc:       { fa: 'Multi Cable',   en: 'MC',       alias: ['mc', 'مولتی'],                target: 'mcExamples' },
+                spare:    { fa: 'SPARE',         en: 'SPARE',    alias: ['spare', 'اسپیر'],             target: 'spareExamples' },
+                cable:    { fa: 'توضیحات کابل',  en: 'Cable',    alias: ['cable', 'کابل'],              target: 'cableExamples' },
+                terminal: { fa: 'الگوی ترمینال', en: 'Terminal', alias: ['terminal', 'ترمینال'],        target: null },
+                wire:     { fa: 'رنگ سیم',       en: 'Wire',     alias: ['wire', 'سیم', 'رنگ'],         target: null },
+            };
+
+            /* گزینه‌های ترمینال و سیم (v = value رادیوهای فرم) */
+            const TERMINAL_OPTS = [
+                { v: 'two_terminal_scr',      label: 'two+scr', desc: 'T{2*x-1}, T{2*x}, SCR' },
+                { v: 'two_terminal',          label: 'two',     desc: 'T{2*x-1}, T{2*x}' },
+                { v: 'terminal_scr_terminal', label: 'scr-mid', desc: 'T{2*x-1}, SCR, T{2*x}' },
+                { v: 'simple_number',         label: 'simple',  desc: '{2*x-1}, {2*x}' },
+            ];
+            const WIRE_OPTS = [
+                { v: 'bk_wt',        label: 'bk-wt',       desc: 'BK{x:02d}, WT{x:02d}' },
+                { v: 'black_white',  label: 'black-white', desc: 'Black{x:02d}, White{x:02d}' },
+                { v: 'single_color', label: 'single',      desc: 'BK{x:02d}' },
+            ];
+            const optsFor = (f) => (f === 'terminal' ? TERMINAL_OPTS : f === 'wire' ? WIRE_OPTS : null);
+
+            function fieldOf(word) {
+                const w = (word || '').toLowerCase();
+                return Object.keys(FIELDS).find((k) => FIELDS[k].alias.includes(w) || k === w) || null;
+            }
+
+            /* ---- پارس: متن اول = پروژه، هر "/کلید مقدار" = یک segment ---- */
+            function parse(text) {
+                const segs = [];
+                const slashRe = /(^|\s)\//g;
+                const starts = [];
+                let m;
+                while ((m = slashRe.exec(text))) starts.push(m.index + m[1].length);
+                const firstSlash = starts.length ? starts[0] : text.length;
+                const lead = text.slice(0, firstSlash);
+                if (lead.trim()) segs.push({ field: 'project', start: 0, end: firstSlash, keyEnd: 0, value: lead.trim() });
+                starts.forEach((s, i) => {
+                    const e = i + 1 < starts.length ? starts[i + 1] : text.length;
+                    const body = text.slice(s + 1, e);
+                    const km = body.match(/^\S*/)[0];
+                    const field = fieldOf(km);
+                    segs.push({
+                        field: field || 'unknown', start: s, end: e, keyEnd: s + 1 + km.length,
+                        key: km, value: body.slice(km.length).trim(),
+                    });
+                });
+                return segs;
+            }
+
+            const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+            /* ---- رنگی‌کردن: طول متن دقیقاً حفظ می‌شود تا با input هم‌تراز بماند ---- */
+            function renderHighlight(text, segs) {
+                let out = '', pos = 0;
+                segs.forEach((sg) => {
+                    if (sg.start > pos) out += esc(text.slice(pos, sg.start));
+                    if (sg.field === 'project') {
+                        out += `<span class="qe-project">${esc(text.slice(sg.start, sg.end))}</span>`;
+                    } else {
+                        out += `<span class="qe-key qe-${sg.field}">${esc(text.slice(sg.start, sg.keyEnd))}</span>`;
+                        out += `<span class="qe-${sg.field}">${esc(text.slice(sg.keyEnd, sg.end))}</span>`;
+                    }
+                    pos = sg.end;
+                });
+                out += esc(text.slice(pos));
+                hl.innerHTML = out + '\u200b';
+                hl.scrollLeft = input.scrollLeft;
+            }
+
+            /* ---- اعمال روی فرم موجود ---- */
+            const applied = new Set(); // فیلدهایی که قبلاً توسط ورود سریع پر شده‌اند
+
+            function setVal(id, v) {
+                const el = $(id);
+                if (!el) return;
+                el.value = v;
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+
+            function pickRadio(name, value) {
+                const r = document.querySelector(`input[name="${name}"][value="${value}"]`);
+                if (!r) return;
+                r.checked = true;
+                r.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+
+            function applyPattern(field, value) {
+                const isTerm = field === 'terminal';
+                const radioName = isTerm ? 'terminal_pattern_type' : 'wire_pattern_type';
+                const opts = optsFor(field);
+                const v = value.trim().toLowerCase();
+                const hit = opts.find((o) => o.label === v || o.v === v);
+                if (hit) { pickRadio(radioName, hit.v); return; }
+                if (v) { // هر چیز دیگر = قانون دستی
+                    pickRadio(radioName, 'custom');
+                    setVal(isTerm ? 'customTerminalPattern' : 'customWirePattern', value.trim());
+                }
+            }
+
+            function applyToForm(segs) {
+                const present = new Set();
+                segs.forEach((sg) => {
+                    if (sg.field === 'unknown') return;
+                    present.add(sg.field);
+                    if (sg.field === 'terminal' || sg.field === 'wire') applyPattern(sg.field, sg.value);
+                    else setVal(FIELDS[sg.field].target, sg.value);
+                });
+                // فیلدی که از متن حذف شده، از فرم هم پاک شود (فقط اگر خود ورود سریع پرش کرده بود)
+                applied.forEach((f) => {
+                    if (!present.has(f) && FIELDS[f].target) setVal(FIELDS[f].target, '');
+                });
+                applied.clear();
+                present.forEach((f) => applied.add(f));
+            }
+
+            /* ---- چیپ‌های خلاصه با دکمه‌ی حذف ---- */
+            function renderChips(text, segs) {
+                chipsBox.innerHTML = '';
+                const valid = segs.filter((s) => s.field !== 'unknown' && s.value);
+                summary.style.display = valid.length ? '' : 'none';
+                valid.forEach((sg) => {
+                    const chip = document.createElement('span');
+                    chip.className = 'qe-chip qe-hl';
+                    chip.style.position = 'static';
+                    chip.innerHTML = `<span class="qe-${sg.field}" style="padding:1px 8px">${esc(isFa() ? FIELDS[sg.field].fa : FIELDS[sg.field].en)}: ${esc(sg.value)}</span>`;
+                    const x = document.createElement('button');
+                    x.type = 'button';
+                    x.textContent = '×';
+                    x.addEventListener('click', () => {
+                        input.value = (text.slice(0, sg.start) + text.slice(sg.end)).replace(/\s{2,}/g, ' ').trimStart();
+                        refresh();
+                        input.focus();
+                    });
+                    chip.appendChild(x);
+                    chipsBox.appendChild(chip);
+                });
+            }
+
+            /* ---- پاپ‌آپ پیشنهاد ---- */
+            let items = [], activeIdx = 0, popCtx = null;
+
+            function closePop() { pop.classList.remove('open'); items = []; popCtx = null; }
+
+            function openPop(list, ctx) {
+                items = list; popCtx = ctx; activeIdx = 0;
+                pop.innerHTML = '';
+                list.forEach((it, i) => {
+                    const d = document.createElement('div');
+                    d.className = 'qe-item' + (i === 0 ? ' active' : '');
+                    d.innerHTML = `<kbd>${esc(it.kbd)}</kbd><span>${esc(it.title)}</span><small>${esc(it.hint || '')}</small>`;
+                    d.addEventListener('mousedown', (e) => { e.preventDefault(); choose(i); });
+                    pop.appendChild(d);
+                });
+                pop.classList.add('open');
+            }
+
+            function updatePopup() {
+                const caret = input.selectionStart ?? input.value.length;
+                const before = input.value.slice(0, caret);
+
+                // حالت ۱: در حال تایپ نام فیلد بعد از "/"
+                let m = before.match(/(^|\s)\/(\S*)$/);
+                if (m) {
+                    const q = m[2].toLowerCase();
+                    const list = Object.keys(FIELDS).filter((k) => k !== 'project')
+                        .filter((k) => !q || FIELDS[k].alias.some((a) => a.startsWith(q)) || k.startsWith(q))
+                        .map((k) => ({ kind: 'field', key: k, kbd: '/' + k, title: isFa() ? FIELDS[k].fa : FIELDS[k].en,
+                                       hint: FIELDS[k].target ? '' : (isFa() ? 'گزینه یا الگوی دستی' : 'preset or custom') }));
+                    if (list.length) { openPop(list, { start: caret - m[2].length - 1, end: caret }); return; }
+                    closePop(); return;
+                }
+
+                // حالت ۲: مقدار ترمینال/سیم → پیشنهاد گزینه‌ها
+                m = before.match(/(^|\s)\/(\S+)\s+([^\/]*)$/);
+                if (m) {
+                    const f = fieldOf(m[2]);
+                    const opts = optsFor(f);
+                    if (opts) {
+                        const q = m[3].trim().toLowerCase();
+                        const list = opts.filter((o) => !q || o.label.startsWith(q))
+                            .map((o) => ({ kind: 'opt', key: o.v, label: o.label, kbd: o.label, title: o.desc }));
+                        if (list.length) { openPop(list, { start: caret - m[3].length, end: caret }); return; }
+                    }
+                }
+                closePop();
+            }
+
+            function choose(i) {
+                const it = items[i];
+                if (!it || !popCtx) return;
+                const v = input.value;
+                const ins = it.kind === 'field' ? `/${it.key} ` : it.label + ' ';
+                input.value = v.slice(0, popCtx.start) + ins + v.slice(popCtx.end);
+                const np = popCtx.start + ins.length;
+                input.setSelectionRange(np, np);
+                closePop();
+                refresh();
+            }
+
+            input.addEventListener('keydown', (e) => {
+                if (pop.classList.contains('open')) {
+                    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        activeIdx = (activeIdx + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+                        [...pop.children].forEach((c, i) => c.classList.toggle('active', i === activeIdx));
+                    } else if (e.key === 'Enter' || e.key === 'Tab') {
+                        e.preventDefault();
+                        choose(activeIdx);
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        closePop();
+                    }
+                } else if (e.key === 'Enter') {
+                    e.preventDefault(); // Enter بدون پاپ‌آپ کاری نکند
+                }
+            });
+
+            function refresh() {
+                const text = input.value;
+                const segs = parse(text);
+                renderHighlight(text, segs);
+                applyToForm(segs);
+                renderChips(text, segs);
+                updatePopup();
+            }
+
+            input.addEventListener('input', refresh);
+            input.addEventListener('click', updatePopup);
+            input.addEventListener('keyup', (e) => {
+                if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) updatePopup();
+            });
+            input.addEventListener('scroll', () => { hl.scrollLeft = input.scrollLeft; });
+            input.addEventListener('blur', () => setTimeout(closePop, 120));
+
+            // اولیه: فقط هایلایت (چیزی روی فرم اعمال نشود تا مقدار ذخیره‌شده‌ی پروژه پاک نشود)
+            renderHighlight(input.value, parse(input.value));
+
+            return { refresh };
+        })();
 
         // اضافه کردن CSS برای انیمیشن
         const style = document.createElement('style');

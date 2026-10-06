@@ -230,7 +230,9 @@ class PatternMatcher:
             # the prefix directly or be separated by whitespace/punctuation.
             suffix = (
                 rf"(?:[._-]*\d{{1,6}}|\s+\d{{1,6}}"
-                rf"|(?:[._-]+[A-Z0-9]{{1,8}})+[._-]*\d{{1,6}})"
+                rf"|(?:[._-]+[A-Z0-9]{{1,8}})+[._-]*\d{{1,6}}(?:[A-Z]{{1,2}})?)"
+                # Allow a short terminal letter suffix attached to the serial.
+                rf"(?:[A-Z]{{1,2}})?"
                 rf"(?:[._-]+[A-Z0-9]{{1,8}})*"
             )
             return re.compile(rf"(?<![A-Z0-9])((?:{alt}){suffix})(?![A-Z0-9])", re.IGNORECASE)
@@ -311,6 +313,28 @@ class PatternMatcher:
         if not token:
             return True
         t = str(token).strip().upper()
+
+        # Drawing title blocks often contain dates that have the same
+        # letter/digit/separator shape as learned tag families (for example,
+        # ``02-JUL-2025``). Reject date-shaped tokens before profile recovery.
+        month = (
+            r"JAN(?:UARY)?|FEB(?:RUARY)?|MAR(?:CH)?|APR(?:IL)?|MAY|"
+            r"JUN(?:E)?|JUL(?:Y)?|AUG(?:UST)?|SEP(?:T(?:EMBER)?)?|"
+            r"OCT(?:OBER)?|NOV(?:EMBER)?|DEC(?:EMBER)?"
+        )
+        if re.fullmatch(
+            rf"(?:\d{{1,2}}[-_./ ](?:{month})[-_./ ]\d{{2,4}}|"
+            rf"(?:{month})[-_./ ]\d{{1,2}}(?:,?[-_./ ]\d{{2,4}})?|"
+            r"\d{1,4}[-_./]\d{1,2}[-_./]\d{1,4})",
+            t,
+            re.IGNORECASE,
+        ):
+            return True
+
+        # IP followed by a two/three digit ingress-protection rating is a
+        # drawing property, not an instrument identifier.
+        if re.fullmatch(r"IP[-_./ ]?\d{2,3}", t):
+            return True
 
         # Stop words (Page, Sheet, BK, WT, …)
         if t in STOP_WORDS:
@@ -618,12 +642,21 @@ class PatternMatcher:
             if not text:
                 continue
             text_upper = text.upper()
+            jb_match = self.jb_regex.search(text)
+            mc_match = self.mc_regex.search(text)
+            # A configured MC may contain a JB-shaped segment in its suffix
+            # (for example, ``NC-JSF-227S``). Prefer the full MC identifier
+            # when it starts at the beginning of the OCR span; otherwise the
+            # embedded JB prefix steals the whole detection.
+            mc_owns_detection = bool(
+                jb_match and mc_match and mc_match.start() == 0
+                and mc_match.end() >= jb_match.end() and jb_match.start() > 0
+            )
 
             # ── JB ───────────────────────────────────────────────
-            if self.jb_regex.search(text):
+            if jb_match and not mc_owns_detection:
                 # Use the regex match to extract the canonical JB id
-                m = self.jb_regex.search(text)
-                jb_id = m.group(0).upper() if m else text_upper
+                jb_id = jb_match.group(0).upper()
                 jb_id = _normalize_code_token(jb_id)
                 for configured_prefix in self.jb_examples_list:
                     parts = re.findall(r"[A-Z]+|\d+", configured_prefix)
@@ -651,9 +684,8 @@ class PatternMatcher:
                 continue
 
             # ── MC ───────────────────────────────────────────────
-            if self.mc_regex.search(text):
-                m = self.mc_regex.search(text)
-                mc_id = m.group(0).upper() if m else text_upper
+            if mc_match:
+                mc_id = mc_match.group(0).upper()
                 mc_id = _normalize_code_token(mc_id)
                 if mc_id:
                     mc_identifiers.add(mc_id)
@@ -751,6 +783,23 @@ class PatternMatcher:
                     )
                 ]
 
+            # Some diagrams print a channel/index number as a separate
+            # whitespace-delimited suffix (e.g. ``FV-2233 1``). The learned
+            # IO/profile matcher may first return only the base identifier;
+            # retain the suffix when it is present in this same OCR span.
+            def preserve_spaced_numeric_suffix(candidate: str) -> str:
+                suffix = re.fullmatch(
+                    rf"\s*{re.escape(candidate)}\s+(\d{{1,3}})\s*",
+                    text, re.IGNORECASE,
+                )
+                return f"{candidate} {suffix.group(1)}" if suffix else candidate
+
+            io_candidates = [preserve_spaced_numeric_suffix(candidate) for candidate in io_candidates]
+            recovered_candidates = [
+                (preserve_spaced_numeric_suffix(candidate), score)
+                for candidate, score in recovered_candidates
+            ]
+
             if io_candidates or recovered_candidates:
                 # The profile fallback only retains a review candidate; it
                 # never assigns it to an IO reference or changes its OCR text.
@@ -759,7 +808,14 @@ class PatternMatcher:
                 for tag in candidate_tags:
                     if self._is_non_tag_pattern(tag):
                         continue
-                    tag = tag.strip().upper() if self.io_tag_matcher is not None else _normalize_code_token(tag)
+                    tag = tag.strip().upper()
+                    if self.io_tag_matcher is None:
+                        if self.tag_regex.fullmatch(tag):
+                            # PaddleOCR can confuse a printed dash with a dot or
+                            # underscore; normalize only this known identifier form.
+                            tag = re.sub(r"[._]", "-", tag)
+                        else:
+                            tag = _normalize_code_token(tag)
                     if not tag:
                         continue
 
