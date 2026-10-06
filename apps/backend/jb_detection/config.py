@@ -71,7 +71,8 @@ class Config:
     ocr_recover_missing_jb: bool = True
 
     # ── Tag matching ───────────────────────────────────────────────
-    match_similar_threshold: float = 0.85
+    # Match the former DataAnalysisModule's default acceptance threshold.
+    match_similar_threshold: float = 0.75
     match_levenshtein_threshold: float = 0.92
     match_use_confusion_pairs: bool = True
 

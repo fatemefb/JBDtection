@@ -706,6 +706,12 @@ class ExcelExporter:
             if not is_spare:
                 if io_pattern_match:
                     kind, score, closest = matcher.match_tag(tag)
+                elif profile_recovery and str(src.get("Match_Type", "")).lower() == "similar":
+                    # Keep legacy-score matches for recovered digit-first or
+                    # nonstandard candidates in the review row.
+                    kind = "similar"
+                    score = float(src.get("Similarity_Percent", 0) or 0) / 100.0
+                    closest = str(src.get("Closest_IO_Tag", "") or "")
                 else:
                     # Preserve recovered items as review rows without claiming
                     # that the candidate resembles a particular IO tag.

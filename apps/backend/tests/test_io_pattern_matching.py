@@ -47,6 +47,17 @@ class IoPatternMatchingTests(unittest.TestCase):
         self.assertEqual(closest, 'TE-5223')
         self.assertEqual(self.matcher.match_tag('TE-5223'), ('exact', 1.0, 'TE-5223'))
 
+    def test_legacy_similarity_recovers_digit_first_tag(self):
+        result = self.matcher.match_tag('11-FV-302')
+        self.assertEqual(result[0], 'similar')
+        self.assertEqual(result[2], '11-FV-301')
+        compact = self.matcher.match_tag('21HS-002')
+        self.assertEqual(compact[0], 'similar')
+        self.assertEqual(compact[2], '21HS-001')
+        page = UnifiedPdfProcessor(config=self.config, tag_matcher=self.matcher)
+        extracted = page._process_detections([det('11-FV-302', 20)], 1)
+        self.assertEqual(extracted.tag_match_info['11-FV-302'].match_type, 'similar')
+
     def test_rebuilding_clears_patterns_and_vectors_from_previous_list(self):
         pd.DataFrame({'Tag No': ['PT-1000']}).to_excel(self.io_path, index=False)
         self.matcher.build_from_excel(str(self.io_path))

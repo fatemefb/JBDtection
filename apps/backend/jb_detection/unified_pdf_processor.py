@@ -453,9 +453,22 @@ class UnifiedPdfProcessor:
                     ocr_text=tag, bbox=(0, 0, 0, 0),
                 )
                 if info.reason.startswith("IO-independent OCR profile candidate"):
-                    # Keep recovered candidates visible for human review even
-                    # though the IO matcher intentionally has no family for them.
-                    result.tag_match_info[tag] = info
+                    # Try the legacy similarity path for structurally recovered
+                    # candidates; preserve them as review items if no match is
+                    # strong enough.
+                    match_type, score, matched_tag = self._tag_matcher.match_tag(
+                        tag, allow_legacy_outside_family=True,
+                    )
+                    if match_type == "similar":
+                        info.match_type = match_type
+                        info.score = score
+                        info.matched_tag = matched_tag
+                        info.reason = (
+                            "IO-independent OCR profile candidate; legacy structural similarity: "
+                            f"{matched_tag} ({score:.1%}); review required."
+                        )
+                    else:
+                        result.tag_match_info[tag] = info
                     continue
                 match_type, score, matched_tag = self._tag_matcher.match_tag(tag)
                 info.match_type = match_type

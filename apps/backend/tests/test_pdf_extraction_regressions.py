@@ -113,9 +113,10 @@ class PdfExtractionRegressions(unittest.TestCase):
             OcrDetection('SPARE', 0.99, [], (60, 70, 100, 20)),
             detection('PLUGS', 70),
         ])
-        self.assertEqual(len(result.spare_identifiers), 7)
-        self.assertEqual(len(result.spare_positions), 7)
-        self.assertEqual(len(result.tag_to_number), 7)
+        # A count is trusted only when the page has a single SPARE label.
+        self.assertEqual(len(result.spare_identifiers), 2)
+        self.assertEqual(len(result.spare_positions), 2)
+        self.assertEqual(len(result.tag_to_number), 2)
 
     def test_configured_jb_prefix_keeps_optional_area_digits(self):
         for prefix in ('1201JR', 'JR'):
@@ -224,10 +225,27 @@ class PdfExtractionRegressions(unittest.TestCase):
             OcrDetection('FRT-24P x 1.5mm2', 0.99, [], (500, 75, 130, 20)),
         ])
         self.assertEqual(result.mc_identifiers, {'MC-101'})
-        self.assertEqual(result.cable_descriptions, ['FRS-12P X 1.5MM2'])
+        self.assertEqual(result.cable_descriptions, ['12 pair'])
         self.assertEqual(result.raw_cable_descriptions, ['FRS-12P X 1.5MM2'])
         self.assertNotIn('FRS-12P X 1.5MM2', result.tags)
         self.assertNotIn('FRT-24P X 1.5MM2', result.tags)
+
+    def test_configured_cable_unit_joins_adjacent_ocr_spans(self):
+        matcher = PatternMatcher(cable_examples='12P')
+        result = matcher.match([
+            OcrDetection('MC-101', 0.99, [], (20, 40, 80, 20)),
+            OcrDetection('12', 0.99, [], (30, 75, 20, 20)),
+            OcrDetection('PAIR', 0.99, [], (54, 75, 44, 20)),
+        ])
+        self.assertEqual(result.cable_descriptions, ['12 pair'])
+        self.assertEqual(result.raw_cable_descriptions, ['12 PAIR'])
+
+    def test_configured_cable_without_mc_local_candidate_is_not_exported(self):
+        result = PatternMatcher(cable_examples='12P').match([
+            OcrDetection('MC-101', 0.99, [], (20, 40, 80, 20)),
+            OcrDetection('FRS-12P', 0.99, [], (500, 400, 100, 20)),
+        ])
+        self.assertEqual(result.cable_descriptions, [])
 
     def test_separator_variants_share_one_tag_number(self):
         numbers = PatternMatcher().assign_tag_numbers_by_position([
@@ -235,6 +253,21 @@ class PdfExtractionRegressions(unittest.TestCase):
             {'tag': 'TE_5223', 'y': 40, 'x': 20},
         ])
         self.assertEqual(numbers, {'TE-5223': 1, 'TE_5223': 1})
+
+    def test_spare_and_tag_share_legacy_position_order(self):
+        result = PatternMatcher().match([detection('SPARE', 20), detection('TE-5223', 40)])
+        self.assertEqual(result.tag_to_number, {'SPARE_1': 1, 'TE-5223': 2})
+
+    def test_spare_count_is_used_only_for_a_single_spare_label(self):
+        matcher = PatternMatcher(spare_examples='SPARE')
+        counted = matcher.match([detection('4 SPARE', 20), detection('4 SPARE', 22)])
+        self.assertEqual(len(counted.spare_identifiers), 4)
+        multiple_labels = matcher.match([detection('4 SPARE', 20), detection('SPARE', 60)])
+        self.assertEqual(len(multiple_labels.spare_identifiers), 2)
+
+    def test_spare_count_can_follow_the_single_label(self):
+        result = PatternMatcher(spare_examples='SPARE').match([detection('SPARE 4', 20)])
+        self.assertEqual(len(result.spare_identifiers), 4)
 
     def test_sp_fragments_do_not_create_phantom_spare_excel_rows(self):
         result = PatternMatcher().match([

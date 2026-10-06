@@ -6,7 +6,7 @@ similarity metrics; this version exposes one clean entry point
 (:meth:`TagMatcher.match_tag`) that returns one of four outcomes:
 
 - ``("exact", 1.0, io_tag)``  — exact literal IO List match
-- ``("similar", score, io_tag)``  — similarity suggestion within a learned IO List family
+- ``("similar", score, io_tag)``  — similarity suggestion from learned-family or legacy structural scoring
 - ``("unmatched_candidate", score, closest_tag)`` — learned-pattern tag requiring review
 - ``("unmatched", 0.0, "")`` — outside the learned tag families
 
@@ -413,8 +413,84 @@ class TagMatcher:
         except Exception:
             return 0.0
 
+    @staticmethod
+    def _legacy_parts(tag: str) -> Tuple[str, List[str], str]:
+        """Split common letter and digit first tag forms for legacy scoring."""
+        value = re.sub(r"\s+", "", str(tag).upper()).replace("_", "-").strip("-.")
+        # Area-function-serial identifiers (for example, 11-FV-301).
+        area = re.match(r"^(\d{1,4})-([A-Z]{1,6})-(\d+)(?:-(.*))?$", value)
+        if area:
+            nums = [area.group(1), area.group(3)] + re.findall(r"\d+", area.group(4) or "")
+            return area.group(2), nums, re.sub(r"\d", "", area.group(4) or "")
+        # Digit-leading compact families (for example, 21HS-001 or 11SAM10AN020).
+        leading = re.match(r"^(\d{1,4}[A-Z]{1,8})", value)
+        if leading:
+            head = leading.group(1)
+            letters = re.sub(r"\d", "", head)
+            return head, re.findall(r"\d+", value[len(head):]), letters
+        patterns = (
+            r"^([A-Z]+)-(\d+)-(\d+)([A-Z]*)$",
+            r"^([A-Z]+)-(\d+)-([A-Z\d]+)$",
+            r"^([A-Z]+)-(\d+)([A-Z]*)$",
+            r"^([A-Z]+)(\d+)([A-Z]*)$",
+        )
+        for pattern in patterns:
+            match = re.match(pattern, value)
+            if not match:
+                continue
+            parts = list(match.groups())
+            prefix = parts[0]
+            nums = re.findall(r"\d+", value[len(prefix):])
+            suffix = "".join(re.findall(r"[A-Z]+", value[len(prefix):]))
+            return prefix, nums, suffix
+        prefix_match = re.match(r"^([A-Z0-9]+)", value)
+        prefix = prefix_match.group(1) if prefix_match else ""
+        return prefix, re.findall(r"\d+", value), ""
+
+    def _legacy_similarity(self, query: str, reference: str) -> float:
+        """The former DataAnalysisModule prefix/numeric score, for candidates."""
+        q_prefix, q_numbers, q_suffix = self._legacy_parts(query)
+        r_prefix, r_numbers, r_suffix = self._legacy_parts(reference)
+        prefix_score = self._levenshtein_ratio(q_prefix, r_prefix)
+        if not q_prefix or not r_prefix or prefix_score < 0.7:
+            return 0.0
+
+        def number_score(left: str, right: str) -> float:
+            if not left and not right:
+                return 1.0
+            if not left or not right:
+                return 0.2
+            ocr_score = self._levenshtein_ratio(left, right)
+            if left == right:
+                return 1.0
+            if ocr_score >= 0.95:
+                return 0.99
+            try:
+                a, b = int(left.lstrip("0") or "0"), int(right.lstrip("0") or "0")
+                delta = abs(a - b)
+                if delta > 15:
+                    return 0.1
+                if delta > 5:
+                    return 0.4 * (1 - delta / max(a, b, 1) * 0.5)
+                return max(ocr_score, 0.9 - delta * 0.1)
+            except ValueError:
+                return ocr_score
+
+        first_score = number_score(q_numbers[0] if q_numbers else "", r_numbers[0] if r_numbers else "")
+        second_score = number_score(q_numbers[1] if len(q_numbers) > 1 else "",
+                                    r_numbers[1] if len(r_numbers) > 1 else "")
+        suffix_score = self._levenshtein_ratio(q_suffix, r_suffix) if q_suffix or r_suffix else 1.0
+        if len(q_numbers) > 1 and len(r_numbers) > 1:
+            final = 0.35 * prefix_score + 0.35 * first_score + 0.25 * second_score + 0.05 * suffix_score
+        else:
+            final = 0.35 * prefix_score + 0.60 * first_score + 0.05 * suffix_score
+        length_delta = abs(len(query) - len(reference)) / max(len(query), len(reference), 1)
+        if length_delta > 0.3:
+            final *= 1 - length_delta * 0.3
+        return max(0.0, min(1.0, final))
+
     # ── Main matching ──────────────────────────────────────────────
-    def match_tag(self, tag: str) -> Tuple[str, float, str]:
+    def match_tag(self, tag: str, *, allow_legacy_outside_family: bool = False) -> Tuple[str, float, str]:
         """Match a single OCR tag against the IO List.
 
         Returns
@@ -433,33 +509,40 @@ class TagMatcher:
         if not tag_upper:
             return ("unmatched", 0.0, "")
 
+        in_learned_family = self.matches_io_pattern(tag_upper)
+        if not in_learned_family and not allow_legacy_outside_family:
+            self.unmatched += 1
+            return ("unmatched", 0.0, "")
+
         # ── 1. Exact match ────────────────────────────────────────
         exact = self.exact_reference(tag_upper)
         if exact:
             self.exact_matches += 1
             return ("exact", 1.0, exact)
 
-        # Similarity is evaluated only inside a family actually seen in the IO List.
-        if not self.matches_io_pattern(tag_upper):
-            self.unmatched += 1
-            return ("unmatched", 0.0, "")
+        # First retain the learned-family score. If a valid tag candidate has
+        # another separator/shape variant, compare it with the legacy scoring
+        # rule too; this keeps digit-first tags eligible for review/matching.
         families = {key for key, pattern in self.candidate_patterns.items() if pattern.fullmatch(tag_upper)}
         vector = self.create_tag_vector(tag_upper)
         best_score, best_io = 0.0, ""
         for io_tag in self.reference_tags:
-            if self.reference_candidate_patterns[io_tag] not in families:
-                continue
-            lexical = self._levenshtein_ratio(tag_upper, io_tag)
-            structural = self.calculate_similarity(vector, self.tag_vectors[io_tag])
-            # Cosine similarity alone can approach 1 for distinct serial numbers.
-            score = min(0.999, (lexical + structural) / 2)
+            score = 0.0
+            if self.reference_candidate_patterns[io_tag] in families:
+                lexical = self._levenshtein_ratio(tag_upper, io_tag)
+                structural = self.calculate_similarity(vector, self.tag_vectors[io_tag])
+                score = min(0.999, (lexical + structural) / 2)
+            if in_learned_family or allow_legacy_outside_family:
+                score = max(score, self._legacy_similarity(tag_upper, io_tag))
             if score > best_score:
                 best_score, best_io = score, io_tag
-        strict_family = best_io and self.io_patterns[self.reference_patterns[best_io]].fullmatch(tag_upper)
-        if strict_family and best_score >= self.similarity_threshold:
+        threshold = max(0.75, self.similarity_threshold)
+        if best_io and best_score >= threshold:
             self.similar_matches += 1
             return ("similar", best_score, best_io)
         self.unmatched += 1
+        if not in_learned_family and not allow_legacy_outside_family:
+            return ("unmatched", 0.0, "")
         return ("unmatched_candidate", best_score, best_io)
 
     def match_many(self, tags: List[str]) -> Dict[str, Tuple[str, float, str]]:

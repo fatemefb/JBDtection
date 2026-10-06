@@ -256,18 +256,20 @@ class PatternMatcher:
             # Treat configured examples as format hints. In particular, a
             # unit-only example (e.g. 12P) describes a cable shape, not a
             # literal brand prefix that should be baked into the detector.
-            units = {"P": r"P(?:AIR)?", "PAIR": r"P(?:AIR)?",
-                     "T": r"T(?:RIPLE)?", "TRIPLE": r"T(?:RIPLE)?",
-                     "C": r"C(?:ORE)?", "CORE": r"C(?:ORE)?"}
+            units = {
+                "P": r"P(?:AIR|R)?", "PAIR": r"P(?:AIR|R)?", "PR": r"P(?:AIR|R)?",
+                "T": r"T(?:RIPLE|R)?", "TR": r"T(?:RIPLE|R)?", "TRIPLE": r"T(?:RIPLE|R)?",
+                "C": r"C(?:ORE|R)?", "CR": r"C(?:ORE|R)?", "CORE": r"C(?:ORE|R)?",
+            }
             unit_patterns = []
             for example in re.split(r"[,;]", self.cable_examples):
-                unit_match = re.search(r"\d+\s*(PAIR|TRIPLE|CORE|P|T|C)\b", example, re.I)
+                unit_match = re.search(r"\d+\s*(PAIR|PR|TRIPLE|TR|CORE|CR|P|T|C)\b", example, re.I)
                 if unit_match:
                     unit_patterns.append(units[unit_match.group(1).upper()])
             if unit_patterns:
                 unit_alt = "|".join(sorted(set(unit_patterns), key=len, reverse=True))
                 self.cable_regex = re.compile(
-                    rf"(?<![A-Z0-9])([A-Z]{{2,8}}[-_ ]*)?\d{{1,3}}\s*(?:{unit_alt})"
+                    rf"(?<![A-Z0-9])(?:[A-Z]{{2,8}}[-_ ]*)?(?P<number>\d{{1,3}})\s*(?P<unit>{unit_alt})"
                     rf"(?:\s*(?:X|×)\s*\d+(?:\.\d+)?\s*(?:MM\s*\^?\s*2?)?)?"
                     rf"(?![A-Z0-9])", re.I)
             else:
@@ -381,12 +383,12 @@ class PatternMatcher:
     ) -> Dict[str, int]:
         """Number tags and SPAREs by vertical position (top→bottom).
 
-        Tags are numbered 1, 2, 3, ... from top of page.
-        SPAREs are numbered separately continuing after the last tag number.
+        Tags and SPARE occurrences are numbered together in top-to-bottom,
+        left-to-right page order, matching the legacy extractor.
         """
         all_items: List[Dict[str, Any]] = []
         
-        # Tags first
+        # Tags and SPARE occurrences share the legacy spatial sequence.
         for item in tags_with_positions:
             tag_name = str(item.get("tag", ""))
             # Skip cables — they shouldn't be numbered as tags
@@ -399,41 +401,34 @@ class PatternMatcher:
                 "type": "tag",
             })
         
-        # Sort tags by position (top→bottom, left→right)
+        if spare_identifiers_with_positions:
+            for idx, item in enumerate(spare_identifiers_with_positions):
+                all_items.append({
+                    "name": str(item.get("id", f"SPARE_{idx + 1}")),
+                    "y_position": int(item.get("y", 0)),
+                    "x_position": int(item.get("x", 0)),
+                    "type": "spare",
+                })
+
+        # Sort by position (top→bottom, left→right)
         all_items.sort(key=lambda x: (x["y_position"], x["x_position"]))
         
         # Assign numbers 1, 2, 3, ...
         tag_to_number: Dict[str, int] = {}
         canonical_numbers: Dict[str, int] = {}
-        tag_num = 1
+        next_number = 1
         for item in all_items:
             if item["type"] == "tag":
                 # Preserve OCR spelling in result keys, but assign separator
                 # and whitespace variants one shared position number.
                 canonical = re.sub(r"\s+", "", item["name"].upper()).replace("_", "-").strip("-.")
                 if canonical not in canonical_numbers:
-                    canonical_numbers[canonical] = tag_num
-                    tag_num += 1
+                    canonical_numbers[canonical] = next_number
+                    next_number += 1
                 tag_to_number[item["name"]] = canonical_numbers[canonical]
-        
-        # SPAREs — numbered separately, continuing after tags
-        if spare_identifiers_with_positions:
-            spare_items = []
-            for idx, item in enumerate(spare_identifiers_with_positions):
-                spare_text = str(item.get("id", f"SPARE_{idx + 1}"))
-                spare_items.append({
-                    "name": spare_text,
-                    "y_position": int(item.get("y", 0)),
-                    "x_position": int(item.get("x", 0)),
-                    "type": "spare",
-                })
-            spare_items.sort(key=lambda x: (x["y_position"], x["x_position"]))
-            
-            spare_num = tag_num  # Continue after last tag number
-            for item in spare_items:
-                if item["name"] not in tag_to_number:
-                    tag_to_number[item["name"]] = spare_num
-                    spare_num += 1
+            else:
+                tag_to_number[item["name"]] = next_number
+                next_number += 1
         
         return tag_to_number
 
@@ -603,6 +598,16 @@ class PatternMatcher:
         seen_tag_bbox: Dict[str, BBox_T] = {}  # type: ignore
 
         source_detections = self._join_tag_fragments(detections)
+        spare_label_detections: List[OcrDetection] = []
+        for item in source_detections:
+            if not self._is_spare_token(item.text):
+                continue
+            x, y, _, _ = item.bbox
+            if not any(abs(x - old.bbox[0]) < 30 and abs(y - old.bbox[1]) < 15
+                       for old in spare_label_detections):
+                spare_label_detections.append(item)
+        spare_label_count = len(spare_label_detections)
+        processed_spare_detections: List[OcrDetection] = []
         io_references = getattr(self.io_tag_matcher, "reference_tags", []) if self.io_tag_matcher else []
         profile_candidates = (
             LegacyCandidateRules(io_references, _lev.distance)
@@ -672,20 +677,30 @@ class PatternMatcher:
 
             # ── SPARE ────────────────────────────────────────────
             if self._is_spare_token(text):
+                if any(abs(det.x - old.x) < 30 and abs(det.y - old.y) < 15
+                       for old in processed_spare_detections):
+                    continue
+                processed_spare_detections.append(det)
                 spare_match = self.spare_regex.search(text)
                 spare_id = spare_match.group(0).upper() if spare_match else "SPARE"
                 if spare_id == "SPARES":
                     spare_id = "SPARE"
                 before = text[:spare_match.start()] if spare_match else ""
-                count_match = re.search(r"(?:^|\s)(\d{1,2})\s*$", before)
-                count = int(count_match.group(1)) if count_match else 1
-                if not count_match:
+                after = text[spare_match.end():] if spare_match else ""
+                count_match = (
+                    re.search(r"(?:^|\s)(\d{1,2})\s*$", before)
+                    or re.match(r"^\s*(\d{1,2})(?:\s|$)", after)
+                )
+                count = int(count_match.group(1)) if count_match and spare_label_count == 1 else 1
+                if not count_match and spare_label_count == 1:
                     nearby = []
                     for other in source_detections:
                         if other is det or not re.fullmatch(r"\d{1,2}", other.text.strip()):
                             continue
                         overlap = min(det.y + det.height, other.y + other.height) - max(det.y, other.y)
-                        gap = det.x - (other.x + other.width)
+                        left_gap = det.x - (other.x + other.width)
+                        right_gap = other.x - (det.x + det.width)
+                        gap = left_gap if left_gap >= 0 else right_gap
                         if overlap >= min(det.height, other.height) * 0.5 and 0 <= gap <= det.height * 1.5:
                             nearby.append((gap, int(other.text.strip())))
                     if nearby:
@@ -784,6 +799,12 @@ class PatternMatcher:
             cable_match = self.cable_regex.search(text)
             if cable_match:
                 cable_desc = cable_match.group(0).upper().strip()
+                if self.cable_examples and cable_match.groupdict().get("number"):
+                    unit_raw = cable_match.group("unit").upper()
+                    unit_name = "pair" if unit_raw in {"P", "PAIR", "PR"} else (
+                        "triple" if unit_raw in {"T", "TR", "TRIPLE"} else "core"
+                    )
+                    cable_desc = f"{int(cable_match.group('number'))} {unit_name}"
                 if cable_desc:
                     cable_descriptions.append(cable_desc)
                     raw_cable_descriptions.append(text_upper)
@@ -823,6 +844,51 @@ class PatternMatcher:
                     reason="did not match any pattern (JB/MC/Tag/Cable/SPARE)",
                 )
 
+        # Recover cable units split across neighboring OCR spans (for example
+        # a count in one span and its unit in the next) within MC-local space.
+        if self.cable_examples and mc_identifiers:
+            mc_boxes = [info.bbox for info in tag_match_info.values()
+                        if info.match_type == "MC" and info.bbox]
+            for mc_box in mc_boxes:
+                mx, my, mw, mh = mc_box
+                nearby = []
+                for item in source_detections:
+                    x, y, width, height = item.bbox
+                    if abs(x - mx) <= max(220, mw * 10) and abs(y - my) <= max(180, mh * 10):
+                        nearby.append(item)
+                for left_index, left in enumerate(nearby):
+                    for right in nearby[left_index + 1:]:
+                        lx, ly, lw, lh = left.bbox
+                        rx, ry, rw, rh = right.bbox
+                        if abs(ly - ry) > max(30, min(lh, rh) * 1.5):
+                            continue
+                        first, second = (left, right) if lx <= rx else (right, left)
+                        fx, fy, fw, fh = first.bbox
+                        sx, sy, sw, sh = second.bbox
+                        if sx - (fx + fw) > 180:
+                            continue
+                        joined_text = f"{first.text} {second.text}"
+                        cable_match = self.cable_regex.search(joined_text)
+                        if not cable_match or not cable_match.groupdict().get("number"):
+                            continue
+                        unit_raw = cable_match.group("unit").upper()
+                        unit_name = "pair" if unit_raw in {"P", "PAIR", "PR"} else (
+                            "triple" if unit_raw in {"T", "TR", "TRIPLE"} else "core"
+                        )
+                        cable_desc = f"{int(cable_match.group('number'))} {unit_name}"
+                        bbox = (fx, min(fy, sy), sx + sw - fx, max(fy + fh, sy + sh) - min(fy, sy))
+                        synthetic = OcrDetection(joined_text, min(first.confidence, second.confidence), [], bbox)
+                        if any(old[0] == cable_desc and old[2].bbox == bbox for old in cable_candidates):
+                            continue
+                        cable_candidates.append((cable_desc, joined_text.upper(), synthetic))
+                        cable_descriptions.append(cable_desc)
+                        raw_cable_descriptions.append(joined_text.upper())
+                        tag_match_info[cable_desc] = TagMatchInfo(
+                            match_type="Cable", score=synthetic.confidence,
+                            ocr_text=joined_text, matched_tag=cable_desc,
+                            bbox=bbox, reason="Cable description recovered from adjacent OCR spans",
+                        )
+
         # When a cable format was supplied, associate the description with
         # the nearest MC on the page. This mirrors the former local search and
         # prevents a remote cable label from winning solely by digit size.
@@ -832,24 +898,32 @@ class PatternMatcher:
             selected: Dict[int, Tuple[str, str, OcrDetection]] = {}
             for mc_box in mc_boxes:
                 mx, my, mw, mh = mc_box
-                nearby = []
-                for item in cable_candidates:
-                    cable_box = item[2].bbox
-                    cx, cy, cw, ch = cable_box
-                    dx = abs((cx + cw / 2) - (mx + mw / 2))
-                    dy = abs((cy + ch / 2) - (my + mh / 2))
-                    if dx <= max(180, mw * 8) and dy <= max(120, mh * 8):
-                        nearby.append((dx + 3 * dy, item))
-                if nearby:
-                    _, best = min(nearby, key=lambda pair: pair[0])
-                    selected[id(best[2])] = best
-            if selected:
-                cable_descriptions = [item[0] for item in selected.values()]
-                raw_cable_descriptions = [item[1] for item in selected.values()]
-                selected_ids = {item[0] for item in selected.values()}
-                for cable_desc, _, _ in cable_candidates:
-                    if cable_desc not in selected_ids:
-                        tag_match_info.pop(cable_desc, None)
+                windows = ((40, 180, 100), (120, 300, 130), (220, 380, 170))
+                for max_left, max_right, y_radius in windows:
+                    nearby = []
+                    for item in cable_candidates:
+                        cx, cy, _, _ = item[2].bbox
+                        x_offset = cx - mx
+                        dy = abs(cy - my)
+                        if -max_left <= x_offset <= max_right and dy <= y_radius:
+                            score = abs(x_offset) + 3 * dy + (40 if cy < my else 0)
+                            nearby.append((score, len(item[1]), item))
+                    if nearby:
+                        _, _, best = min(nearby, key=lambda entry: (entry[0], entry[1]))
+                        selected[id(best[2])] = best
+                        break
+            cable_descriptions = [item[0] for item in selected.values()]
+            raw_cable_descriptions = [item[1] for item in selected.values()]
+            selected_by_description = {item[0]: item for item in selected.values()}
+            for cable_desc, _, candidate_detection in cable_candidates:
+                if cable_desc not in selected_by_description:
+                    tag_match_info.pop(cable_desc, None)
+            for cable_desc, raw_text, chosen in selected_by_description.values():
+                tag_match_info[cable_desc] = TagMatchInfo(
+                    match_type="Cable", score=chosen.confidence, ocr_text=raw_text,
+                    matched_tag=cable_desc, bbox=chosen.bbox,
+                    reason="Cable description nearest to MC",
+                )
 
         # ── Number tags + spares by position ─────────────────────
         tag_to_number = self.assign_tag_numbers_by_position(
