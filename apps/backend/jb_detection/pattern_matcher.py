@@ -34,6 +34,8 @@ from .config import (
 )
 from .models import JBDetectionResult, OcrDetection, TagMatchInfo
 from .extraction_logger import log_extraction
+from .legacy_candidates import LegacyCandidateRules
+from .tag_matcher import _lev
 
 logger = logging.getLogger("jb_detection.pattern_matcher")
 
@@ -113,6 +115,10 @@ class PatternMatcher:
         self.jb_examples_list: List[str] = _parse_multi_patterns(jb_examples)
         self.mc_examples_list: List[str] = _parse_multi_patterns(mc_examples)
         self.spare_examples_list: List[str] = _parse_multi_patterns(spare_examples)
+        self._explicit_patterns = {
+            "jb": jb_examples is not None, "mc": mc_examples is not None,
+            "spare": spare_examples is not None, "cable": cable_examples is not None,
+        }
 
         # Backward-compatible comma-joined strings (used by logging/excel)
         self.jb_examples: Optional[str] = (
@@ -155,21 +161,25 @@ class PatternMatcher:
                      scr_number_rule: Optional[str] = None) -> None:
         """Update patterns. Only non-None arguments are applied."""
         if jb_examples is not None:
+            self._explicit_patterns["jb"] = True
             self.jb_examples_list = _parse_multi_patterns(jb_examples)
             self.jb_examples = (
                 ",".join(self.jb_examples_list) if self.jb_examples_list else None
             )
         if mc_examples is not None:
+            self._explicit_patterns["mc"] = True
             self.mc_examples_list = _parse_multi_patterns(mc_examples)
             self.mc_examples = (
                 ",".join(self.mc_examples_list) if self.mc_examples_list else None
             )
         if spare_examples is not None:
+            self._explicit_patterns["spare"] = True
             self.spare_examples_list = _parse_multi_patterns(spare_examples)
             self.spare_examples = (
                 ",".join(self.spare_examples_list) if self.spare_examples_list else None
             )
         if cable_examples is not None:
+            self._explicit_patterns["cable"] = True
             if isinstance(cable_examples, list):
                 self.cable_examples = ", ".join(cable_examples) or None
             else:
@@ -200,26 +210,70 @@ class PatternMatcher:
 
     def _compile_regex_patterns(self) -> None:
         """Compile regex patterns from the configured example lists."""
-        # JB regex — alternation of all prefixes
+        separator = r"[\s._-]*"
+        def prefix_pattern(prefix):
+            return separator.join(re.escape(part) for part in re.findall(r"[A-Z]+|\d+", prefix))
+        def identifier_pattern(prefixes):
+            alternatives = []
+            for prefix in prefixes:
+                pieces = re.findall(r"[A-Z]+|\d+", prefix)
+                if prefix.isalpha():
+                    alternatives.append(rf"(?:\d{{1,4}}{separator})?{prefix_pattern(prefix)}")
+                elif len(pieces) == 2 and pieces[0].isdigit() and pieces[1].isalpha():
+                    alternatives.append(rf"(?:{re.escape(pieces[0])}{separator})?{re.escape(pieces[1])}")
+                else:
+                    alternatives.append(prefix_pattern(prefix))
+            alt = "|".join(alternatives)
+            # Alpha segments after the configured prefix must be separated by
+            # identifier punctuation. This avoids treating prose such as
+            # "JB To ITR ... 100" as one long identifier. A serial may follow
+            # the prefix directly or be separated by whitespace/punctuation.
+            suffix = (
+                rf"(?:[._-]*\d{{1,6}}|\s+\d{{1,6}}"
+                rf"|(?:[._-]+[A-Z0-9]{{1,8}})+[._-]*\d{{1,6}})"
+                rf"(?:[._-]+[A-Z0-9]{{1,8}})*"
+            )
+            return re.compile(rf"(?<![A-Z0-9])((?:{alt}){suffix})(?![A-Z0-9])", re.IGNORECASE)
         if self.jb_examples_list:
-            alt = "|".join(re.escape(p) for p in self.jb_examples_list)
-            self.jb_regex = re.compile(rf"\b({alt})[-_]?\d+\b", re.IGNORECASE)
+            self.jb_regex = identifier_pattern(self.jb_examples_list)
         else:
-            self.jb_regex = JB_PATTERN
-
-        # MC regex — alternation of all prefixes
+            self.jb_regex = re.compile(r"(?!)") if self._explicit_patterns["jb"] else JB_PATTERN
         if self.mc_examples_list:
-            alt = "|".join(re.escape(p) for p in self.mc_examples_list)
-            self.mc_regex = re.compile(rf"\b({alt})[-_]?\d+\b", re.IGNORECASE)
+            self.mc_regex = identifier_pattern(self.mc_examples_list)
         else:
-            self.mc_regex = MC_PATTERN
+            self.mc_regex = re.compile(r"(?!)") if self._explicit_patterns["mc"] else MC_PATTERN
 
         # SPARE regex — literal word (optionally with index)
         if self.spare_examples_list:
-            alt = "|".join(re.escape(p) for p in self.spare_examples_list)
-            self.spare_regex = re.compile(rf"\b({alt})(?:\s*\d+)?\b", re.IGNORECASE)
+            alt = "|".join(re.escape(p) + ("S?" if p.upper() == "SPARE" else "")
+                           for p in self.spare_examples_list)
+            self.spare_regex = re.compile(rf"\b({alt})\b", re.IGNORECASE)
         else:
-            self.spare_regex = SPARE_PATTERN
+            self.spare_regex = re.compile(r"(?!)") if self._explicit_patterns["spare"] else SPARE_PATTERN
+        if self._explicit_patterns["cable"] and not self.cable_examples:
+            self.cable_regex = re.compile(r"(?!)")
+        elif self.cable_examples:
+            # Treat configured examples as format hints. In particular, a
+            # unit-only example (e.g. 12P) describes a cable shape, not a
+            # literal brand prefix that should be baked into the detector.
+            units = {"P": r"P(?:AIR)?", "PAIR": r"P(?:AIR)?",
+                     "T": r"T(?:RIPLE)?", "TRIPLE": r"T(?:RIPLE)?",
+                     "C": r"C(?:ORE)?", "CORE": r"C(?:ORE)?"}
+            unit_patterns = []
+            for example in re.split(r"[,;]", self.cable_examples):
+                unit_match = re.search(r"\d+\s*(PAIR|TRIPLE|CORE|P|T|C)\b", example, re.I)
+                if unit_match:
+                    unit_patterns.append(units[unit_match.group(1).upper()])
+            if unit_patterns:
+                unit_alt = "|".join(sorted(set(unit_patterns), key=len, reverse=True))
+                self.cable_regex = re.compile(
+                    rf"(?<![A-Z0-9])([A-Z]{{2,8}}[-_ ]*)?\d{{1,3}}\s*(?:{unit_alt})"
+                    rf"(?:\s*(?:X|×)\s*\d+(?:\.\d+)?\s*(?:MM\s*\^?\s*2?)?)?"
+                    rf"(?![A-Z0-9])", re.I)
+            else:
+                self.cable_regex = CABLE_PATTERN
+        else:
+            self.cable_regex = CABLE_PATTERN
 
         logger.debug(
             "Regex patterns compiled: JB=%s, MC=%s, SPARE=%s",
@@ -229,27 +283,16 @@ class PatternMatcher:
 
     # ── Token classification ───────────────────────────────────────
     def _is_jb_token(self, text: str) -> bool:
-        t = str(text).upper().strip()
-        if not self.jb_examples_list:
-            return bool(JB_PATTERN.fullmatch(t))
-        return any(_is_prefixed_identifier(t, p, require_digit=False)
-                   for p in self.jb_examples_list)
+        return bool(self.jb_regex.fullmatch(str(text).strip()))
 
     def _is_mc_token(self, text: str) -> bool:
-        t = str(text).upper().strip()
-        if not self.mc_examples_list:
-            return bool(MC_PATTERN.fullmatch(t))
-        return any(_is_prefixed_identifier(t, p, require_digit=False)
-                   for p in self.mc_examples_list)
+        return bool(self.mc_regex.fullmatch(str(text).strip()))
 
     def _is_spare_token(self, text: str) -> bool:
         t = str(text).upper().strip()
         if not t:
             return False
-        if self.spare_examples_list:
-            return any(re.search(rf"\b{re.escape(p)}\b", t, re.IGNORECASE)
-                       for p in self.spare_examples_list)
-        return bool(SPARE_PATTERN.search(t))
+        return bool(self.spare_regex.search(t))
 
     def _is_cable_token(self, text: str) -> bool:
         t = str(text).upper().strip()
@@ -304,7 +347,8 @@ class PatternMatcher:
             return True
 
         # Single letters / very short tokens
-        if len(t) < 3:
+        if len(re.sub(r"[\s_-]+", "", t)) < 4 and not (
+                self.io_tag_matcher and self.io_tag_matcher.exact_reference(t)):
             return True
 
         return False
@@ -360,13 +404,17 @@ class PatternMatcher:
         
         # Assign numbers 1, 2, 3, ...
         tag_to_number: Dict[str, int] = {}
+        canonical_numbers: Dict[str, int] = {}
         tag_num = 1
         for item in all_items:
             if item["type"] == "tag":
-                # Only assign if not already assigned (avoid duplicates)
-                if item["name"] not in tag_to_number:
-                    tag_to_number[item["name"]] = tag_num
+                # Preserve OCR spelling in result keys, but assign separator
+                # and whitespace variants one shared position number.
+                canonical = re.sub(r"\s+", "", item["name"].upper()).replace("_", "-").strip("-.")
+                if canonical not in canonical_numbers:
+                    canonical_numbers[canonical] = tag_num
                     tag_num += 1
+                tag_to_number[item["name"]] = canonical_numbers[canonical]
         
         # SPAREs — numbered separately, continuing after tags
         if spare_identifiers_with_positions:
@@ -545,6 +593,7 @@ class PatternMatcher:
         raw_cable_descriptions: List[str] = []
         all_ocr_tags: Set[str] = set()
         tag_match_info: Dict[str, TagMatchInfo] = {}
+        cable_candidates: List[Tuple[str, str, OcrDetection]] = []
 
         # Track positions for numbering
         tags_with_positions: List[Dict[str, Any]] = []
@@ -553,18 +602,30 @@ class PatternMatcher:
         # Track which bboxes we've already used for a given tag
         seen_tag_bbox: Dict[str, BBox_T] = {}  # type: ignore
 
-        for det in self._join_tag_fragments(detections):
+        source_detections = self._join_tag_fragments(detections)
+        io_references = getattr(self.io_tag_matcher, "reference_tags", []) if self.io_tag_matcher else []
+        profile_candidates = (
+            LegacyCandidateRules(io_references, _lev.distance)
+            if io_references else None
+        )
+        for det in source_detections:
             text = (det.text or "").strip()
             if not text:
                 continue
             text_upper = text.upper()
 
             # ── JB ───────────────────────────────────────────────
-            if self._is_jb_token(text):
+            if self.jb_regex.search(text):
                 # Use the regex match to extract the canonical JB id
                 m = self.jb_regex.search(text)
                 jb_id = m.group(0).upper() if m else text_upper
                 jb_id = _normalize_code_token(jb_id)
+                for configured_prefix in self.jb_examples_list:
+                    parts = re.findall(r"[A-Z]+|\d+", configured_prefix)
+                    if (len(parts) == 2 and parts[0].isdigit() and parts[1].isalpha()
+                            and jb_id.startswith(parts[1]) and not jb_id.startswith(parts[0])):
+                        jb_id = parts[0] + jb_id
+                        break
                 if jb_id:
                     jb_identifiers.add(jb_id)
                     tag_match_info[jb_id] = TagMatchInfo(
@@ -585,7 +646,7 @@ class PatternMatcher:
                 continue
 
             # ── MC ───────────────────────────────────────────────
-            if self._is_mc_token(text):
+            if self.mc_regex.search(text):
                 m = self.mc_regex.search(text)
                 mc_id = m.group(0).upper() if m else text_upper
                 mc_id = _normalize_code_token(mc_id)
@@ -613,24 +674,34 @@ class PatternMatcher:
             if self._is_spare_token(text):
                 spare_match = self.spare_regex.search(text)
                 spare_id = spare_match.group(0).upper() if spare_match else "SPARE"
-                spare_identifiers.append(spare_id)
-                # Repeated SPARE labels represent separate physical occurrences.
-                occurrence_id = f"SPARE_{len(spare_identifiers)}"
-                spare_with_positions.append({
-                    "id": occurrence_id,
-                    "bbox": det.bbox,
-                    "spare": spare_id,
-                    "y": det.bbox[1],
-                    "x": det.bbox[0],
-                })
-                tag_match_info[occurrence_id] = TagMatchInfo(
-                    match_type="SPARE",
-                    score=det.confidence,
-                    ocr_text=text,
-                    matched_tag=spare_id,
-                    bbox=det.bbox,
-                    reason="SPARE identifier",
-                )
+                if spare_id == "SPARES":
+                    spare_id = "SPARE"
+                before = text[:spare_match.start()] if spare_match else ""
+                count_match = re.search(r"(?:^|\s)(\d{1,2})\s*$", before)
+                count = int(count_match.group(1)) if count_match else 1
+                if not count_match:
+                    nearby = []
+                    for other in source_detections:
+                        if other is det or not re.fullmatch(r"\d{1,2}", other.text.strip()):
+                            continue
+                        overlap = min(det.y + det.height, other.y + other.height) - max(det.y, other.y)
+                        gap = det.x - (other.x + other.width)
+                        if overlap >= min(det.height, other.height) * 0.5 and 0 <= gap <= det.height * 1.5:
+                            nearby.append((gap, int(other.text.strip())))
+                    if nearby:
+                        count = min(nearby)[1]
+                for _ in range(count):
+                    spare_identifiers.append(spare_id)
+                    occurrence_id = f"SPARE_{len(spare_identifiers)}"
+                    spare_with_positions.append({
+                        "id": occurrence_id, "bbox": det.bbox, "spare": spare_id,
+                        "y": det.bbox[1], "x": det.bbox[0],
+                    })
+                    tag_match_info[occurrence_id] = TagMatchInfo(
+                        match_type="SPARE", score=det.confidence, ocr_text=text,
+                        matched_tag=spare_id, bbox=det.bbox,
+                        reason="SPARE count label" if count > 1 else "SPARE identifier",
+                    )
                 log_extraction(
                     "classification",
                     page=0, source="",
@@ -645,9 +716,31 @@ class PatternMatcher:
             # caused "FIT-100-14" to be misclassified as a cable.
             # The new order checks tag first, so instrument tags are
             # always captured before the cable fallback.
-            if self._looks_like_tag(text):
-                # Try to extract the canonical tag from the text
-                candidate_tags = self.io_tag_matcher.extract_candidates(text) if self.io_tag_matcher is not None else [self._extract_tag(text)]
+            io_candidates = (
+                self.io_tag_matcher.extract_candidates(text)
+                if self.io_tag_matcher is not None else
+                ([self._extract_tag(text)] if self._looks_like_tag(text) else [])
+            )
+            recovered_candidates = []
+            if profile_candidates is not None:
+                io_candidate_keys = {
+                    self.io_tag_matcher.separator_key(candidate)
+                    for candidate in io_candidates
+                }
+                recovered_candidates = [
+                    (candidate, score)
+                    for candidate, score in profile_candidates.extract_candidates(text)
+                    if (
+                        self.io_tag_matcher.separator_key(candidate) not in io_candidate_keys
+                        and not self._is_non_tag_pattern(candidate)
+                    )
+                ]
+
+            if io_candidates or recovered_candidates:
+                # The profile fallback only retains a review candidate; it
+                # never assigns it to an IO reference or changes its OCR text.
+                recovered_by_tag = {candidate: score for candidate, score in recovered_candidates}
+                candidate_tags = list(dict.fromkeys(io_candidates + list(recovered_by_tag)))
                 for tag in candidate_tags:
                     if self._is_non_tag_pattern(tag):
                         continue
@@ -666,12 +759,16 @@ class PatternMatcher:
                     # Initial tag_match_info — match_type will be updated by
                     # TagMatcher later.
                     tag_match_info[tag] = TagMatchInfo(
-                        match_type="unmatched",
+                        match_type=("unmatched_candidate" if tag in recovered_by_tag else "unmatched"),
                         score=0.0,
                         ocr_text=text,
                         matched_tag="",
                         bbox=det.bbox,
-                        reason="Awaiting IO List match",
+                        reason=(
+                            f"IO-independent OCR profile candidate (shape score {recovered_by_tag[tag]:.2f}); "
+                            "not matched to an IO tag; review required."
+                            if tag in recovered_by_tag else "Awaiting IO List match"
+                        ),
                     )
                     log_extraction(
                         "classification",
@@ -686,10 +783,11 @@ class PatternMatcher:
             # Only tokens that did NOT look like tags reach here.
             cable_match = self.cable_regex.search(text)
             if cable_match:
-                cable_desc = cable_match.group(1).upper()
+                cable_desc = cable_match.group(0).upper().strip()
                 if cable_desc:
                     cable_descriptions.append(cable_desc)
                     raw_cable_descriptions.append(text_upper)
+                    cable_candidates.append((cable_desc, text_upper, det))
                     # Store the cable's position so the annotator can
                     # draw a bounding box for it.
                     tags_with_positions.append({
@@ -724,6 +822,34 @@ class PatternMatcher:
                     category="Unknown",
                     reason="did not match any pattern (JB/MC/Tag/Cable/SPARE)",
                 )
+
+        # When a cable format was supplied, associate the description with
+        # the nearest MC on the page. This mirrors the former local search and
+        # prevents a remote cable label from winning solely by digit size.
+        if self.cable_examples and mc_identifiers and cable_candidates:
+            mc_boxes = [info.bbox for key, info in tag_match_info.items()
+                        if info.match_type == "MC" and info.bbox]
+            selected: Dict[int, Tuple[str, str, OcrDetection]] = {}
+            for mc_box in mc_boxes:
+                mx, my, mw, mh = mc_box
+                nearby = []
+                for item in cable_candidates:
+                    cable_box = item[2].bbox
+                    cx, cy, cw, ch = cable_box
+                    dx = abs((cx + cw / 2) - (mx + mw / 2))
+                    dy = abs((cy + ch / 2) - (my + mh / 2))
+                    if dx <= max(180, mw * 8) and dy <= max(120, mh * 8):
+                        nearby.append((dx + 3 * dy, item))
+                if nearby:
+                    _, best = min(nearby, key=lambda pair: pair[0])
+                    selected[id(best[2])] = best
+            if selected:
+                cable_descriptions = [item[0] for item in selected.values()]
+                raw_cable_descriptions = [item[1] for item in selected.values()]
+                selected_ids = {item[0] for item in selected.values()}
+                for cable_desc, _, _ in cable_candidates:
+                    if cable_desc not in selected_ids:
+                        tag_match_info.pop(cable_desc, None)
 
         # ── Number tags + spares by position ─────────────────────
         tag_to_number = self.assign_tag_numbers_by_position(

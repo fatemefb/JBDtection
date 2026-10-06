@@ -66,6 +66,9 @@ class Config:
     preprocess_clahe_tile: int = 8
     preprocess_gaussian_kernel: int = 3
     preprocess_use_otsu: bool = True
+    preprocess_remove_highlights: bool = True
+    preprocess_remove_ruling_lines: bool = False
+    ocr_recover_missing_jb: bool = True
 
     # ── Tag matching ───────────────────────────────────────────────
     match_similar_threshold: float = 0.85
@@ -113,7 +116,9 @@ def load_config() -> Config:
     # Boolean fields
     for field_name in ("paddle_use_angle_cls", "paddle_show_log",
                         "paddle_use_gpu", "pdf_auto_dpi_enabled",
-                        "preprocess_use_otsu", "match_use_confusion_pairs"):
+                        "preprocess_use_otsu", "preprocess_remove_highlights",
+                        "preprocess_remove_ruling_lines", "ocr_recover_missing_jb",
+                        "match_use_confusion_pairs"):
         env_key = f"JBDET_{field_name.upper()}"
         val = os.environ.get(env_key)
         if val is not None:

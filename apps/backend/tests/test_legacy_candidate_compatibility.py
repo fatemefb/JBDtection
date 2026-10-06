@@ -56,13 +56,15 @@ class LegacyCandidateCompatibilityTests(unittest.TestCase):
                         score >= 0.62 or any(pattern.match(normalized) for pattern in namespace['_io_regex_patterns']))
                     self.assertEqual(rules.accepts(tag), expected)
 
-    def test_structural_candidates_are_kept_for_review_without_exact_reference(self):
+    def test_structural_candidates_require_a_learned_family(self):
         matcher = TagMatcher()
         for tag in ['TE-5223', '11-FV-301', '21HS-001']:
             matcher.add_reference_tag(tag)
         for tag in ['PT-5223', '11-XV-301', 'TE-5224ABC']:
-            self.assertEqual(matcher.match_tag(tag)[0], 'unmatched_candidate')
-            self.assertEqual(matcher.extract_candidates(tag), [tag])
+            self.assertEqual(matcher.match_tag(tag)[0], 'unmatched')
+            self.assertEqual(matcher.extract_candidates(tag), [])
+        self.assertEqual(matcher.match_tag('TE-5224')[0], 'similar')
+        self.assertFalse(matcher.matches_io_pattern('text TE-5224'))
 
 
 if __name__ == '__main__':

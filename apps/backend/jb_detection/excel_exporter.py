@@ -503,17 +503,20 @@ class ExcelExporter:
         # Full context for UI warning rows and candidate review.
         self._last_pattern_candidates = []
         for _, row in df.iterrows():
-            if row.get("Match_Type") not in {"similar", "unmatched", "unmatched_candidate"} or not row.get("IO_Pattern_Match"):
+            recovered = "IO-independent OCR profile candidate" in str(row.get("Warning", ""))
+            if row.get("Match_Type") not in {"similar", "unmatched", "unmatched_candidate"}:
+                continue
+            if not row.get("IO_Pattern_Match") and not recovered:
                 continue
             self._last_pattern_candidates.append({
-                "source_type": "pattern_unmatched_candidate",
+                "source_type": "io_profile_recovery" if recovered else "pattern_unmatched_candidate",
                 "ocr_text": row["Tag/SPARE"], "display_text": row["Tag/SPARE"],
                 "pdf_name": row["PDF_Name"], "page": int(row["Page"]),
                 "jb": row["JB"], "mc": row["MC"],
                 "tag_number": int(row["Tag_Number"]),
-                "score": float(row["Similarity_Percent"]) / 100,
+                "score": None if recovered else float(row["Similarity_Percent"]) / 100,
                 "closest_io_tag": row["Closest_IO_Tag"],
-                "match_type": row["Match_Type"], "io_pattern_match": True,
+                "match_type": row["Match_Type"], "io_pattern_match": bool(row.get("IO_Pattern_Match")),
                 "reason": row["Warning"],
                 "terminal_first_number": row["Terminal_First_Number"],
                 "terminal_second_number": row["Terminal_Second_Number"],
@@ -619,7 +622,15 @@ class ExcelExporter:
         from .tag_matcher import TagMatcher
         matcher = TagMatcher(config=self._config)
         matcher.build_from_excel(io_list_path, tag_column=io_col)
-        ocr_upper = {tag for tag in ocr_upper if matcher.matches_io_pattern(tag)}
+        profile_recovered_tags = {
+            str(row.get(inter_tag_col, "")).strip().upper()
+            for _, row in intermediate_df.iterrows()
+            if "IO-independent OCR profile candidate" in str(row.get("Warning", ""))
+        }
+        ocr_upper = {
+            tag for tag in ocr_upper
+            if matcher.matches_io_pattern(tag) or tag in profile_recovered_tags
+        }
         ocr_to_io_map = {tag: matcher.exact_reference(tag) for tag in ocr_upper
                          if matcher.exact_reference(tag)}
         matched_io_tags = set(ocr_to_io_map.values())
@@ -681,21 +692,33 @@ class ExcelExporter:
         for _, src in intermediate_df.iterrows():
             tag = str(src.get(inter_tag_col, "")).strip().upper()
             is_spare = str(src.get("Type", "")).upper() == "SPARE"
-            if not is_spare and (matcher.exact_reference(tag) or not matcher.matches_io_pattern(tag)):
+            profile_recovery = "IO-independent OCR profile candidate" in str(src.get("Warning", ""))
+            io_pattern_match = matcher.matches_io_pattern(tag)
+            if not is_spare and (
+                matcher.exact_reference(tag)
+                or (not io_pattern_match and not profile_recovery)
+            ):
                 continue
             new_row = {col: None for col in final_df.columns}
             new_row.update({col: src.get(col) for col in intermediate_cols_to_add})
             new_row[io_col] = tag
             new_row["JB_SPARE_COUNT"] = int(spare_counts.get(str(src.get("JB", "")).strip().upper(), 0)) if "JB" in intermediate_df.columns else 0
             if not is_spare:
-                kind, score, closest = matcher.match_tag(tag)
+                if io_pattern_match:
+                    kind, score, closest = matcher.match_tag(tag)
+                else:
+                    # Preserve recovered items as review rows without claiming
+                    # that the candidate resembles a particular IO tag.
+                    kind, score, closest = "unmatched_candidate", 0.0, ""
                 new_row.update({
                     "Match_Type": kind,
                     "Similarity_Percent": round(score * 100, 2),
                     "Closest_IO_Tag": closest,
-                    "IO_Pattern_Match": True,
-                    "Warning": f"Not in IO List; closest tag: {closest or 'none'} ({score:.1%}). Review required. "
-                        + str(src.get("Warning", "") if pd.notna(src.get("Warning")) else ""),
+                    "IO_Pattern_Match": bool(io_pattern_match),
+                    "Warning": (
+                        f"Not in IO List; closest tag: {closest or 'none'} ({score:.1%}). Review required. "
+                        if io_pattern_match else "Recovered by OCR profile; no IO-family match. Review required. "
+                    ) + str(src.get("Warning", "") if pd.notna(src.get("Warning")) else ""),
                 })
             extra_rows.append(new_row)
         if extra_rows:

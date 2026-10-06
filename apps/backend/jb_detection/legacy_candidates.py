@@ -25,6 +25,28 @@ class LegacyCandidateRules:
             pattern = (r"^\d{1,4}-" if area_prefix and len(prefix) <= 4 else "^") + re.escape(prefix) + r"[-\d]"
             self.prefix_patterns.append(re.compile(pattern, re.IGNORECASE))
         self.general_pattern = re.compile(r"^[A-Z0-9]{2,6}[-]?[A-Z0-9]{1,10}(?:[-][A-Z0-9]{1,10}){0,3}$", re.IGNORECASE)
+        self.token_pattern = re.compile(
+            r"(?<![A-Z0-9])[A-Z0-9]+(?:[-_][A-Z0-9]+){0,3}(?![A-Z0-9])",
+            re.IGNORECASE,
+        )
+
+    def extract_candidates(self, text):
+        """Return independently reviewable tag-shaped tokens from an OCR line.
+
+        This is a discovery fallback: it preserves likely tags that do not fit
+        a literal IO family. It does not claim that a candidate matches IO.
+        """
+        candidates = []
+        seen = set()
+        for match in self.token_pattern.finditer(str(text or "")):
+            raw = match.group().strip("-_")
+            tag = self._normalize_ocr_tag_candidate(raw)
+            if not tag or tag in seen or not self.accepts(tag):
+                continue
+            score = self._score_pattern_candidate(tag, self.profile)
+            candidates.append((tag, score))
+            seen.add(tag)
+        return candidates
 
     def accepts(self, raw):
         tag = self._normalize_ocr_tag_candidate(raw)

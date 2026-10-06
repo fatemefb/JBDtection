@@ -887,13 +887,12 @@ def process_task_async(task_id, pdf_paths, excel_path, project_name, pattern_con
             spare_examples = pattern_config.get('spare_examples', '')
             cable_examples = pattern_config.get('cable_examples', '')
             
-            if jb_examples or mc_examples or spare_examples or cable_examples:
-                extractor.set_patterns(
-                    jb_examples=jb_examples,
-                    mc_examples=mc_examples,
-                    spare_examples=spare_examples,
-                    cable_examples=cable_examples
-                )
+            extractor.set_patterns(
+                jb_examples=jb_examples,
+                mc_examples=mc_examples,
+                spare_examples=spare_examples,
+                cable_examples=cable_examples
+            )
         
         terminal_pattern = pattern_config.get('terminal_pattern', '')
         wire_color_pattern = pattern_config.get('wire_color_pattern', '')

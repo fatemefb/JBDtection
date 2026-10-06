@@ -73,6 +73,7 @@ class PdfTypeDetector:
             - :attr:`PdfType.SCANNED` if the page has little or no text.
         """
         try:
+            import fitz
             text = page.get_text("text")
         except Exception as exc:
             logger.debug("get_text failed: %s — treating as scanned", exc)
@@ -80,6 +81,24 @@ class PdfTypeDetector:
 
         if not text:
             return PdfType.SCANNED
+
+        # Searchable scans have a full-page raster plus invisible OCR text.
+        # That text can be badly misread despite being printable and plentiful.
+        # Read the image instead of assigning confidence 1.0 to the hidden layer.
+        try:
+            page_area = page.rect.get_area()
+            full_page_image = page_area > 0 and any(
+                (page.rect & fitz.Rect(image["bbox"])).get_area() / page_area >= 0.8
+                for image in page.get_image_info()
+            )
+            if full_page_image:
+                traces = page.get_texttrace()
+                total_chars = sum(len(trace.get("chars", ())) for trace in traces)
+                hidden_chars = sum(len(trace.get("chars", ())) for trace in traces if trace.get("type") == 3)
+                if total_chars and hidden_chars / total_chars >= 0.8:
+                    return PdfType.SCANNED
+        except Exception as exc:
+            logger.debug("Could not inspect hidden OCR layer: %s", exc)
 
         text_len = len(text.strip())
         if text_len >= self._config.digital_pdf_min_text_chars:

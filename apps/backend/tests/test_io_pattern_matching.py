@@ -57,9 +57,13 @@ class IoPatternMatchingTests(unittest.TestCase):
         pattern = PatternMatcher()
         pattern.io_tag_matcher = self.matcher
         result = pattern.match([det('PT-5223', 10), det('12-FV-302', 30), det('22HS-002', 50), det('TE-5224ABC', 70)])
-        self.assertEqual(result.tags, {'12-FV-302', '22HS-002', 'PT-5223', 'TE-5224ABC'})
+        self.assertEqual(result.tags, {'PT-5223', '12-FV-302', '22HS-002', 'TE-5224ABC'})
         self.assertEqual(result.all_ocr_tags, result.tags)
         self.assertEqual(set(result.tag_to_number), result.tags)
+        self.assertEqual(result.tag_match_info['PT-5223'].match_type, 'unmatched_candidate')
+        self.assertIn('IO-independent OCR profile candidate', result.tag_match_info['PT-5223'].reason)
+        self.assertEqual(result.tag_match_info['PT-5223'].score, 0.0)
+        self.assertEqual(result.tag_match_info['TE-5224ABC'].match_type, 'unmatched_candidate')
 
     def test_empty_io_list_fails_closed(self):
         pattern = PatternMatcher()
@@ -99,6 +103,8 @@ class IoPatternMatchingTests(unittest.TestCase):
         frame, missing_io, missing_pdf = exporter.create_final_excel(str(intermediate), str(self.io_path), str(output), result.all_ocr_tags)
         indexed = frame.set_index('Tag No')
         self.assertEqual(set(indexed.index), {'TE-5223', '11-FV-301', '21HS-001', 'TE-5224', 'TE-9999', 'PT-5223'})
+        self.assertEqual(indexed.loc['PT-5223', 'Match_Type'], 'unmatched_candidate')
+        self.assertFalse(indexed.loc['PT-5223', 'IO_Pattern_Match'])
         self.assertEqual(indexed.loc['TE-5223', 'Match_Type'], 'exact')
         candidate = indexed.loc['TE-5224']
         self.assertEqual(candidate['Match_Type'], 'similar')
@@ -123,6 +129,40 @@ class IoPatternMatchingTests(unittest.TestCase):
                 self.assertEqual(book.active.cell(index, 1).fill.fgColor.rgb, '00FFF2CC')
         book.close()
 
+    def test_profile_recovery_survives_final_excel_and_candidate_review_export(self):
+        proc = UnifiedPdfProcessor(config=self.config, tag_matcher=self.matcher)
+        result = proc._process_detections([det('PT-5224', 40)], 1)
+        self.assertIn('PT-5224', result.tags)
+        self.assertEqual(result.tag_match_info['PT-5224'].match_type, 'unmatched_candidate')
+
+        exporter = ExcelExporter(config=self.config)
+        exporter.set_pattern_matcher(proc.pattern_matcher)
+        intermediate = self.root / 'profile-recovery-intermediate.xlsx'
+        exporter.create_intermediate_excel({'drawing.pdf': {1: result}}, str(intermediate))
+        final, _, missing_pdf = exporter.create_final_excel(
+            str(intermediate), str(self.io_path), str(self.root / 'profile-recovery-final.xlsx'),
+            result.all_ocr_tags,
+        )
+        row = final[final['Tag No'] == 'PT-5224'].iloc[0]
+        self.assertEqual(row['Match_Type'], 'unmatched_candidate')
+        self.assertFalse(row['IO_Pattern_Match'])
+        self.assertEqual(row['Similarity_Percent'], 0)
+        self.assertIn('PT-5224', missing_pdf)
+        review_item = next(item for item in exporter._last_pattern_candidates if item['ocr_text'] == 'PT-5224')
+        self.assertEqual(review_item['source_type'], 'io_profile_recovery')
+        self.assertFalse(review_item['io_pattern_match'])
+
+    def test_profile_recovery_ignores_plain_prose_and_known_non_tags(self):
+        pattern = PatternMatcher()
+        pattern.io_tag_matcher = self.matcher
+        result = pattern.match([
+            det('PORTION OF CIRCUIT', 10), det('JB-101', 30),
+            det('SPARE', 50), det('PT-5224', 70),
+        ])
+        self.assertEqual(result.tags, {'PT-5224'})
+        self.assertEqual(result.jb_identifiers, {'JB-101'})
+        self.assertEqual(result.spare_identifiers, ['SPARE'])
+
     def test_full_compat_entrypoint_exposes_candidates_and_exports_original_tag(self):
         from jb_detection.compat import TagJBExtractor
         pdf = self.root / 'drawing.pdf'
@@ -145,8 +185,8 @@ class IoPatternMatchingTests(unittest.TestCase):
         self.assertEqual(detail['jb'], 'JB-101')
         self.assertTrue(detail['terminal_first_number'])
         self.assertIn('TE-5223', missing_io)
-        self.assertIn('TE-5224', missing_pdf)
         self.assertIn('PT-5223', missing_pdf)
+        self.assertIn('TE-5224', missing_pdf)
         self.assertIn('TE-5224', pd.read_excel(output)['Tag No'].tolist())
 
     def test_configured_similarity_threshold_and_batch_api(self):
@@ -156,7 +196,7 @@ class IoPatternMatchingTests(unittest.TestCase):
         self.assertEqual(matches['TE-5223'][0], 'exact')
         self.assertEqual(matches['TE-5224'][0], 'unmatched_candidate')
         self.assertEqual(matches['TE-5224'][2], 'TE-5223')
-        self.assertEqual(matches['PT-5223'], ('unmatched_candidate', 0.0, ''))
+        self.assertEqual(matches['PT-5223'], ('unmatched', 0.0, ''))
 
     def test_absent_candidates_survive_without_a_similarity_match(self):
         # An intentionally unreachable threshold proves discovery does not
@@ -181,7 +221,7 @@ class IoPatternMatchingTests(unittest.TestCase):
         matcher.add_reference_tag('LUSY-2474A')
         matcher.add_reference_tag('USY-2482A')
         candidates = matcher.extract_candidates('LUSY-99999B USY-1 USY-876543C XYZ-2474A')
-        self.assertEqual(candidates, ['LUSY-99999B', 'USY-1', 'USY-876543C', 'XYZ-2474A'])
+        self.assertEqual(candidates, ['LUSY-99999B', 'USY-1', 'USY-876543C'])
         for tag in candidates:
             self.assertEqual(matcher.match_tag(tag)[0], 'unmatched_candidate')
         self.assertEqual(matcher.extract_candidates('X.LUSY-99999B LUSY-99999B.1'), [])

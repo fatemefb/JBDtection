@@ -239,37 +239,13 @@ class LinuxTagJBExtractor(TagJBExtractor):
             wire_color_rule: Rule for generating wire colors.
             scr_number_rule: Rule for generating SCR numbers.
         """
-        if jb_examples:
-            self.jb_examples = jb_examples
-            jb_pattern_str = r'\b(?:' + '|'.join(re.escape(ex) for ex in jb_examples) + r')[-.]?\d+[A-Z]?\b'
-            self.jb_patterns.append(re.compile(jb_pattern_str, re.IGNORECASE))
-            logger.info(f"Added custom JB pattern: {jb_pattern_str}")
-
-        if mc_examples:
-            self.mc_examples = mc_examples
-            mc_pattern_str = r'\b(?:' + '|'.join(re.escape(ex) for ex in mc_examples) + r')[-.]?\d+[A-Z]?\b'
-            self.mc_patterns.append(re.compile(mc_pattern_str, re.IGNORECASE))
-            logger.info(f"Added custom MC pattern: {mc_pattern_str}")
-
-        if spare_examples:
-            self.spare_examples = spare_examples
-            spare_pattern_str = r'\b(?:' + '|'.join(re.escape(ex) for ex in spare_examples) + r')\b'
-            self.spare_patterns.append(re.compile(spare_pattern_str, re.IGNORECASE))
-            logger.info(f"Added custom SPARE pattern: {spare_pattern_str}")
-
-        if cable_examples:
-            self.cable_examples = cable_examples
-            for example in cable_examples:
-                if 'PAIR' in example.upper() or 'P' in example.upper():
-                    pattern_str = r'(\d+)\s*(?:' + re.escape(example) + r')'
-                    self.cable_patterns.append(re.compile(pattern_str, re.IGNORECASE))
-                    logger.info(f"Added custom cable pattern: {pattern_str}")
-
-        if wire_color_rule:
-            self.set_wire_color_rule(wire_color_rule)
-
-        if scr_number_rule:
-            self.set_scr_number_rule(scr_number_rule)
+        # The unified processor consumes PatternMatcher, rather than the
+        # legacy regex lists on this subclass. Keep configuration in sync.
+        super().set_patterns(
+            jb_examples=jb_examples, mc_examples=mc_examples,
+            spare_examples=spare_examples, cable_examples=cable_examples,
+            wire_color_rule=wire_color_rule, scr_number_rule=scr_number_rule,
+        )
 
     def run_with_annotated_pdf(self, pdf_paths: 'List[str]', excel_path: str, output_excel_path: str, output_pdf_dir: str, 
                             create_zip: bool = True, zip_path: str = None) -> 'Tuple[List[str], List[str]]':

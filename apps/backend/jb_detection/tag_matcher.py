@@ -27,7 +27,6 @@ from .config import (
     Config, INSTRUMENT_PREFIXES, OCR_CONFUSION_PAIRS,
 )
 
-from .legacy_candidates import LegacyCandidateRules
 
 logger = logging.getLogger("jb_detection.tag_matcher")
 
@@ -106,7 +105,6 @@ class TagMatcher:
         self.reference_patterns: Dict[str, str] = {}
         self.candidate_patterns: Dict[str, re.Pattern] = {}
         self.reference_candidate_patterns: Dict[str, str] = {}
-        self._legacy_rules = None
         self.normalized_references: Dict[str, Set[str]] = {}
         self.tag_set_upper: Set[str] = set()
         # Track IO List tag in original case (for output)
@@ -163,7 +161,6 @@ class TagMatcher:
 
         # Each IO List defines its own allowed families; do not retain older lists.
         self.normalized_references.clear()
-        self._legacy_rules = None
         self.reference_tags.clear()
         self.tag_vectors.clear()
         self.tag_set_upper.clear()
@@ -190,7 +187,6 @@ class TagMatcher:
             self.reference_tags.append(tag)
             self.tag_set_upper.add(tag)
             self.upper_to_original[tag] = tag
-        self._legacy_rules = None
         self.normalized_references.setdefault(self.separator_key(tag), set()).add(tag)
         self.tag_vectors[tag] = self.create_tag_vector(tag)
         pattern = "".join(
@@ -229,29 +225,19 @@ class TagMatcher:
         references = self.normalized_references.get(self.separator_key(tag), set())
         return next(iter(references)) if len(references) == 1 else ""
 
-    def _candidate_rules(self):
-        if self._legacy_rules is None:
-            self._legacy_rules = LegacyCandidateRules(self.reference_tags, _lev.distance)
-        return self._legacy_rules
-
     def matches_io_pattern(self, tag: str) -> bool:
-        """Legacy candidate discovery plus equivalent separator spellings."""
+        """Accept only families derived from the supplied IO List."""
         if not self.reference_tags:
             return False
         text = str(tag).strip()
         return bool(self.exact_reference(text)) or any(
             pattern.fullmatch(text) for pattern in self.candidate_patterns.values()
-        ) or (not re.search(r"\s", text) and self._candidate_rules().accepts(text))
+        )
 
     def extract_candidates(self, text: str) -> List[str]:
         found = []
         for pattern in self.candidate_patterns.values():
             found.extend((match.start(), match.end(), match.group().upper()) for match in pattern.finditer(text))
-        # Legacy phase 2.5 accepts high structural scores even without a
-        # learned literal prefix. Preserve the observed text for review.
-        for match in re.finditer(r"(?<![A-Z0-9_./-])[A-Z0-9]+(?:[-_][A-Z0-9]+)*(?![A-Z0-9_./-])", text, re.IGNORECASE):
-            if self.matches_io_pattern(match.group()):
-                found.append((match.start(), match.end(), match.group().upper()))
         selected = []
         end = -1
         for start, stop, tag in sorted(set(found), key=lambda item: (item[0], -item[1])):

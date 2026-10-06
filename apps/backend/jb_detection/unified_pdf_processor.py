@@ -48,8 +48,8 @@ Key design principles
    data came from OCR or native extraction.
 4. **Extract everything first**: All text/regions are extracted from a
    page before pattern matching begins. No mid-extraction decisions.
-5. **One OCR call per page**: PaddleOCR runs exactly once per scanned
-   page. No repeated OCR for different categories (JB, Tag, etc.).
+5. **Conditional JB recovery**: Read a scanned page normally, then try
+   an alternate line-free view only when no JB is found and the view changes.
 6. **Lazy processing**: Pages are processed one at a time. Images are
    released after processing. PaddleOCR is initialized once (singleton).
 7. **No modes**: No ``table_mode``, ``diagram_mode``, or similar. The
@@ -81,7 +81,8 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 from .config import Config, DEFAULT_CONFIG
 from .detector import TextDetector
 from .digital_text_extractor import DigitalTextExtractor
-from .image_preprocessor import preprocess, render_pdf_to_images
+from .image_preprocessor import render_pdf_to_images
+from .ocr_recovery import detect_with_jb_recovery
 from .models import JBDetectionResult, OcrDetection, TagMatchInfo
 from .pattern_matcher import PatternMatcher
 from .pdf_type_detector import PdfType, PdfTypeDetector
@@ -402,7 +403,7 @@ class UnifiedPdfProcessor:
         """Extract text from a scanned page via PaddleOCR.
 
         This is the "OCR" path. We render the page to a BGR image,
-        preprocess it, and run PaddleOCR exactly once.
+        preprocess it, and recover a missing JB from an alternate view when needed.
         """
         # Render the specific page to an image.
         # We use the existing render_pdf_to_images function but it
@@ -423,15 +424,7 @@ class UnifiedPdfProcessor:
             raise RuntimeError(f"Failed to render page {page_number}: empty image")
 
         try:
-            # Preprocess (CLAHE + Otsu) — same as the OCR pipeline
-            preprocessed = preprocess(image, config=self._config)
-        except Exception as exc:
-            logger.warning("Preprocess failed on page %d: %s — using raw image", page_number, exc)
-            preprocessed = image
-
-        try:
-            # PaddleOCR — exactly ONE call per page
-            detections = self.detector.detect(preprocessed)
+            detections = detect_with_jb_recovery(image, self.detector, self._pattern_matcher, self._config)
         except Exception as exc:
             raise RuntimeError(f"OCR failed on page {page_number}: {exc}") from exc
 
@@ -456,10 +449,15 @@ class UnifiedPdfProcessor:
         # 2. Match tags against IO List (if a TagMatcher is set)
         if self._tag_matcher is not None and result.tags:
             for tag in list(result.tags):
-                match_type, score, matched_tag = self._tag_matcher.match_tag(tag)
                 info = result.tag_match_info.get(tag) or TagMatchInfo(
                     ocr_text=tag, bbox=(0, 0, 0, 0),
                 )
+                if info.reason.startswith("IO-independent OCR profile candidate"):
+                    # Keep recovered candidates visible for human review even
+                    # though the IO matcher intentionally has no family for them.
+                    result.tag_match_info[tag] = info
+                    continue
+                match_type, score, matched_tag = self._tag_matcher.match_tag(tag)
                 info.match_type = match_type
                 info.score = score
                 info.matched_tag = matched_tag

@@ -105,6 +105,52 @@ class PdfExtractionRegressions(unittest.TestCase):
             self.assertIn('SPARE #3', doc[0].get_text())
             self.assertNotIn('#99', doc[0].get_text())
 
+    def test_spare_count_in_one_label_or_adjacent_pdf_spans(self):
+        matcher = PatternMatcher(spare_examples='SPARE')
+        result = matcher.match([
+            detection('4 SPARES', 20),
+            OcrDetection('3', 0.99, [], (20, 70, 24, 20)),
+            OcrDetection('SPARE', 0.99, [], (60, 70, 100, 20)),
+            detection('PLUGS', 70),
+        ])
+        self.assertEqual(len(result.spare_identifiers), 7)
+        self.assertEqual(len(result.spare_positions), 7)
+        self.assertEqual(len(result.tag_to_number), 7)
+
+    def test_configured_jb_prefix_keeps_optional_area_digits(self):
+        for prefix in ('1201JR', 'JR'):
+            matcher = PatternMatcher(jb_examples=prefix)
+            result = matcher.match([
+                detection('1201JR501'), detection('1201 JR502', 50),
+                detection('JR503', 80), detection('1202JR504', 110),
+            ])
+            expected = ({'1201JR501', '1201JR502', '1201JR503'} if prefix == '1201JR'
+                        else {'1201JR501', '1201JR502', 'JR503', '1202JR504'})
+            self.assertEqual(result.jb_identifiers, expected)
+
+    def test_short_jb_and_mc_patterns_accept_multisegment_identifiers(self):
+        matcher = PatternMatcher(jb_examples='JB', mc_examples='MC')
+        result = matcher.match([
+            detection('JB-DIA-100-001'),
+            detection('MC-DIA-100-001', 50),
+            detection('JB To ITR-DCS U-100', 80),
+        ])
+        self.assertEqual(result.jb_identifiers, {'JB-DIA-100-001'})
+        self.assertEqual(result.mc_identifiers, {'MC-DIA-100-001'})
+
+        # A configured prefix followed by unpunctuated prose must not consume
+        # later numbers as though the whole phrase were one identifier.
+        tag_prefix = PatternMatcher(jb_examples='1201JR')
+        self.assertEqual(tag_prefix.match([detection('1201JRS01')]).jb_identifiers, set())
+
+    def test_explicitly_empty_patterns_disable_categories(self):
+        matcher = PatternMatcher(jb_examples='', mc_examples='', spare_examples='', cable_examples='')
+        result = matcher.match([detection('JB-101'), detection('MC-101', 50),
+                                detection('SPARE', 80), detection('FRT-1', 110)])
+        self.assertEqual(result.jb_identifiers, set())
+        self.assertEqual(result.mc_identifiers, set())
+        self.assertEqual(result.spare_identifiers, [])
+
     def test_tags_share_one_number_but_spares_each_get_a_number(self):
         result = PatternMatcher().match([
             detection('TE-5223', 10), detection('TE-5223', 30),
@@ -169,6 +215,26 @@ class PdfExtractionRegressions(unittest.TestCase):
             cable_boxes = [d for d in page.get_drawings() if d['color'] == CATEGORY_COLORS_RGB['cable']]
             self.assertEqual(len(cable_boxes), 1)
             self.assertEqual(cable_boxes[0]['rect'], fitz.Rect(20, 70, 120, 90))
+
+    def test_configured_cable_unit_is_brand_agnostic_and_mc_local(self):
+        matcher = PatternMatcher(cable_examples='12P')
+        result = matcher.match([
+            OcrDetection('MC-101', 0.99, [], (20, 40, 80, 20)),
+            OcrDetection('FRS-12P x 1.5mm2', 0.99, [], (30, 75, 130, 20)),
+            OcrDetection('FRT-24P x 1.5mm2', 0.99, [], (500, 75, 130, 20)),
+        ])
+        self.assertEqual(result.mc_identifiers, {'MC-101'})
+        self.assertEqual(result.cable_descriptions, ['FRS-12P X 1.5MM2'])
+        self.assertEqual(result.raw_cable_descriptions, ['FRS-12P X 1.5MM2'])
+        self.assertNotIn('FRS-12P X 1.5MM2', result.tags)
+        self.assertNotIn('FRT-24P X 1.5MM2', result.tags)
+
+    def test_separator_variants_share_one_tag_number(self):
+        numbers = PatternMatcher().assign_tag_numbers_by_position([
+            {'tag': 'TE-5223', 'y': 20, 'x': 20},
+            {'tag': 'TE_5223', 'y': 40, 'x': 20},
+        ])
+        self.assertEqual(numbers, {'TE-5223': 1, 'TE_5223': 1})
 
     def test_sp_fragments_do_not_create_phantom_spare_excel_rows(self):
         result = PatternMatcher().match([

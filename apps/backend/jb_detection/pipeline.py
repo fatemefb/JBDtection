@@ -27,7 +27,8 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from .config import Config
 from .detector import TextDetector
-from .image_preprocessor import preprocess, render_pdf_to_images
+from .ocr_recovery import detect_with_jb_recovery
+from .image_preprocessor import render_pdf_to_images
 from .models import JBDetectionResult, OcrDetection, PageResult, TagMatchInfo
 from .pattern_matcher import PatternMatcher
 from .tag_matcher import TagMatcher
@@ -120,16 +121,9 @@ class JBDetectionPipeline:
         if image is None or image.size == 0:
             return JBDetectionResult()
 
-        # 1. Preprocess (UNIFIED — no mode split)
+        # 1–2. OCR, with conservative recovery for a missing JB.
         try:
-            preprocessed = preprocess(image, config=self._config)
-        except Exception as exc:
-            logger.error("Preprocess failed on page %d: %s", page_number, exc)
-            preprocessed = image
-
-        # 2. Detect text via PaddleOCR
-        try:
-            detections = self.detector.detect(preprocessed)
+            detections = detect_with_jb_recovery(image, self.detector, self._pattern_matcher, self._config)
         except Exception as exc:
             logger.error("OCR failed on page %d: %s", page_number, exc)
             detections = []

@@ -257,6 +257,65 @@ def render_pdf_to_images(pdf_path: os.PathLike,
             pass
 
 
+def _normalize_highlights(image: np.ndarray) -> np.ndarray:
+    """Whiten bright yellow highlighter while retaining dark/colored ink."""
+    if image.ndim != 3 or image.shape[2] != 3:
+        return image
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    highlight = cv2.inRange(hsv, (15, 35, 170), (42, 255, 255))
+    if not cv2.countNonZero(highlight):
+        return image
+    cleaned = image.copy()
+    cleaned[highlight != 0] = 255
+    return cleaned
+
+
+def _remove_ruling_lines(gray: np.ndarray) -> np.ndarray:
+    """Remove long, thin table rules while protecting crossing ink strokes.
+
+    Geometry is unchanged. Only long axis-aligned strokes are considered;
+    short glyph bars and broad filled objects are left alone.
+    """
+    height, width = gray.shape
+    _, ink = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    mask = np.zeros_like(gray)
+    max_thickness = max(3, min(12, min(height, width) // 150))
+    for horizontal in (True, False):
+        length = max(80, (width if horizontal else height) // 30)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (length, 1) if horizontal else (1, length))
+        opened = cv2.morphologyEx(ink, cv2.MORPH_OPEN, kernel)
+        count, labels, stats, _ = cv2.connectedComponentsWithStats(opened, connectivity=8)
+        valid = np.zeros(count, dtype=np.uint8)
+        thicknesses = []
+        for index in range(1, count):
+            _, _, w, h, _ = stats[index]
+            thickness, span = (h, w) if horizontal else (w, h)
+            if thickness <= max_thickness and span >= length:
+                valid[index] = 255
+                thicknesses.append(thickness)
+        if not thicknesses:
+            continue
+        lines = valid[labels]
+        distance = int(np.median(thicknesses)) + 2
+        before, after = np.zeros_like(ink), np.zeros_like(ink)
+        if horizontal and distance < height:
+            before[distance:] = ink[:-distance]
+            after[:-distance] = ink[distance:]
+            guard_kernel = np.ones((1, 3), np.uint8)
+        elif not horizontal and distance < width:
+            before[:, distance:] = ink[:, :-distance]
+            after[:, :-distance] = ink[:, distance:]
+            guard_kernel = np.ones((3, 1), np.uint8)
+        else:
+            continue
+        crossing = cv2.dilate(cv2.bitwise_and(before, after), guard_kernel)
+        removable = cv2.bitwise_and(lines, cv2.bitwise_not(crossing))
+        mask = cv2.bitwise_or(mask, removable)
+    if not cv2.countNonZero(mask):
+        return gray
+    return cv2.inpaint(gray, mask, 3, cv2.INPAINT_TELEA)
+
+
 # ── Preprocessing (UNIFIED pipeline) ────────────────────────────────────
 def preprocess(image: np.ndarray,
                upscale: int = 1,
@@ -267,7 +326,8 @@ def preprocess(image: np.ndarray,
     Steps
     -----
     1. Optional upscaling (for low-DPI scans).
-    2. Convert to grayscale.
+    2. Neutralize bright yellow highlights, then convert to grayscale.
+       Remove long thin ruling lines with protection for crossing text strokes.
     3. CLAHE (Contrast Limited Adaptive Histogram Equalization) —
        dramatically improves OCR on low-contrast scans.
     4. Light Gaussian blur (removes 1-pixel noise without destroying
@@ -307,11 +367,16 @@ def preprocess(image: np.ndarray,
         image = cv2.resize(image, (w * upscale, h * upscale),
                             interpolation=cv2.INTER_CUBIC)
 
-    # 2. Grayscale
+    # 2. Remove colored background before global thresholding.
+    if config.preprocess_remove_highlights:
+        image = _normalize_highlights(image)
     if image.ndim == 3:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     else:
         gray = image.copy()
+
+    if config.preprocess_remove_ruling_lines:
+        gray = _remove_ruling_lines(gray)
 
     # 3. CLAHE — adaptive contrast enhancement
     clahe = cv2.createCLAHE(
