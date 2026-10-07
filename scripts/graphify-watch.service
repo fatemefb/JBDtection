@@ -1,0 +1,17 @@
+[Unit]
+Description=JBDtection local Graphify index watcher
+
+[Service]
+Type=simple
+WorkingDirectory=/home/devio/projects/JBDtection
+ExecStart=/home/devio/.local/share/pipx/venvs/graphifyy/bin/python -u -m graphify.watch /home/devio/projects/JBDtection --debounce 10
+Environment=GRAPHIFY_MAX_WORKERS=1
+Environment=PYTHONUNBUFFERED=1
+Nice=10
+CPUQuota=100%
+MemoryMax=4G
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

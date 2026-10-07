@@ -1,0 +1,32 @@
+# JBDetection module dependencies
+#
+# Runtime baseline:
+# Python 3.8
+# PaddleOCR 2.10.0
+# Custom PaddlePaddle GPU build (CUDA 11.4 / Tesla K80 sm_37)
+#
+# NOTE:
+# PaddlePaddle is intentionally NOT listed here.
+# The K80-compatible custom PaddlePaddle wheel is installed by Dockerfile
+# from apps/backend/build_artifacts/paddle/.
+
+paddleocr==2.10.0
+
+numpy==1.24.4
+opencv-python==4.12.0.88
+opencv-python-headless==4.12.0.88
+Pillow==10.2.0
+
+PyMuPDF==1.24.11
+pdf2image==1.17.0
+
+pandas==2.0.3
+openpyxl==3.1.5
+
+Levenshtein==0.25.1
+RapidFuzz==3.9.7
+
+reportlab==4.4.9
+
+protobuf==3.20.0
+setuptools==69.5.1
